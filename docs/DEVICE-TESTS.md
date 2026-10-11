@@ -73,4 +73,5 @@ is not a pass; the device exit needs a run with nothing skipped but
 | Date | Commit | Phone | Instrumented | Check 7 |
 |---|---|---|---|---|
 | 2026-10-11 | review fixes on `jabariennis/eng-647-shell` | Pixel 8 Pro (42201FDJG00048), **locked** | 13 run: 11 passed, 2 skipped as locked (`KeystoreTest.theVaultRoundTrips…`, `PutAwayTest.puttingAway…`); `onALockedPhone…` passed | not run: needs the phone unlocked |
-| | | | **OPEN:** unlock the phone and run the suite and check 7 again; until then the device exit's seed line is not met | |
+| 2026-10-11 | `3de3f577e3844799e2946a7fc58323476b332cc7` | Pixel 8 Pro (42201FDJG00048), **locked** (keyguard showing; the agent cannot unlock it) | 13 run: 11 passed, 2 skipped as locked (`KeystoreTest.theVaultRoundTrips…`, `PutAwayTest.puttingAway…`); `onALockedPhone…` passed; debug build with the `foxy-seed` thread check, no check tripped | not run: needs the phone unlocked |
+| | | | **OPEN:** with the phone unlocked, run the suite (13 run, only `onALockedPhone…` skipped) and check 7, add the row with the head SHA, and delete this line. Until then the device exit's seed line (ENG-647.md:2) is not met | |
