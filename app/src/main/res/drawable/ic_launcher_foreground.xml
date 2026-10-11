@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- a plain fox head: two ears and a face -->
+    <path
+        android:fillColor="@color/fox_orange"
+        android:pathData="M34,36 L44,52 L64,52 L74,36 L74,60 Q74,76 54,82 Q34,76 34,60 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,82 Q44,78 42,68 L54,74 L66,68 Q64,78 54,82 Z" />
+</vector>

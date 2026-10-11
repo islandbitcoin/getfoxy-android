@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- the iOS splash colour (FoxyWebView.splashGreen, which is black) and the page's own background -->
+    <color name="splash">#FF000000</color>
+    <color name="page">#FF0B0B0C</color>
+    <color name="fox_orange">#FFF28C28</color>
+</resources>
