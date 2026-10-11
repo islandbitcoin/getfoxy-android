@@ -1,0 +1,6 @@
+# The imported iOS page is pinned byte for byte (core/SHA256SUMS): no line-ending
+# or any other conversion, on any platform. Marked generated rather than binary,
+# so GitHub collapses it by default and a re-pin still shows its diff on demand.
+core/web/** -text linguist-generated=true
+core/UPSTREAM-LICENSE -text
+core/SHA256SUMS -text
