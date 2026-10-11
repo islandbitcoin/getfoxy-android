@@ -1,0 +1,5 @@
+# The imported iOS page is pinned byte for byte (core/SHA256SUMS): no line-ending
+# or any other conversion, on any platform.
+core/web/** -text -diff
+core/UPSTREAM-LICENSE -text
+core/SHA256SUMS -text
