@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The TEST package only, never the app: NetBlockTest's loopback listener runs
+     in a process of its own under the test package, which may open a socket. The
+     app under test has no INTERNET permission. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application>
+        <service
+            android:name="io.islandbitcoin.foxy.ListenerService"
+            android:exported="true"
+            android:process=":listener" />
+    </application>
+</manifest>
