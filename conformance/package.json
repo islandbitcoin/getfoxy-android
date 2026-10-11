@@ -1,0 +1,15 @@
+{
+  "name": "foxy-android-conformance",
+  "private": true,
+  "description": "Bridge conformance for the Android port: loads core/web/index.html in jsdom against a fake native host built from contract.json. Test-only; nothing here ships in the app.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test --test-reporter=spec --test-timeout=180000 test/*.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "29.1.1"
+  }
+}

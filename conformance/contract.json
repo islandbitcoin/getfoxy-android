@@ -1,0 +1,3337 @@
+[
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "covered",
+    "domain": "lifecycle",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": []
+    },
+    "behaviour": "The page has the screen covered (launch intro, CONNECTING, gate screen): native takes the splash and the app-switcher cover down. Nothing is read from the message. Sent on every gate screen, twice per showing is normal.",
+    "timing": "Before the 8 s splash backstop. Native treats a second one as no news.",
+    "pageRef": [
+      "Web/foxy-tor-gate.js:195@action: 'covered'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:362@\"covered\"",
+      "Foxy/Bridge/FoxyBridge.swift:542-545@handleCovered",
+      "Foxy/FoxyWebView.swift:293@FoxyBridge.pageCovered",
+      "Foxy/FoxyWebView.swift:300@+ 8"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "log",
+    "domain": "debug",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "text": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": []
+    },
+    "behaviour": "Every console.log/warn/error of the page, mirrored in every build (mirrorConsole). Native writes it to its log; in Release iOS print() reaches only FieldLog, which redacts tokens, invoices, payment requests, onion addresses, keys and long hex on the way in.",
+    "pageRef": [
+      "build/app/13-console-and-qr.js:36@action: 'log'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:359@\"log\"",
+      "Foxy/Bridge/FoxyBridge.swift:560-563@handleLog",
+      "Foxy/Debug/FieldLog.swift:231-239@secrets"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "fieldLog",
+    "domain": "debug",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "bad": "boolean"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json-array",
+      "items": {
+        "fields": {
+          "at": "integer",
+          "text": "string",
+          "bad": "boolean"
+        }
+      },
+      "errors": []
+    },
+    "behaviour": "The ERRORS (bad=true) and LOGS screens: native and page lines, redacted, newest last.",
+    "pageRef": [
+      "Web/foxy-wallet.js:24960@'fieldLog'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:360@\"fieldLog\"",
+      "Foxy/Bridge/FoxyBridge.swift:568-570@handleFieldLog",
+      "Foxy/Debug/FieldLog.swift:214-221@json"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "fieldLogClear",
+    "domain": "debug",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": []
+    },
+    "behaviour": "Forgets every FieldLog line.",
+    "pageRef": [
+      "Web/foxy-wallet.js:24966@'fieldLogClear'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:361@\"fieldLogClear\"",
+      "Foxy/Bridge/FoxyBridge.swift:572-576@handleFieldLogClear"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "isDebug",
+    "domain": "debug",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "yes",
+        "no"
+      ],
+      "errors": []
+    },
+    "behaviour": "Whether this is a debug build. Served, but nothing in the page at the pinned commit asks it: the page reads window.FOXY_DEBUG, injected at document start.",
+    "pageRef": [],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:400@\"isDebug\"",
+      "Foxy/Bridge/FoxyBridge.swift:965-971@handleIsDebug"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "awake",
+    "domain": "lifecycle",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "on": "boolean"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": []
+    },
+    "behaviour": "Hold the screen lit while a screen is looked at rather than touched (an invoice held up, the gate). Released by native whenever the app leaves the foreground.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23473@'awake'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:443@\"awake\"",
+      "Foxy/Bridge/FoxyBridge.swift:519-530@handleAwake",
+      "Foxy/Bridge/FoxyBridge.swift:535-539@letScreenSleep"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "captured",
+    "domain": "lifecycle",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "yes",
+        "no"
+      ],
+      "errors": []
+    },
+    "behaviour": "Whether the screen is being recorded or mirrored right now, for a page that starts while it already is; changes are pushed with _captured.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25621@'captured'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:395@\"captured\"",
+      "Foxy/Bridge/FoxyBridge.swift:861-863@handleCaptured"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "privacy",
+    "domain": "tor",
+    "phase": "P2",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "tor": "string",
+          "progress": "integer",
+          "everUp": "boolean",
+          "unprotected": "boolean",
+          "transport": "string",
+          "orbot": "string",
+          "firstSetup": "boolean",
+          "vpn": "boolean",
+          "orbotKey": "boolean",
+          "network": "string"
+        }
+      },
+      "errors": []
+    },
+    "behaviour": "Reads the route snapshot (Route.snapshot). The same object is pushed with _privacy on every change.",
+    "pageRef": [
+      "Web/foxy-wallet.js:14685@'privacy'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:394@\"privacy\"",
+      "Foxy/Bridge/FoxyBridge.swift:855-857@handlePrivacy",
+      "Foxy/Network/Route.swift:479-521@snapshot"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "torRetry",
+    "domain": "tor",
+    "phase": "P2",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "tor": "string",
+          "progress": "integer",
+          "everUp": "boolean",
+          "unprotected": "boolean",
+          "transport": "string",
+          "orbot": "string",
+          "firstSetup": "boolean",
+          "vpn": "boolean",
+          "orbotKey": "boolean",
+          "network": "string"
+        }
+      },
+      "errors": []
+    },
+    "behaviour": "RETRY / RESTART TOR: a full Tor restart (TorService.restart), answered with the snapshot.",
+    "pageRef": [
+      "Web/foxy-wallet.js:14691@'torRetry'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:396@\"torRetry\"",
+      "Foxy/Bridge/FoxyBridge.swift:868-873@handleTorRetry"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "unprotected",
+    "domain": "tor",
+    "phase": "P2",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "on": "boolean"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "tor": "string",
+          "progress": "integer",
+          "everUp": "boolean",
+          "unprotected": "boolean",
+          "transport": "string",
+          "orbot": "string",
+          "firstSetup": "boolean",
+          "vpn": "boolean",
+          "orbotKey": "boolean",
+          "network": "string"
+        }
+      },
+      "errors": []
+    },
+    "behaviour": "CONTINUE WITHOUT TOR. on=true asks a native alert (\"Continue without Tor?\") that no script can answer, and is ignored while Tor is running; on=false clears it with no question. Session only; Tor connecting clears it. Pushes _privacy and answers the snapshot.",
+    "timing": "The page waits up to 600 s for an on=true answer (a person is reading an alert).",
+    "pageRef": [
+      "Web/foxy-wallet.js:14708@'unprotected'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:397@\"unprotected\"",
+      "Foxy/Bridge/FoxyBridge.swift:878-902@handleUnprotected",
+      "Foxy/Bridge/FoxyBridge.swift:252-266@confirmUnprotected",
+      "Foxy/Network/Route.swift:42-46@unprotected"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "orbotRefresh",
+    "domain": "tor",
+    "phase": "P2",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "none",
+        "needs-access",
+        "bypass"
+      ],
+      "errors": []
+    },
+    "behaviour": "Poll Orbot now instead of on its 15 s timer; answers OrbotLink.name.",
+    "pageRef": [
+      "Web/foxy-wallet.js:14700@'orbotRefresh'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:393@\"orbotRefresh\"",
+      "Foxy/Bridge/FoxyBridge.swift:847-851@handleOrbotRefresh",
+      "Foxy/Network/OrbotLink.swift:79-85@name"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "orbotAccess",
+    "domain": "tor",
+    "phase": "P2",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "opened",
+        "no"
+      ],
+      "errors": []
+    },
+    "behaviour": "Opens Orbot's own permission flow for a key with bypass.",
+    "pageRef": [
+      "Web/foxy-wallet.js:14704@'orbotAccess'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:392@\"orbotAccess\"",
+      "Foxy/Bridge/FoxyBridge.swift:834-838@handleOrbotAccess"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "mintRequest",
+    "domain": "network",
+    "phase": "P2",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "url": "string",
+        "method": "string",
+        "headers": "object|null",
+        "circuit": "string",
+        "body": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "status-body",
+      "errors": [
+        "That is not a mint address Foxy will use.",
+        "That is not a request Foxy will send.",
+        "Foxy is not connected to Tor.",
+        "You did not allow Foxy to contact <host>.",
+        "The answer from <host> was too large.",
+        "An .onion address needs Tor, and Foxy is not connected to Tor.",
+        "<host> could not be asked over Tor: <why>",
+        "Foxy's private connection was rebuilt mid-request. Try again."
+      ]
+    },
+    "behaviour": "Every mint, LNURL / lightning-address and block-explorer request the page makes (cashu-ts customRequest, nativeRequest). In order: url parses; Route.urlProblem (https, or http to .onion; no localhost, IP literal, single label, .local family; .onion needs Tor); method GET or POST only; Route.available or the refusal; HostApprovals (an unknown host is asked about in a native alert first); then sent on the Tor circuit labelled `circuit` (16-64 lowercase hex, else a fresh one). Only content-type and accept headers are passed; generic Tor-Browser User-Agent. Plain http to an .onion goes through Tor SOCKS by hand (GET only). Answer capped at 4 MB. Redirects re-checked and never to another host. NSURLErrorBadURL retried once after 0.4 s.",
+    "timing": "The page waits 65 s. A swap/melt/mint/restore POST is counted in moneyInFlight so backgrounding waits up to 20 s for it.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25222@'mintRequest'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:398@\"mintRequest\"",
+      "Foxy/Bridge/FoxyBridge.swift:909-944@handleMintRequest",
+      "Foxy/Bridge/FoxyBridge.swift:950-953@mintMethod",
+      "Foxy/Bridge/FoxyBridge.swift:1382-1432@sendMintRequest",
+      "Foxy/Bridge/FoxyBridge.swift:1447-1486@sendMintRequest",
+      "Foxy/Bridge/FoxyBridge.swift:1505-1510@movesMoney",
+      "Foxy/Network/Route.swift:318-324@urlProblem",
+      "Foxy/Network/Route.swift:287-311@hostProblem",
+      "Foxy/Network/Route.swift:16-27@label"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "price",
+    "domain": "network",
+    "phase": "P2",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "agree": "boolean?"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "errors": [
+        "Foxy is not connected to Tor.",
+        "no price source answered",
+        "the price sources did not agree"
+      ],
+      "note": "USD per BTC as a decimal string; \"\" with an error when none answered"
+    },
+    "behaviour": "BTC/USD from six operators in order (mempool onion, Kraken, Bitstamp, blockchain.info, Gemini, Coinbase), two at a time, first usable answer wins; agree=true needs two within 2% (a payment typed in dollars). 4 s per source direct, 20 s on a bridge, 10/25 s for the onion; whole walk 12/30 s (25/45 s with agree).",
+    "timing": "Page waits 14 s (34 s bridged; 29/49 s with agree).",
+    "pageRef": [
+      "Web/foxy-wallet.js:15139@'price'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:363@\"price\"",
+      "Foxy/Bridge/FoxyBridge.swift:601-690@handlePrice",
+      "Foxy/Bridge/FoxyBridge.swift:593@mempoolOnion"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "candles",
+    "domain": "network",
+    "phase": "P2",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "g": "integer",
+        "span": "integer"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json-array",
+      "items": "array of [unixSeconds, close] number pairs, oldest first",
+      "errors": [
+        "Foxy is not connected to Tor.",
+        "unreadable candles",
+        "could not encode candles"
+      ]
+    },
+    "behaviour": "Chart history from Kraken OHLC, interval chosen from the fixed set so the range fits 720 candles. g clamped to 60..86400 s, span to 3600 s..4 years.",
+    "timing": "Page waits 16 s; native times the request out at 12 s.",
+    "pageRef": [
+      "Web/foxy-wallet.js:15215@'candles'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:364@\"candles\"",
+      "Foxy/Bridge/FoxyBridge.swift:696-748@handleCandles",
+      "Foxy/Bridge/FoxyBridge.swift:715@OHLC"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "hostsKnown",
+    "domain": "network",
+    "phase": "P2",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "hosts": "string[]"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": []
+    },
+    "behaviour": "Once, the first time a version with host approvals runs: the mints and contact domains the wallet already used are carried over as approved (each approves only itself). Later calls change nothing.",
+    "pageRef": [
+      "Web/foxy-wallet.js:26068@'hostsKnown'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:399@\"hostsKnown\"",
+      "Foxy/Bridge/FoxyBridge.swift:957-960@handleHostsKnown",
+      "Foxy/Network/Route.swift:744@carryOver"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "seedStatus",
+    "domain": "seed",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "quiet": "boolean?"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "exists": "boolean",
+          "passcode": "boolean?"
+        }
+      },
+      "errors": [
+        "the seed could not be read"
+      ]
+    },
+    "behaviour": "Whether a seed is saved. quiet=true answers from presence alone (no biometric prompt); without it the seed is read (may prompt). \"passcode\": false only on a phone with no device credential. Finding a seed closes the seedMigrate window.",
+    "pageRef": [
+      "Web/foxy-wallet.js:2463@'seedStatus'",
+      "Web/foxy-wallet.js:21574@'seedStatus'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:371@\"seedStatus\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:254-257@handleSeedStatus",
+      "Foxy/Keychain/SeedActions.swift:154-168@status"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "seedCreate",
+    "domain": "seed",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "created": "boolean"
+        }
+      },
+      "errors": [
+        "a seed already exists",
+        "the seed could not be read",
+        "the wordlist could not be checked",
+        "the seed could not be made",
+        "Another change to the seed is still waiting. Nothing was changed."
+      ]
+    },
+    "behaviour": "Twelve words made natively (128 bits from the platform CSPRNG, the bundled wordlist used only if its SHA-256 is pinned) and saved; never replaces a saved seed; counters left from a gone seed are moved aside first. One seed change at a time.",
+    "pageRef": [
+      "Web/foxy-wallet.js:2470@'seedCreate'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:372@\"seedCreate\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:273-279@handleSeedCreate",
+      "Foxy/Keychain/SeedActions.swift:188-214@create",
+      "Foxy/Bridge/FoxyBridge.swift:225-234@beginSeedChange"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "seedMigrate",
+    "domain": "seed",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "words": "string|string[]"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "migrated": "boolean",
+          "same": "boolean?",
+          "different": "boolean?"
+        }
+      },
+      "errors": [
+        "bad request",
+        "no migration here",
+        "the wordlist could not be checked",
+        "Another change to the seed is still waiting. Nothing was changed."
+      ]
+    },
+    "behaviour": "The one-time move of words a pre-keychain page still holds (localStorage foxy.seed.v1). Only a valid BIP-39 phrase (<=1000 bytes, or <=24 words), written only inside the one-time window and only where no seed is saved; otherwise same/different, changing nothing. Never answers words.",
+    "pageRef": [
+      "Web/foxy-wallet.js:2564@'seedMigrate'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:373@\"seedMigrate\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:294-310@handleSeedMigrate",
+      "Foxy/Bridge/NativeSeedBridge.swift:201@seedMigrateCheck",
+      "Foxy/Keychain/SeedActions.swift:253-259@migrateReply"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "countersImport",
+    "domain": "counters",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "counters": "object"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "counters": "object"
+        }
+      },
+      "errors": [
+        "bad request",
+        "counters were already imported",
+        "too many keysets"
+      ]
+    },
+    "behaviour": "Once per install: the page's old NUT-13 counters ({keysetId: next}) raised into the native file (max of each). At most 256 keysets.",
+    "pageRef": [
+      "Web/foxy-wallet.js:2662@'countersImport'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:374@\"countersImport\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:316-321@handleCountersImport",
+      "Foxy/Bridge/NativeSeedBridge.swift:173@countersImportCheck"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "counterReserve",
+    "domain": "counters",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "keysetId": "string",
+        "count": "integer"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "keysetId": "string",
+          "start": "integer",
+          "secrets": "string[]",
+          "blindingFactors": "string[]"
+        }
+      },
+      "errors": [
+        "bad request",
+        "no seed",
+        "the seed could not be read",
+        "too many keysets",
+        "outside the keyset's counters"
+      ]
+    },
+    "behaviour": "Reserve `count` (0..1000) counters for a 00/01 keyset and answer their NUT-13 secrets and blinding factors (hex). The range is written to the counter file BEFORE the secrets are answered. count=0 is a peek: answers start=next with empty lists and needs no seed.",
+    "pageRef": [
+      "Web/foxy-wallet.js:2983@'counterReserve'",
+      "Web/foxy-wallet.js:2992@'counterReserve'",
+      "Web/foxy-wallet.js:3071@'counterReserve'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:375@\"counterReserve\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:339-344@handleCounterReserve",
+      "Foxy/Bridge/NativeSeedBridge.swift:76@counterReserveCheck",
+      "Foxy/Keychain/SeedActions.swift:305-322@counterReserve",
+      "Foxy/Keychain/NUT13.swift:167-172@reply"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "counterReserveAt",
+    "domain": "counters",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "keysetId": "string",
+        "start": "integer",
+        "count": "integer"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "keysetId": "string",
+          "start": "integer",
+          "secrets": "string[]",
+          "blindingFactors": "string[]"
+        }
+      },
+      "errors": [
+        "bad request",
+        "range already issued",
+        "too far ahead",
+        "no seed",
+        "the seed could not be read"
+      ]
+    },
+    "behaviour": "Reserve an explicit range: refused if it starts below next (already issued) or more than 100 past it.",
+    "pageRef": [
+      "Web/foxy-wallet.js:2992@'counterReserveAt'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:376@\"counterReserveAt\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:349-354@handleCounterReserveAt",
+      "Foxy/Keychain/SeedActions.swift:325-344@counterReserveAt"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "counterAdvance",
+    "domain": "counters",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "keysetId": "string",
+        "next": "integer"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "keysetId": "string",
+          "next": "integer"
+        }
+      },
+      "errors": [
+        "bad request",
+        "too far ahead"
+      ]
+    },
+    "behaviour": "Move a counter up, never down; at most 100 past next, or to the end of a range restoreSecrets served this session.",
+    "pageRef": [
+      "Web/foxy-wallet.js:2986@'counterAdvance'",
+      "Web/foxy-wallet.js:3035@'counterAdvance'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:377@\"counterAdvance\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:330-335@handleCounterAdvance",
+      "Foxy/Keychain/SeedActions.swift:295-302@counterAdvance"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "counterSnapshot",
+    "domain": "counters",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "counters": "object"
+        }
+      },
+      "errors": []
+    },
+    "behaviour": "Reads every keyset's next counter; moves nothing; needs no seed.",
+    "pageRef": [
+      "Web/foxy-wallet.js:3016@'counterSnapshot'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:378@\"counterSnapshot\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:324-326@handleCounterSnapshot"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "restoreSecrets",
+    "domain": "counters",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "keysetId": "string",
+        "start": "integer",
+        "count": "integer",
+        "candidate": "string?"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "keysetId": "string",
+          "start": "integer",
+          "secrets": "string[]",
+          "blindingFactors": "string[]"
+        }
+      },
+      "errors": [
+        "bad request",
+        "outside the restore window",
+        "unknown candidate",
+        "no seed",
+        "the seed could not be read"
+      ]
+    },
+    "behaviour": "Secrets for a restore scan, moving no counter: for the saved seed only ranges ending at most 1000 past next; for a typed-words candidate (seedEnter) contiguously from 0 up to 20000. Notes the furthest range served (counterAdvance may reach it; seedAdopt raises counters to 1000 short of it).",
+    "pageRef": [
+      "Web/foxy-wallet.js:2721@'restoreSecrets'",
+      "Web/foxy-wallet.js:3179@'restoreSecrets'",
+      "Web/foxy-wallet.js:3180@'restoreSecrets'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:379@\"restoreSecrets\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:361-366@handleRestoreSecrets",
+      "Foxy/Bridge/NativeSeedBridge.swift:104@restoreSecretsCheck",
+      "Foxy/Keychain/SeedActions.swift:347-366@restoreSecrets"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "p2pkReserve",
+    "domain": "counters",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "count": "integer"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "start": "integer",
+          "next": "integer",
+          "pubkeys": "string[]"
+        }
+      },
+      "errors": [
+        "bad request",
+        "no seed",
+        "the seed could not be read"
+      ]
+    },
+    "behaviour": "Reserve 0..64 lock-key indexes on NUT-13's P2PK path m/129373'/10'/0'/0'/i (last level normal) and answer their compressed PUBLIC keys; the index is written first. count=0 is a peek.",
+    "pageRef": [
+      "Web/foxy-wallet.js:6694@'p2pkReserve'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:382@\"p2pkReserve\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:372-377@handleP2PKReserve",
+      "Foxy/Keychain/SeedActions.swift:377-390@p2pkReserve",
+      "Foxy/Keychain/P2PK.swift:206-209@pubkeysReply"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "p2pkPubkeys",
+    "domain": "counters",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "start": "integer",
+        "count": "integer"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "start": "integer",
+          "next": "integer",
+          "pubkeys": "string[]"
+        }
+      },
+      "errors": [
+        "bad request",
+        "no seed",
+        "the seed could not be read"
+      ]
+    },
+    "behaviour": "Public keys only, 1..300 at a time, no index past 20000; moves nothing but notes the scan's reach (which p2pkKey may then answer).",
+    "pageRef": [
+      "Web/foxy-wallet.js:6667@'p2pkPubkeys'",
+      "Web/foxy-wallet.js:8307@'p2pkPubkeys'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:383@\"p2pkPubkeys\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:381-386@handleP2PKPubkeys",
+      "Foxy/Keychain/SeedActions.swift:407-418@p2pkPubkeys"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "p2pkKey",
+    "domain": "counters",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "index": "integer"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "index": "integer",
+          "privkey": "string",
+          "pubkey": "string"
+        }
+      },
+      "errors": [
+        "bad request",
+        "outside the lock-key window",
+        "no seed",
+        "the seed could not be read"
+      ]
+    },
+    "behaviour": "One lock key's private half, only within 1000 of the last index reserved or inside a range this session's scan served. The chain code is never answered.",
+    "pageRef": [
+      "Web/foxy-wallet.js:6782@'p2pkKey'",
+      "Web/foxy-wallet.js:8320@'p2pkKey'",
+      "Web/foxy-wallet.js:24229@'p2pkKey'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:384@\"p2pkKey\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:391-396@handleP2PKKey",
+      "Foxy/Keychain/SeedActions.swift:427-464@p2pkKey",
+      "Foxy/Keychain/P2PK.swift:215-217@keyReply"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "seedShow",
+    "domain": "seed",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "verify": "boolean"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "verified": "boolean",
+          "delete": "boolean?",
+          "revealed": "boolean?"
+        }
+      },
+      "errors": [
+        "a seed screen is already open",
+        "try again in a moment",
+        "no seed",
+        "the seed could not be read",
+        "Nothing to present the screen from."
+      ]
+    },
+    "behaviour": "Native screen showing the words (behind biometric/device credential), with the verify quiz when verify=true. Answers only whether the quiz was finished, whether delete was asked, whether the words were revealed. One seed screen at a time; none within 10 s of a cancelled read. A cancelled/closed screen answers {\"verified\": false}.",
+    "timing": "Page waits 30 min (PERSON_MS).",
+    "pageRef": [
+      "Web/foxy-wallet.js:18903@'seedShow'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:385@\"seedShow\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:425-478@handleSeedShow"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "seedEnter",
+    "domain": "seed",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "candidate": "string"
+        }
+      },
+      "errors": [
+        "a seed screen is already open",
+        "too many candidates",
+        "cancelled",
+        "the words could not be read",
+        "the wordlist could not be checked",
+        "Nothing to present the screen from."
+      ]
+    },
+    "behaviour": "Native screen where the person types words to restore. Answers a random 128-bit candidate id, never the words. Two candidates at most, dropped on unlock-forget, page reload or background.",
+    "timing": "Page waits 30 min.",
+    "pageRef": [
+      "Web/foxy-wallet.js:18919@'seedEnter'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:386@\"seedEnter\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:481-518@handleSeedEnter"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "seedAdopt",
+    "domain": "seed",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "candidate": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "adopted": "boolean",
+          "same": "boolean?"
+        }
+      },
+      "errors": [
+        "bad request",
+        "unknown candidate",
+        "Nothing was changed.",
+        "Another change to the seed is still waiting. Nothing was changed."
+      ]
+    },
+    "behaviour": "Replace the saved seed with a candidate: native alert \"Replace this wallet's seed?\" (gives up after 120 s as no), then device credential; counters set aside and raised to 1000 short of the furthest range served.",
+    "timing": "Page waits 30 min.",
+    "pageRef": [
+      "Web/foxy-wallet.js:3097@'seedAdopt'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:387@\"seedAdopt\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:526-549@handleSeedAdopt",
+      "Foxy/Bridge/FoxyBridge.swift:196-219@confirmSeedChangeAndWait"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "seedCandidateForget",
+    "domain": "seed",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "candidate": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "forgotten": "boolean"
+        }
+      },
+      "errors": [
+        "bad request"
+      ]
+    },
+    "behaviour": "Forget a candidate id.",
+    "pageRef": [
+      "Web/foxy-wallet.js:18939@'seedCandidateForget'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:388@\"seedCandidateForget\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:566-574@handleSeedCandidateForget"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "seedWipe",
+    "domain": "seed",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "wiped": "boolean",
+          "created": "boolean"
+        }
+      },
+      "errors": [
+        "Nothing was erased.",
+        "Another change to the seed is still waiting. Nothing was changed."
+      ]
+    },
+    "behaviour": "Native alert \"Delete this wallet's seed?\", then device credential; the seed is checked gone before counters move, and a new seed is always made.",
+    "timing": "Page waits 30 min.",
+    "pageRef": [
+      "Web/foxy-wallet.js:14490@'seedWipe'",
+      "Web/foxy-wallet.js:25159@'seedWipe'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:389@\"seedWipe\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:585-604@handleSeedWipe",
+      "Foxy/Keychain/SeedActions.swift:586-600@wipe"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "seedProtection",
+    "domain": "seed",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "mode": "string",
+          "passcode": "boolean"
+        }
+      },
+      "errors": []
+    },
+    "behaviour": "Which protection the person chose: \"device\" (behind biometric/credential) or \"none\".",
+    "pageRef": [
+      "Web/foxy-wallet.js:25133@'seedProtection'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:390@\"seedProtection\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:260-262@handleSeedProtection",
+      "Foxy/Keychain/SeedStore.swift:521-524@Protection"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "seedProtect",
+    "domain": "seed",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "mode": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "mode": "string"
+        }
+      },
+      "errors": [
+        "bad request",
+        "the seed could not be read"
+      ]
+    },
+    "behaviour": "Move the seed between the two protections. Taking protection off reads the seed from behind it first; written and read back where it is going before the old copy is deleted.",
+    "timing": "Page waits 30 min.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25140@'seedProtect'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:391@\"seedProtect\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:267-270@handleSeedProtect",
+      "Foxy/Keychain/SeedActions.swift:578-584@setProtection"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "scan",
+    "domain": "scanner",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "prompt": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "errors": [
+        "Nothing to present the scanner from.",
+        "<camera error>"
+      ],
+      "note": "the decoded text"
+    },
+    "behaviour": "Full-screen camera scanner. The prompt is shown only if it is one of native's fixed prompts (\"Scan an ecash token\", \"Scan the mint address\"), else blank.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23407@action: 'scan'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:358@\"scan\"",
+      "Foxy/Bridge/FoxyBridge.swift:548-550@handleScan",
+      "Foxy/Bridge/FoxyBridge.swift:1083@scannerPrompts",
+      "Foxy/Bridge/FoxyBridge.swift:1062-1076@presentScanner"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "previewStart",
+    "domain": "scanner",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "x": "integer",
+        "y": "integer",
+        "w": "integer",
+        "h": "integer"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "Nothing to show the camera in.",
+        "That pane is too small for a camera (<w>x<h>).",
+        "The camera pane must be on screen (...)"
+      ]
+    },
+    "behaviour": "Live camera laid over the page at a rectangle (CSS px) the page measured: finite, larger than 40x40, inside the web view. Each decoded code is pushed with _liveScan; a refusal is also pushed with _previewRefused.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25643@action: 'previewStart'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:401@\"previewStart\"",
+      "Foxy/Bridge/FoxyBridge.swift:1099-1141@startPreview"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "previewStop",
+    "domain": "scanner",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        ""
+      ],
+      "errors": []
+    },
+    "behaviour": "Stops the live preview.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25653@action: 'previewStop'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:402@\"previewStop\"",
+      "Foxy/Bridge/FoxyBridge.swift:973-976@handlePreviewStop"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "pasteStart",
+    "domain": "clipboard",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "x": "integer",
+        "y": "integer",
+        "w": "integer",
+        "h": "integer"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "Nothing to attach the button to.",
+        "That is not a place a paste button goes."
+      ]
+    },
+    "behaviour": "iOS: a near-invisible UIPasteControl over the page's PASTE button (paste with no system prompt). Rect must be >30x20, <=90% width, <=50% height, inside the view, below its top third. The pasted text (never a seed phrase) is pushed with _pasted.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25683@action: 'pasteStart'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:403@\"pasteStart\"",
+      "Foxy/Bridge/FoxyBridge.swift:1163-1237@startPasteControl"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "pasteStop",
+    "domain": "clipboard",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        ""
+      ],
+      "errors": []
+    },
+    "behaviour": "Removes the paste control (kept a moment longer, not taking touches, while a paste prompt is up).",
+    "pageRef": [
+      "Web/foxy-wallet.js:25693@action: 'pasteStop'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:404@\"pasteStop\"",
+      "Foxy/Bridge/FoxyBridge.swift:983-1016@handlePasteStop"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "clipboard",
+    "domain": "clipboard",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "errors": [],
+      "note": "the clipboard text, \"\" when empty or when it is a seed phrase"
+    },
+    "behaviour": "Reads the clipboard, text only; a seed phrase reads as empty (SeedPasteboard.forPage).",
+    "timing": "Page gives up after 4 s with \"\".",
+    "pageRef": [
+      "Web/foxy-wallet.js:25550@action: 'clipboard'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:365@\"clipboard\"",
+      "Foxy/Bridge/FoxyBridge.swift:750-752@handleClipboard",
+      "Foxy/Bridge/FoxyBridge.swift:1346-1360@readClipboard"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "copy",
+    "domain": "clipboard",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "text": "string",
+        "sensitive": "boolean"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "nothing to copy"
+      ]
+    },
+    "behaviour": "Copy text. sensitive=true (tokens, anything that is money): device-only and expires after 120 s.",
+    "pageRef": [
+      "build/app/17-split-bill-and-copy.js:436@action: 'copy'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:366@\"copy\"",
+      "Foxy/Bridge/FoxyBridge.swift:760-783@handleCopy"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "share",
+    "domain": "clipboard",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "text": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "Nothing to share.",
+        "Something else is already open."
+      ]
+    },
+    "behaviour": "System share sheet with plain text only (no URL item, no link preview fetched).",
+    "pageRef": [
+      "Web/foxy-wallet.js:25575@action: 'share'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:406@\"share\"",
+      "Foxy/Bridge/FoxyBridge.swift:1018-1020@handleShare",
+      "Foxy/Bridge/FoxyBridge.swift:1311-1343@presentShare"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "notify",
+    "domain": "notifications",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "kind": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok",
+        "throttled"
+      ],
+      "errors": [
+        "unknown notification kind"
+      ]
+    },
+    "behaviour": "A local notification. kind is \"sent\" or \"received\"; the words are native's (\"Payment sent\"/\"Payment received\", titled \"Foxy\"), no amount. At most one every 3 s.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25632@action: 'notify'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:405@\"notify\"",
+      "Foxy/Bridge/FoxyBridge.swift:1254-1305@notify",
+      "Foxy/Bridge/FoxyBridge.swift:1247@lastNotifyAt"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "biometric",
+    "domain": "seed",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "reason": "string",
+        "passcode": "boolean"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "yes",
+        "no",
+        "unavailable"
+      ],
+      "errors": []
+    },
+    "behaviour": "Biometric (or device credential when passcode=true, the screen lock only) for the PIN lock. The reason shown is one of native's (\"Unlock Foxy\", \"Leave POS mode\"); anything else shows \"Unlock Foxy\". A yes is remembered so the following seed read does not ask again.",
+    "timing": "Page treats no answer in 60 s as \"no\".",
+    "pageRef": [
+      "Web/foxy-wallet.js:25390@action: 'biometric'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:367@\"biometric\"",
+      "Foxy/Bridge/FoxyBridge.swift:804-822@handleBiometric",
+      "Foxy/Bridge/FoxyBridge.swift:826@biometricReasons"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "openSettings",
+    "domain": "platform",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "No settings page to open.",
+        "Settings would not open."
+      ]
+    },
+    "behaviour": "Opens this app's own system settings page and no other URL (a camera or Bluetooth permission refused once).",
+    "pageRef": [
+      "Web/foxy-wallet.js:25563@'openSettings'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:407@\"openSettings\"",
+      "Foxy/Bridge/FoxyBridge.swift:1026-1036@handleOpenSettings"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "openCompany",
+    "domain": "platform",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "which": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "Not one of the listed sites.",
+        "The browser would not open."
+      ]
+    },
+    "behaviour": "Opens one of four fixed sites by name (cashapp, strike, river, flash) in the system browser, outside Foxy and outside Tor. The page never supplies a URL.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25569@'openCompany'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:408@\"openCompany\"",
+      "Foxy/Bridge/FoxyBridge.swift:1049-1060@handleOpenCompany",
+      "Foxy/Bridge/FoxyBridge.swift:1042-1047@companySites"
+    ]
+  },
+  {
+    "name": "haptic",
+    "direction": "page->native",
+    "kind": "message",
+    "domain": "haptics",
+    "phase": "P3",
+    "payloadSchema": {
+      "fields": {
+        "haptic": "string"
+      }
+    },
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "behaviour": "A message with no action and no id: { haptic: kind }, dispatched before the action guard. Kinds seen: success, error, warning, pulse, long, heavy, triple; anything else (tap, light) is a light impact. The page rate-limits (one per kind per 1.2 s).",
+    "pageRef": [
+      "build/app/05-device-shell.js:80@haptic: kind",
+      "build/app/26d-tap.js:1261@haptic: 'pulse'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:456-470@haptic",
+      "Foxy/Bridge/FoxyBridge.swift:304-354@fireHaptic"
+    ]
+  },
+  {
+    "name": "username",
+    "direction": "page->native",
+    "kind": "message",
+    "domain": "lifecycle",
+    "phase": "P1",
+    "payloadSchema": {
+      "fields": {
+        "username": "string"
+      }
+    },
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "behaviour": "pushToNative(): { username } with no action and no id, on every change, left over from a widget that does not exist. Native dispatch reads it as `.ignored` and does nothing. Android must ignore it the same way (and must not treat it as an unknown action).",
+    "pageRef": [
+      "build/app/05-device-shell.js:153@postMessage(payload)"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:456-470@guard let action"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "inboxOpen",
+    "domain": "onion",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "onion": "string?",
+          "nostr": "string?"
+        }
+      },
+      "errors": [
+        "No address: Tor is not ready.",
+        "No onion address: Tor is not ready."
+      ]
+    },
+    "behaviour": "An ephemeral v3 onion address (key made and discarded by Tor) forwarding to a 127.0.0.1 listener, plus a Nostr nprofile listening on up to four relays over Tor, for the payment request on screen. A spare is kept warm.",
+    "pageRef": [
+      "Web/foxy-wallet.js:21860@'inboxOpen'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:410@\"inboxOpen\"",
+      "Foxy/Bridge/FoxyBridge+Delivery.swift:111-150@handleInboxOpen",
+      "Foxy/Bridge/FoxyBridge+Delivery.swift:61-73@answerInboxOpen"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "inboxClose",
+    "domain": "onion",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "hold": "number"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": []
+    },
+    "behaviour": "End the address (after `hold` seconds, 0..180, if a payment may be on its way) and the Nostr inbox.",
+    "pageRef": [
+      "Web/foxy-wallet.js:21878@'inboxClose'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:411@\"inboxClose\"",
+      "Foxy/Bridge/FoxyBridge+Delivery.swift:208-230@handleInboxClose"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "inboxAnswer",
+    "domain": "onion",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "answer": "string",
+        "status": "integer",
+        "text": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "No payment is waiting on that answer."
+      ]
+    },
+    "behaviour": "Answer a payment that arrived (_requestPaid): status 200, 409 or 422 only, 300 characters of text.",
+    "pageRef": [
+      "Web/foxy-wallet.js:22182@'inboxAnswer'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:412@\"inboxAnswer\"",
+      "Foxy/Bridge/FoxyBridge+Delivery.swift:234-246@handleInboxAnswer"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "onionPost",
+    "domain": "onion",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "url": "string",
+        "body": "string",
+        "timeout": "number"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "status-body",
+      "errors": [
+        "That payment is too large to send.",
+        "<OnionPost failure text>"
+      ]
+    },
+    "behaviour": "POST a payment to another phone's onion: http:// v3 .onion only, no user/query/fragment, through Tor SOCKS, never the open connection; body <=256 kB, answer cut at 64 kB. timeout in ms, clamped to 3..120 s.",
+    "pageRef": [
+      "Web/foxy-wallet.js:8637@'onionPost'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:413@\"onionPost\"",
+      "Foxy/Bridge/FoxyBridge+Delivery.swift:292-323@handleOnionPost"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "nostrSend",
+    "domain": "nostr",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "target": "string",
+        "body": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "errors": [
+        "That request names no Nostr address.",
+        "That payment is too large to send over Nostr.",
+        "No relay took the payment: <why>",
+        "The payment could not be sent over Nostr."
+      ],
+      "note": "how many relays accepted it, as a decimal string"
+    },
+    "behaviour": "NIP-17/59 gift-wrap the payment for the nprofile in a request and publish to at most five wss relays it names (fallback: damus, nos.lol, primal, minibits), each over Tor on its own circuit; never the open connection.",
+    "pageRef": [
+      "Web/foxy-wallet.js:8664@'nostrSend'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:414@\"nostrSend\"",
+      "Foxy/Bridge/FoxyBridge+Delivery.swift:262-288@handleNostrSend",
+      "Foxy/Nostr/NostrDelivery.swift:18-19@fallbackRelays"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "tapReceiveStart",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "payload": "string",
+        "early": "boolean"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "Not something a payer could pay.",
+        "That payment is still going through. A moment."
+      ]
+    },
+    "behaviour": "Advertise the invoice/payment request on screen over BLE (service UUID only). Payment, quote and stage events come back as _requestPaid(.., \"tap\"), _tapQuote, _tap.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23489@'tapReceiveStart'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:416@\"tapReceiveStart\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:22-147@handleTapReceiveStart"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "tapReceiveStop",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": []
+    },
+    "behaviour": "Stop advertising.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23492@'tapReceiveStop'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:417@\"tapReceiveStop\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:149-165@handleTapReceiveStop"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "tapPayStart",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "now": "boolean?"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json-or-text",
+      "values": [
+        "ok"
+      ],
+      "json": {
+        "fields": {
+          "payload": "string",
+          "code": "string"
+        }
+      },
+      "errors": [
+        "Started again.",
+        "Stopped."
+      ]
+    },
+    "behaviour": "Search for a receiver close enough to be touching and answer its offer plus the four-digit code both phones show; now=true only nudges a search already running and answers \"ok\".",
+    "timing": "Page waits 30 min for a payer to touch.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23508@'tapPayStart'",
+      "Web/foxy-wallet.js:23512@'tapPayStart'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:418@\"tapPayStart\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:167-218@handleTapPayStart"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "tapSend",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "body": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "errors": [
+        "There is nothing to hand over.",
+        "That phone is no longer connected."
+      ],
+      "note": "the receiver's answer"
+    },
+    "behaviour": "The payment, over the link this tap already holds, <=64 KB.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23551@'tapSend'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:427@\"tapSend\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:223-245@handleTapSend"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "tapChange",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "body": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "There is no change to send.",
+        "That phone is no longer connected.",
+        "The payer's phone did not say it kept the change."
+      ]
+    },
+    "behaviour": "Change token back to the payer over the same link; resolves when the payer says it kept it (7 s), or late via _tapChangeKeptLate.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23603@'tapChange'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:419@\"tapChange\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:348-399@handleTapChange"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "tapChangeKept",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "kept": "boolean"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "No change is waiting to be kept."
+      ]
+    },
+    "behaviour": "The payer's page saying it wrote the change down (M8).",
+    "pageRef": [
+      "Web/foxy-wallet.js:23700@'tapChangeKept'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:420@\"tapChangeKept\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:474-485@handleTapChangeKept"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "tapAsking",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok",
+        "no link"
+      ],
+      "errors": []
+    },
+    "behaviour": "The receiver is asking its person about an offline payment (M9).",
+    "pageRef": [
+      "Web/foxy-wallet.js:23615@'tapAsking'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:421@\"tapAsking\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:412-421@handleTapAsking"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "tapChangeDue",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": []
+    },
+    "behaviour": "This payment owes change: keep the link.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23689@'tapChangeDue'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:422@\"tapChangeDue\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:463-468@handleTapChangeDue"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "tapQuote",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "body": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "That phone is no longer connected."
+      ]
+    },
+    "behaviour": "Payer's price quote (M10).",
+    "pageRef": [
+      "Web/foxy-wallet.js:23624@'tapQuote'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:423@\"tapQuote\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:429-438@handleTapQuote"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "tapTerms",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "body": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "That phone is no longer connected."
+      ]
+    },
+    "behaviour": "Receiver agreeing the price (M11).",
+    "pageRef": [
+      "Web/foxy-wallet.js:23629@'tapTerms'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:424@\"tapTerms\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:445-454@handleTapTerms"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "tapPayStop",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": []
+    },
+    "behaviour": "Stop searching/connecting; a waiting tapPayStart is answered with the error \"Stopped.\".",
+    "pageRef": [
+      "Web/foxy-wallet.js:23762@'tapPayStop'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:425@\"tapPayStop\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:267-272@handleTapPayStop"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "bluetoothAsk",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "allowed",
+        "denied",
+        "off",
+        "unsupported",
+        "unknown"
+      ],
+      "errors": []
+    },
+    "behaviour": "First-install screen: put the OS Bluetooth permission question up, answer the state (also pushed to window.__foxyBluetoothAnswer). Scans and advertises nothing.",
+    "pageRef": [
+      "Web/foxy-tor-gate.js:2071@action: 'bluetoothAsk'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:426@\"bluetoothAsk\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:254-265@handleBluetoothAsk"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "shakeStart",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": []
+    },
+    "behaviour": "While set, a shake is pushed as _tap({side:\"receive\",stage:\"shake\"}).",
+    "pageRef": [
+      "Web/foxy-wallet.js:23480@'shakeStart'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:441@\"shakeStart\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:279-285@handleShakeStart"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "shakeStop",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": []
+    },
+    "behaviour": "Clears the shake flag.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23480@'shakeStop'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:442@\"shakeStop\"",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:287-293@handleShakeStop"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "cardBegin",
+    "domain": "card",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "text": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "<CardLinkError words>"
+      ]
+    },
+    "behaviour": "Open the NFC session with one printable line (<=120 chars) of the page's text; answers when a card is there. One session at a time.",
+    "timing": "Page waits 63 s.",
+    "pageRef": [
+      "Web/foxy-wallet.js:24870@'cardBegin'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:429@\"cardBegin\"",
+      "Foxy/Bridge/FoxyBridge+Flashcard.swift:27-64@handleCardBegin"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "cardSend",
+    "domain": "card",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "apdu": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "errors": [
+        "That is not a command for a card.",
+        "That is not a command Foxy sends to a card.",
+        "<CardLinkError words>"
+      ],
+      "note": "the response APDU, hex"
+    },
+    "behaviour": "One APDU (hex) and its answer. Only SELECT of Foxy's own applet AID, then only that applet's 27 instructions (CardGate). Never logged: one carries the PIN.",
+    "pageRef": [
+      "Web/foxy-wallet.js:24795@'cardSend'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:430@\"cardSend\"",
+      "Foxy/Bridge/FoxyBridge+Flashcard.swift:69-95@handleCardSend"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "cardSay",
+    "domain": "card",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "text": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": []
+    },
+    "behaviour": "Change the line on the NFC sheet.",
+    "pageRef": [
+      "Web/foxy-wallet.js:24799@'cardSay'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:431@\"cardSay\"",
+      "Foxy/Bridge/FoxyBridge+Flashcard.swift:122-128@handleCardSay"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "cardAgain",
+    "domain": "card",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "text": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": [
+        "<CardLinkError words>"
+      ]
+    },
+    "behaviour": "The card left part way: look for it again; the applet must be selected again.",
+    "pageRef": [
+      "Web/foxy-wallet.js:24816@'cardAgain'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:432@\"cardAgain\"",
+      "Foxy/Bridge/FoxyBridge+Flashcard.swift:101-119@handleCardAgain"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "cardEnd",
+    "domain": "card",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "text": "string?",
+        "error": "string?"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "text",
+      "values": [
+        "ok"
+      ],
+      "errors": []
+    },
+    "behaviour": "Close the sheet with a word or a reason.",
+    "pageRef": [
+      "Web/foxy-wallet.js:24777@'cardEnd'",
+      "Web/foxy-wallet.js:24808@'cardEnd'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:433@\"cardEnd\"",
+      "Foxy/Bridge/FoxyBridge+Flashcard.swift:133-145@handleCardEnd"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "cardOwnerKey",
+    "domain": "card",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "key": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "pub": "string"
+        }
+      },
+      "errors": [
+        "bad request",
+        "no seed",
+        "the seed could not be read"
+      ]
+    },
+    "behaviour": "The P-256 owner PUBLIC key (04||X||Y hex) derived from the seed for one card (its 33-byte compressed key, hex).",
+    "pageRef": [
+      "Web/foxy-wallet.js:9784@'cardOwnerKey'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:436@\"cardOwnerKey\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:402-407@handleCardOwnerKey",
+      "Foxy/Keychain/SeedActions.swift:467-476@cardOwnerKey"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "cardOwnerSign",
+    "domain": "card",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string",
+        "key": "string",
+        "label": "string",
+        "nonce": "string",
+        "value": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "sig": "string"
+        }
+      },
+      "errors": [
+        "bad request",
+        "no seed",
+        "the seed could not be read"
+      ]
+    },
+    "behaviour": "ECDSA P-256 DER signature over \"FoxyCard/\"+label, nonce, value for one of six labels (change-pin, set-limit, set-owner, set-card, load, reset), each with its value shape.",
+    "pageRef": [
+      "Web/foxy-wallet.js:9808@'cardOwnerSign'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:437@\"cardOwnerSign\"",
+      "Foxy/Bridge/NativeSeedBridge.swift:412-417@handleCardOwnerSign",
+      "Foxy/Keychain/SeedActions.swift:489-498@cardOwnerSign"
+    ]
+  },
+  {
+    "direction": "page->native",
+    "kind": "action",
+    "name": "cardTime",
+    "domain": "card",
+    "phase": "LATER",
+    "payloadSchema": {
+      "fields": {
+        "action": "string",
+        "id": "string"
+      }
+    },
+    "reply": {
+      "via": "FoxyWallet._scanResult(id, text, error)",
+      "format": "json",
+      "json": {
+        "fields": {
+          "time": "integer",
+          "sig": "string"
+        }
+      },
+      "errors": [
+        "The clock on this phone is not a time a card can be told."
+      ]
+    },
+    "behaviour": "The phone clock (u32 seconds) signed by the INTERIM time key built into the app, for cards of software <=1.14.",
+    "pageRef": [
+      "Web/foxy-wallet.js:9931@'cardTime'"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:439@\"cardTime\"",
+      "Foxy/Bridge/FoxyBridge+Flashcard.swift:152-158@handleCardTime",
+      "Foxy/Flashcard/CardTime.swift:110-113@reply"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_scanResult",
+    "domain": "transport",
+    "phase": "P1",
+    "target": "window.FoxyWallet._scanResult(id, text, error)",
+    "payloadSchema": {
+      "fields": {
+        "id": "string",
+        "text": "string|null",
+        "error": "string|null"
+      }
+    },
+    "behaviour": "The one reply path for every action with an id. Exactly one of text/error is non-null. Each argument is a JSON string literal (JSONSerialization of [value], brackets dropped), so a scanned string cannot break out. An id the page no longer waits for is ignored by the page.",
+    "timing": "Async, on the main thread. Late replies after the page's own timeout are dropped by the page.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23418@_scanResult"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:1488-1494@_scanResult",
+      "Foxy/Bridge/FoxyBridge.swift:1513-1519@literal"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_privacy",
+    "domain": "tor",
+    "phase": "P2",
+    "target": "window.FoxyWallet._privacy(snapshot)",
+    "payloadSchema": {
+      "fields": {
+        "tor": "string",
+        "progress": "integer",
+        "everUp": "boolean",
+        "unprotected": "boolean",
+        "transport": "string",
+        "orbot": "string",
+        "firstSetup": "boolean",
+        "vpn": "boolean",
+        "orbotKey": "boolean",
+        "network": "string"
+      }
+    },
+    "behaviour": "Route snapshot on every Tor, Orbot or network change (and once at start without Tor). The page whitelists these fields.",
+    "pageRef": [
+      "Web/foxy-wallet.js:14545@_privacy"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:157-160@_privacy",
+      "Foxy/Bridge/FoxyBridge.swift:89-117@startTor"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_captured",
+    "domain": "lifecycle",
+    "phase": "P3",
+    "target": "window.FoxyWallet._captured(bool)",
+    "payloadSchema": {
+      "fields": {
+        "on": "boolean"
+      }
+    },
+    "behaviour": "Screen recording/mirroring started or stopped: the page hides the seed and secrets while it lasts.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25591@_captured"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:142-145@_captured",
+      "Foxy/FoxyWebView.swift:961-963@captureChanged"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_screenshot",
+    "domain": "lifecycle",
+    "phase": "P3",
+    "target": "window.FoxyWallet._screenshot()",
+    "payloadSchema": {
+      "fields": {}
+    },
+    "behaviour": "A screenshot was taken (cannot be stopped on iOS).",
+    "pageRef": [
+      "Web/foxy-wallet.js:25598@_screenshot"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:148-150@_screenshot",
+      "Foxy/FoxyWebView.swift:965-967@screenshotTaken"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_previewRefused",
+    "domain": "scanner",
+    "phase": "P3",
+    "target": "window.FoxyWallet._previewRefused(why)",
+    "payloadSchema": {
+      "fields": {
+        "why": "string"
+      }
+    },
+    "behaviour": "previewStart was refused (as well as its error reply).",
+    "pageRef": [
+      "Web/foxy-wallet.js:25659@_previewRefused"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:1107@_previewRefused"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_liveScan",
+    "domain": "scanner",
+    "phase": "P3",
+    "target": "window.FoxyWallet._liveScan(text)",
+    "payloadSchema": {
+      "fields": {
+        "text": "string"
+      }
+    },
+    "behaviour": "A code the live preview decoded.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25665@_liveScan"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:1135@_liveScan"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_pasted",
+    "domain": "clipboard",
+    "phase": "P3",
+    "target": "window.FoxyWallet._pasted(text)",
+    "payloadSchema": {
+      "fields": {
+        "text": "string"
+      }
+    },
+    "behaviour": "Text pasted through the paste control; a seed phrase arrives as \"\".",
+    "pageRef": [
+      "Web/foxy-wallet.js:25698@_pasted"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge.swift:1225@_pasted"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_putAway",
+    "domain": "lifecycle",
+    "phase": "P1",
+    "target": "window.FoxyWallet._putAway && window.FoxyWallet._putAway(true)",
+    "payloadSchema": {
+      "fields": {
+        "on": "boolean"
+      }
+    },
+    "behaviour": "The app went to the background: the page starts its small-change top-up. Native then polls _tidying and Route.out every 0.25 s and keeps Tor up for up to 20 s while money moves, 3 s for other requests, then shuts the door.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25104@_putAway"
+    ],
+    "iosRef": [
+      "Foxy/FoxyWebView.swift:1102@_putAway",
+      "Foxy/FoxyWebView.swift:973-1105@appEnteredBackground",
+      "Foxy/Network/Route.swift:200-206@leaving"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "read",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_tidying",
+    "domain": "lifecycle",
+    "phase": "P1",
+    "target": "!!(window.FoxyWallet && window.FoxyWallet._tidying)",
+    "payloadSchema": {
+      "fields": {}
+    },
+    "behaviour": "Read by native (evaluateJavaScript with a result) while putting away: true while the change top-up is waiting or with the mint.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25105@_tidying"
+    ],
+    "iosRef": [
+      "Foxy/FoxyWebView.swift:1068@_tidying"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_resumed",
+    "domain": "lifecycle",
+    "phase": "P1",
+    "target": "window.FoxyWallet._resumed(secondsAway)",
+    "payloadSchema": {
+      "fields": {
+        "away": "integer"
+      }
+    },
+    "behaviour": "Back from the background after `away` whole seconds (0 for focus loss without backgrounding). Sent after Tor is told (torResumed) and __foxyUptime is pushed.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25712@_resumed"
+    ],
+    "iosRef": [
+      "Foxy/FoxyWebView.swift:1146@_resumed",
+      "Foxy/FoxyWebView.swift:1106-1147@appBecameActive"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "global",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "__foxyUptime",
+    "domain": "lifecycle",
+    "phase": "P1",
+    "target": "window.__foxyUptime = { s: systemUptimeSeconds, p: performance.now() }",
+    "payloadSchema": {
+      "fields": {
+        "s": "number",
+        "p": "number"
+      }
+    },
+    "behaviour": "Monotonic device uptime, for the PIN back-off clock (22-screen-lock.js). Pushed on didFinish and on every return. Android: SystemClock.elapsedRealtime()/1000.",
+    "pageRef": [
+      "Web/foxy-wallet.js:25451@__foxyUptime"
+    ],
+    "iosRef": [
+      "Foxy/FoxyWebView.swift:1166@__foxyUptime"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "global",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "deepLink",
+    "domain": "lifecycle",
+    "phase": "P3",
+    "target": "location.hash = 'foxy=<screen>&amt=..&unit=..&rail=..'",
+    "payloadSchema": {
+      "fields": {
+        "hash": "string"
+      }
+    },
+    "behaviour": "DEBUG BUILDS ONLY: foxy://receive?amt=50&unit=sat&rail=cashu rebuilt from a whitelist into the page's own hash. Release registers no scheme and has no handler; the page reads it only where FOXY_DEBUG is set.",
+    "pageRef": [],
+    "iosRef": [
+      "Foxy/FoxyWebView.swift:476-507@receiveDeepLink",
+      "Foxy/FoxyWebView.swift:520@location.hash"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_requestPaid",
+    "domain": "onion",
+    "phase": "LATER",
+    "target": "window.FoxyWallet._requestPaid(body, answerId[, \"tap\"])",
+    "payloadSchema": {
+      "fields": {
+        "body": "string",
+        "answerId": "string",
+        "via": "string?"
+      }
+    },
+    "behaviour": "A payment arrived for the request on screen (onion inbox, Nostr inbox with answerId \"\", or a tap with \"tap\"). The page redeems it and answers with inboxAnswer.",
+    "pageRef": [
+      "Web/foxy-wallet.js:22169@_requestPaid"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge+Delivery.swift:104@_requestPaid",
+      "Foxy/Bridge/FoxyBridge+Delivery.swift:256@_requestPaid",
+      "Foxy/Bridge/FoxyBridge+Tap.swift:121@_requestPaid"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_tapQuote",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "target": "window.FoxyWallet._tapQuote(text)",
+    "payloadSchema": {
+      "fields": {
+        "text": "string"
+      }
+    },
+    "behaviour": "M10 arrived on the receiver.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23635@_tapQuote"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge+Tap.swift:130@_tapQuote"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_tapChange",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "target": "window.FoxyWallet._tapChange(token)",
+    "payloadSchema": {
+      "fields": {
+        "token": "string"
+      }
+    },
+    "behaviour": "Change arrived on the payer; it answers with tapChangeKept.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23704@_tapChange"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge+Tap.swift:194@_tapChange"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_tapTerms",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "target": "window.FoxyWallet._tapTerms(text)",
+    "payloadSchema": {
+      "fields": {
+        "text": "string"
+      }
+    },
+    "behaviour": "M11 arrived on the payer.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23672@_tapTerms"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge+Tap.swift:200@_tapTerms"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "global",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "__foxyBluetoothAnswer",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "target": "window.__foxyBluetoothAnswer(state)",
+    "payloadSchema": {
+      "fields": {
+        "state": "string"
+      }
+    },
+    "behaviour": "The Bluetooth question was answered (defined by the gate's first-install screen).",
+    "pageRef": [
+      "Web/foxy-tor-gate.js:2060@__foxyBluetoothAnswer"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge+Tap.swift:259@__foxyBluetoothAnswer"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_turned",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "target": "window.FoxyWallet._turned(upsideDown)",
+    "payloadSchema": {
+      "fields": {
+        "upsideDown": "boolean"
+      }
+    },
+    "behaviour": "Device turned portrait/upside-down (the receive screen turns itself for the payer across the table).",
+    "pageRef": [
+      "Web/foxy-wallet.js:23776@_turned"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge+Tap.swift:303-307@_turned",
+      "Foxy/FoxyWebView.swift:42@turned"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_tapChangeKeptLate",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "target": "window.FoxyWallet._tapChangeKeptLate()",
+    "payloadSchema": {
+      "fields": {}
+    },
+    "behaviour": "The payer said it kept the change after tapChange had already answered.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23578@_tapChangeKeptLate"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge+Tap.swift:380@_tapChangeKeptLate"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_tap",
+    "domain": "bluetooth",
+    "phase": "LATER",
+    "target": "window.FoxyWallet._tap({side, stage, code?, edge?, pct?})",
+    "payloadSchema": {
+      "fields": {
+        "side": "string",
+        "stage": "string",
+        "code": "string?",
+        "edge": "string?",
+        "pct": "integer?"
+      }
+    },
+    "behaviour": "Tap progress. side receive|pay; stage one of searching, far, connecting, linked, sending, receiving, code, asking, gone, shake, nearby, version, off, denied, unsupported.",
+    "pageRef": [
+      "Web/foxy-wallet.js:23784@_tap"
+    ],
+    "iosRef": [
+      "Foxy/Bridge/FoxyBridge+Tap.swift:487-498@_tap",
+      "Foxy/Bluetooth/TapLink.swift:5-24@TapStage"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_card",
+    "domain": "card",
+    "phase": "LATER",
+    "target": "window.FoxyWallet._card({stage, text})",
+    "payloadSchema": {
+      "fields": {
+        "stage": "string",
+        "text": "string"
+      }
+    },
+    "behaviour": "NFC session progress: stage connected|say|end|lost.",
+    "pageRef": [
+      "Web/foxy-wallet.js:24750@_card"
+    ],
+    "iosRef": [
+      "Foxy/Flashcard/CardGate.swift:143-149@_card"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "script",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "payloadSchema": {
+      "fields": {}
+    },
+    "name": "noWebRTC",
+    "domain": "network",
+    "phase": "P1",
+    "target": "every RTC* constructor defined as undefined, non-writable, non-configurable; document start, ALL frames",
+    "behaviour": "WebRTC STUN is UDP no request block sees; it is removed before any page script so it cannot leak the IP.",
+    "pageRef": [],
+    "iosRef": [
+      "Foxy/FoxyWebView.swift:138-141@noWebRTC",
+      "Foxy/FoxyWebView.swift:434-443@noWebRTC"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "script",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "payloadSchema": {
+      "fields": {}
+    },
+    "name": "noCallout",
+    "domain": "lifecycle",
+    "phase": "P1",
+    "target": "a <style>: no touch callout / user-select outside inputs; document end, main frame",
+    "behaviour": "Look Up / Translate / Search Web would hand selected text to services on the open network.",
+    "pageRef": [],
+    "iosRef": [
+      "Foxy/FoxyWebView.swift:146-157@-webkit-touch-callout"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "global",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "payloadSchema": {
+      "fields": {
+        "value": "boolean"
+      }
+    },
+    "name": "__foxyClock24",
+    "domain": "lifecycle",
+    "phase": "P1",
+    "target": "window.__foxyClock24 = true|false",
+    "behaviour": "The phone's 12/24-hour setting (Android: DateFormat.is24HourFormat).",
+    "pageRef": [],
+    "iosRef": [
+      "Foxy/FoxyWebView.swift:164@__foxyClock24"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "global",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "payloadSchema": {
+      "fields": {
+        "value": "boolean"
+      }
+    },
+    "name": "FOXY_DEBUG",
+    "domain": "debug",
+    "phase": "P1",
+    "target": "window.FOXY_DEBUG = true (debug builds only)",
+    "behaviour": "Debug build marker read synchronously by the page.",
+    "pageRef": [],
+    "iosRef": [
+      "Foxy/FoxyWebView.swift:173@FOXY_DEBUG"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "global",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "payloadSchema": {
+      "fields": {
+        "value": "boolean"
+      }
+    },
+    "name": "FOXY_SHOW_WARNING",
+    "domain": "debug",
+    "phase": "P1",
+    "target": "window.FOXY_SHOW_WARNING = true (debug, env FOXY_SHOW_WARNING=1)",
+    "behaviour": "Show the first-launch warning again.",
+    "pageRef": [
+      "Web/foxy-tor-gate.js:1860@FOXY_SHOW_WARNING"
+    ],
+    "iosRef": [
+      "Foxy/FoxyWebView.swift:179@FOXY_SHOW_WARNING"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "script",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "payloadSchema": {
+      "fields": {}
+    },
+    "name": "consoleSilence",
+    "domain": "debug",
+    "phase": "P1",
+    "target": "console.log/warn/info/debug = noop (release builds only)",
+    "behaviour": "Release builds silence the page console except console.error. Note: mirrorConsole() still forwards log/warn/error to the `log` action in every build.",
+    "pageRef": [],
+    "iosRef": [
+      "Foxy/FoxyWebView.swift:188-203@console.log = noop"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "global",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "payloadSchema": {
+      "fields": {
+        "value": "string"
+      }
+    },
+    "name": "__foxyPageHash",
+    "domain": "lifecycle",
+    "phase": "P1",
+    "target": "window.__foxyPageHash = '<64 hex>'",
+    "behaviour": "sha256 of the staged page manifest (= sha256(core/SHA256SUMS)); the drawer shows its first 12 characters so a person can compare with the reviewed commit.",
+    "pageRef": [],
+    "iosRef": [
+      "Foxy/FoxyWebView.swift:377-380@__foxyPageHash",
+      "Foxy/FoxyWebView.swift:852-879@manifestHash"
+    ]
+  }
+]

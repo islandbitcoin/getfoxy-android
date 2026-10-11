@@ -33,3 +33,6 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# conformance harness dependencies (npm ci)
+node_modules/
