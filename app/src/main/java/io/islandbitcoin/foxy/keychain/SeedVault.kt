@@ -30,7 +30,17 @@ interface SeedKeys {
  * key, a key with no file, a Keystore that throws (a locked phone, a key gone
  * invalid) or a ciphertext that does not authenticate is **failed**, and failed
  * is never taken for absent: a page told "no seed" makes one, and the write that
- * follows would replace the real seed.
+ * follows would replace the real seed. The one exception is a first write cut
+ * off between keygen and the file rename: it leaves a key, no file and
+ * [CREATING_NAME]; that reads absent and the orphan key is removed. A key with
+ * no file and no marker stays failed.
+ *
+ * Every disk-touching call ([isThere], [read], [write]) may delete a cut-off
+ * first write's orphan key and marker, so they must all run on the one seed
+ * executor (`foxy-seed`, FoxyServices.seedExecutor): a clear on another thread
+ * could delete the key while [write] on the executor sits between making it
+ * and renaming the file in, leaving a file with no key, failed for good.
+ * [onSeedThread] is called first by each and, in debug builds, checks it.
  *
  * Only the BIP-39 seed made from the words is kept in memory, for the visit, and
  * it goes when Foxy is put away (but for the work of leaving, 25 s at most), when
@@ -39,6 +49,7 @@ interface SeedKeys {
 class SeedVault(
     private val dir: File,
     private val keys: SeedKeys,
+    private val onSeedThread: () -> Unit = {},
     private val clock: () -> Long = { System.nanoTime() / 1_000_000 },
 ) {
     sealed class Answer {
@@ -120,16 +131,29 @@ class SeedVault(
 
     // MARK: At rest
 
-    /** Whether a seed is here at all, reading nothing: true, false, or null when the Keystore would not say. */
-    fun isThere(): Boolean? = try {
-        clearCutOffWrite()
-        file.exists() || keys.exists()
-    } catch (e: Exception) {
-        Log.line("[foxy] seed: the keystore would not say whether a key is there (${e.javaClass.simpleName})")
-        null
+    /**
+     * Whether a seed is here at all, without opening it: true, false, or null
+     * when the Keystore would not say. Not read-only: like [read], it first
+     * removes a cut-off first write's orphan key and marker, so it runs on the
+     * seed executor only, as [write] does.
+     */
+    fun isThere(): Boolean? {
+        onSeedThread()
+        return try {
+            clearCutOffWrite()
+            file.exists() || keys.exists()
+        } catch (e: Exception) {
+            Log.line("[foxy] seed: the keystore would not say whether a key is there (${e.javaClass.simpleName})")
+            null
+        }
     }
 
+    /**
+     * The three-way read (S4). Not read-only: it first removes a cut-off first
+     * write's orphan key and marker, so it runs on the seed executor only.
+     */
     fun read(): Answer {
+        onSeedThread()
         val hasFile: Boolean
         val hasKey: Boolean
         try {

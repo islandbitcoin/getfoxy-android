@@ -24,13 +24,18 @@ class FoxyServices(context: Context) {
     private val app = context.applicationContext
     val directory = app.noBackupFilesDir
     val flags = Flags(directory)
-    val vault = SeedVault(directory, KeystoreSeedKeys(app))
+    /** The vault's disk calls may delete a cut-off write's orphan key, so they run on [seedExecutor] only. */
+    val vault = SeedVault(directory, KeystoreSeedKeys(app), onSeedThread = {
+        if (BuildConfig.DEBUG) {
+            check(Thread.currentThread().name == SEED_THREAD) { "the seed vault touched off the $SEED_THREAD executor" }
+        }
+    })
     val counters = CounterStore(directory)
     val migrationWindow = SeedMigrationWindow(flags)
     val candidates = SeedCandidates()
 
     /** The seed actions' one thread: a reservation is atomic because nothing else runs beside it. */
-    val seedExecutor: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "foxy-seed") }
+    val seedExecutor: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, SEED_THREAD) }
 
     /** The bundled wordlist, only if it is the pinned one. */
     val wordlist: List<String>? by lazy {
@@ -58,4 +63,9 @@ class FoxyServices(context: Context) {
         flags = flags,
         passcodeSet = { keyguard?.isDeviceSecure ?: true },
     )
+
+    companion object {
+        /** The one seed executor's thread; the vault's disk calls run there and nowhere else. */
+        const val SEED_THREAD = "foxy-seed"
+    }
 }

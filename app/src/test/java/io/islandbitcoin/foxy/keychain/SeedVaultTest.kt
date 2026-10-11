@@ -209,6 +209,38 @@ class SeedVaultTest {
     }
 
     @Test
+    fun everyCallThatCanClearACutOffWriteChecksItsThreadFirst() {
+        // isThere and read can delete an orphan key, so off the seed executor they must stop before touching it
+        class OffThread : RuntimeException()
+        var calls = 0
+        var allowed = true
+        val guarded = SeedVault(dir, keys, onSeedThread = { calls++; if (!allowed) throw OffThread() }) { now }
+
+        assertEquals(false, guarded.isThere())
+        assertEquals(1, calls)
+        assertEquals(SeedVault.Answer.Absent, guarded.read())
+        assertEquals(2, calls)
+        assertNull(guarded.write(words))
+        assertTrue("a write reads through the same check", calls > 2)
+
+        // a cut-off first write, then a call from the wrong thread: nothing is cleared
+        File(dir, SeedVault.FILE_NAME).delete()
+        creating.writeBytes(ByteArray(0))
+        allowed = false
+        for (call in listOf<() -> Unit>({ guarded.isThere() }, { guarded.read() }, { guarded.write(words) })) {
+            try {
+                call()
+                org.junit.Assert.fail("a call off the seed thread should have been stopped")
+            } catch (_: OffThread) {}
+            assertNotNull("the key is left for the seed thread", keys.key)
+            assertTrue("and the marker with it", creating.exists())
+        }
+        allowed = true
+        assertEquals(SeedVault.Answer.Absent, guarded.read())
+        assertNull(keys.key)
+    }
+
+    @Test
     fun aKeyMadeForAWriteWhoseFileCouldNotBeWrittenGoesWithIt() {
         // the key is made, then the folder refuses the seed file
         val v = SeedVault(dir, KeysThen(keys) { TestSupport.makeUnwritable(dir) }) { now }
