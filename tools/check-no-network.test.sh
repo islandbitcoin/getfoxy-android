@@ -35,6 +35,13 @@ for line in \
   'val c = url.openConnection()' \
   'val s = url.openStream()' \
   'import java.net.URL' \
+  'import java.net.URL as Link' \
+  'val t = java.net.URL(u).readText()' \
+  'val b = java.net.URL(u).readBytes()' \
+  'import java.net.*' \
+  'val t = URL(u).readText()' \
+  'val b = URL(u).readBytes()' \
+  'val t = uri.toURL().readText()' \
   'val d = context.getSystemService(DownloadManager::class.java)' \
   'import org.chromium.net.CronetEngine' \
   'import com.android.volley.toolbox.Volley' \
@@ -58,6 +65,10 @@ plant "$app" 'webView?.loadUrl(PAGE_URL)'
 expect pass "the asset page"
 plant 'main/java/io/islandbitcoin/foxy/network/Route.kt' 'import okhttp3.OkHttpClient'
 expect pass "OkHttp in Route.kt"
+plant "$app" 'import java.net.URLEncoder'
+expect pass "URLEncoder is not java.net.URL"
+plant "$app" 'val u = Uri.parse(PAGE_URL)'
+expect pass "a Uri is not a URL"
 plant 'androidTest/java/io/islandbitcoin/foxy/ListenerService.java' 'ServerSocket s = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());'
 expect pass "the net-block test's listener"
 plant 'androidTest/java/io/islandbitcoin/foxy/NetBlockTest.kt' '"try { ws = new WebSocket(host); } catch (e) {}"'

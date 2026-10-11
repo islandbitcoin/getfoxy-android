@@ -4,9 +4,14 @@ import android.os.SystemClock
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import io.islandbitcoin.foxy.bridge.FoxyBridge
+import io.islandbitcoin.foxy.debug.FieldLog
 import io.islandbitcoin.foxy.network.Route
 import io.islandbitcoin.foxy.web.WebHost
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -49,18 +54,37 @@ class PutAwayTest {
     @Test
     fun aReplyAfterTheWebViewIsGoneDoesNothing() {
         val kept = AtomicReference<WebHost?>(null)
+        val bridgeRef = AtomicReference<FoxyBridge?>(null)
         ActivityScenario.launch(MainActivity::class.java).use { s ->
             assertTrue(Page.until(s, Page.BOOTED, 90_000))
-            s.onActivity { kept.set(it.host) }
+            // the bridge as it was while the page was up: WebHost.destroy() nulls its own field
+            s.onActivity {
+                kept.set(it.host)
+                bridgeRef.set(it.host!!.bridge)
+            }
         }
         val host = kept.get()!!
-        val bridge = AtomicReference(host.bridge)
+        val bridge = bridgeRef.get()
+        assertNotNull("the page had a bridge", bridge)
+        assertNull("the WebView is gone", host.webView)
+        FieldLog.clear()
         // the activity and its WebView are gone; a late answer and a late push must not throw
-        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            host.evaluate("window.FoxyWallet && window.FoxyWallet._resumed(0)")
-            bridge.get()?.resolve("late-1", "ok", null)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val thrown = AtomicReference<Throwable?>(null)
+        instrumentation.runOnMainSync {
+            try {
+                bridge!!.resolve("late-1", "ok", null)
+                host.evaluate("window.FoxyWallet && window.FoxyWallet._resumed(0)")
+            } catch (t: Throwable) {
+                thrown.set(t)
+            }
         }
-        SystemClock.sleep(500)
-        assertFalse(host.webView != null)
+        // resolve posts its evaluate to the main looper: let it run
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync {}
+        assertNull("nothing threw", thrown.get())
+        assertNull(host.webView)
+        val dropped = FieldLog.lines().count { it.text == WebHost.DROPPED_LINE }
+        assertEquals("the late reply and the late push were both dropped by the guard, not sent to a WebView", 2, dropped)
     }
 }

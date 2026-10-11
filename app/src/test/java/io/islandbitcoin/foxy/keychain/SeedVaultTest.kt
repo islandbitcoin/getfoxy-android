@@ -138,6 +138,91 @@ class SeedVaultTest {
         assertNull("the same words again are no change", vault.write(words))
     }
 
+    /** The process dying: not an Exception, so nothing in seal() catches it. */
+    private class Died : Error("the process died")
+
+    /** FakeKeys, with a hook that runs once the key is made. */
+    private class KeysThen(val inner: FakeKeys, val afterCreate: () -> Unit) : SeedKeys {
+        override fun exists() = inner.exists()
+        override fun get() = inner.get()
+        override fun create(): javax.crypto.SecretKey = inner.create().also { afterCreate() }
+        override fun delete() = inner.delete()
+    }
+
+    private val creating get() = File(dir, SeedVault.CREATING_NAME)
+
+    @Test
+    fun aFirstWriteCutOffBetweenItsKeyAndItsFileReadsAbsentAndCanBeMadeAgain() {
+        // the person swipes Foxy away while the Keystore is making the seed's key
+        val dying = SeedVault(dir, KeysThen(keys) { throw Died() }) { now }
+        try {
+            dying.write(words)
+            org.junit.Assert.fail("the write should have died")
+        } catch (_: Died) {}
+        assertNotNull("the key was made", keys.key)
+        assertFalse("and the seed file never was", File(dir, SeedVault.FILE_NAME).exists())
+        assertTrue("the marker says a first write was under way", creating.exists())
+
+        // the next launch: the orphan key goes and the vault is absent, not failed for good
+        val relaunched = SeedVault(dir, keys) { now }
+        assertEquals(SeedVault.Answer.Absent, relaunched.read())
+        assertNull("the orphan key was removed", keys.key)
+        assertFalse("and the marker with it", creating.exists())
+        assertNull(relaunched.write(words))
+        assertEquals(SeedVault.Answer.Found(words), relaunched.read())
+        assertFalse("a write that finished leaves no marker", creating.exists())
+
+        // a key without its file and without the marker is still failed (S4)
+        File(dir, SeedVault.FILE_NAME).delete()
+        assertTrue(failed(relaunched.read()))
+        assertNotNull("and its key is left alone", keys.key)
+    }
+
+    @Test
+    fun aMarkerBesideASavedSeedIsOnlyAMarker() {
+        assertNull(vault.write(words))
+        // a first write cut off after its rename, before the marker went
+        creating.writeBytes(ByteArray(0))
+        assertEquals(SeedVault.Answer.Found(words), vault.read())
+        assertFalse(creating.exists())
+        // so a later key-without-file is failed, not taken for a cut-off write
+        File(dir, SeedVault.FILE_NAME).delete()
+        assertTrue(failed(vault.read()))
+    }
+
+    @Test
+    fun aCutOffWriteWhoseKeyWillNotGoIsFailedNotAbsent() {
+        keys.create()
+        creating.writeBytes(ByteArray(0))
+        keys.failExists = true
+        assertTrue(failed(vault.read()))
+        assertTrue("the marker stays for the next read", creating.exists())
+        keys.failExists = false
+        assertEquals(SeedVault.Answer.Absent, vault.read())
+
+        // seedStatus asks isThere first: it clears the cut-off write too, and answers no seed
+        keys.create()
+        creating.writeBytes(ByteArray(0))
+        assertEquals(false, vault.isThere())
+        assertNull(keys.key)
+        assertFalse(creating.exists())
+    }
+
+    @Test
+    fun aKeyMadeForAWriteWhoseFileCouldNotBeWrittenGoesWithIt() {
+        // the key is made, then the folder refuses the seed file
+        val v = SeedVault(dir, KeysThen(keys) { TestSupport.makeUnwritable(dir) }) { now }
+        try {
+            assertEquals("the keystore refused the write", v.write(words))
+        } finally {
+            dir.setWritable(true)
+        }
+        assertEquals("a key was made for the write", 1, keys.created)
+        assertNull("and went with it", keys.key)
+        assertEquals(SeedVault.Answer.Absent, vault.read())
+        assertFalse(creating.exists())
+    }
+
     @Test
     fun aWriteThatFailsLeavesNoKeyBehind() {
         TestSupport.makeUnwritable(dir)

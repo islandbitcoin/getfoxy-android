@@ -43,7 +43,12 @@ rule() {
 
 rule "HttpURLConnection" 'Http(s)?URLConnection'
 rule "URL.openStream / openConnection" '\.openStream\(|\.openConnection\(|URLConnection'
-rule "java.net.URL" 'import java\.net\.URL($|[^A-Za-z])'
+# java.net.URL anywhere, imported or fully qualified: URL(u).readText() and
+# .readBytes() are Kotlin extensions over openStream, so the openStream rule never
+# sees them; a URL may not be built or reached outside Route.kt at all
+rule "java.net.URL" 'java\.net\.URL($|[^A-Za-z])' "$route"
+rule "java.net.* (a wildcard hides URL, Socket and the rest)" 'import java\.net\.\*'
+rule "a URL built outside Route.kt" '(^|[^A-Za-z0-9_.])URL\(|\.toURL\(' "$route"
 rule "DownloadManager" 'DownloadManager'
 rule "Cronet" '[Cc]ronet|org\.chromium\.net'
 rule "Volley" '[Vv]olley'

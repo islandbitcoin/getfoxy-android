@@ -29,7 +29,8 @@ adb shell am instrument -w -r io.islandbitcoin.foxy.test/androidx.test.runner.An
 | `NUT13OnDeviceTest` | the NUT-13 spec vectors and a P2PK key derive on the phone, through the APK's own libsecp256k1 | S6, S7 |
 | `CounterCrashTest` | a `counterReserve` cut off after its range is written and before it is answered leaves the counter past the range for the next launch, and its secrets never left | S6 |
 | `FlagSecureTest` | the window is `FLAG_SECURE` | S19 |
-| `PutAwayTest` | putting Foxy away shuts the door; coming back opens it and pushes `__foxyUptime`; a reply after the WebView is gone does nothing | S21 |
+| `PutAwayTest` | putting Foxy away shuts the door; coming back opens it and pushes `__foxyUptime`; a reply and a push after the WebView is gone are dropped by `WebHost.evaluate`'s guard (two `DROPPED_LINE`s in the field log) and nothing throws | S21 |
+| `SeedForgottenTest` | a seed kept for the visit is gone the moment the activity is finished (Back), inside ProcessLifecycleOwner's 700 ms hold, when `PutAway` never runs; it stays gone after the hold. Needs no Keystore, so it runs on a locked phone too | S20 |
 
 The seed's key is `setUnlockedDeviceRequired(true)`, so on a locked phone it
 cannot be used; that is the point of it. The tests that need it
@@ -57,3 +58,19 @@ On the debug build, then (when there is one) the release build:
    decision 2)
 6. **Nothing reaches the network.** With PCAPdroid capturing Foxy's uid, a
    launch through to the gate and PROCEED OFFLINE records no packet. (S8, S9)
+7. **The seed outlives a restart.** On an unlocked phone: let the page make a
+   seed (`seedCreate`), `adb shell am force-stop io.islandbitcoin.foxy`, launch
+   again: `seedStatus` answers `{"exists":true}` and the page shows the same
+   wallet. (S3, S4; the ENG-647 device exit.) Wiping the seed is not checkable
+   in P1: `seedWipe` is P3 (BRIDGE.md `seedWipe` — P3, S5).
+
+## Runs
+
+Each run: the commit, the phone, and what each test answered. A skipped test
+is not a pass; the device exit needs a run with nothing skipped but
+`KeystoreTest.onALockedPhone…` (which runs only on a locked phone), plus check 7.
+
+| Date | Commit | Phone | Instrumented | Check 7 |
+|---|---|---|---|---|
+| 2026-10-11 | review fixes on `jabariennis/eng-647-shell` | Pixel 8 Pro (42201FDJG00048), **locked** | 13 run: 11 passed, 2 skipped as locked (`KeystoreTest.theVaultRoundTrips…`, `PutAwayTest.puttingAway…`); `onALockedPhone…` passed | not run: needs the phone unlocked |
+| | | | **OPEN:** unlock the phone and run the suite and check 7 again; until then the device exit's seed line is not met | |

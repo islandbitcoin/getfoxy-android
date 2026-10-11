@@ -59,10 +59,15 @@ class WebHost(
         private const val SERVED_PREFIX = "/assets/web/"
         val ALLOWED_ORIGINS = setOf(FoxyBridge.ORIGIN)
 
+        /** What a reply or push for a page that is gone leaves in the field log, instead of reaching a WebView. */
+        const val DROPPED_LINE = "[foxy] webview: a script for a page that is gone was dropped"
+
         /** The WebView features P1 cannot run without. */
         val REQUIRED_FEATURES = listOf(
             WebViewFeature.WEB_MESSAGE_LISTENER,
             WebViewFeature.DOCUMENT_START_SCRIPT,
+            // the dead-end proxy is a required wall (ROUTE.md §4), not one to do without
+            WebViewFeature.PROXY_OVERRIDE,
         )
 
         /** Whether a URL is one the loader may answer: the asset origin, the page's folder, nothing else. */
@@ -97,7 +102,10 @@ class WebHost(
     }
 
     override fun evaluate(js: String) {
-        if (destroyed) return
+        if (destroyed) {
+            Log.line(DROPPED_LINE)
+            return
+        }
         webView?.evaluateJavascript(js, null)
     }
 
@@ -207,14 +215,8 @@ class WebHost(
     }
 
     /** 127.0.0.1:9, nothing listening, no direct fallback and no loopback bypass; the page loads once it is set. */
-    @SuppressLint("RequiresFeature") // checked on the first line
+    @SuppressLint("RequiresFeature") // PROXY_OVERRIDE is in REQUIRED_FEATURES, checked by create()
     private fun setDeadEndProxy() {
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
-            Log.line("[foxy] webview: no proxy override on this phone; the other walls stand")
-            proxyReady = true
-            loadOnce()
-            return
-        }
         val config = ProxyConfig.Builder()
             .addProxyRule("127.0.0.1:9")
             .removeImplicitRules()
@@ -240,8 +242,14 @@ class WebHost(
         evaluate("window.__foxyUptime = { s: $s, p: performance.now() }")
     }
 
+    /**
+     * The page goes: the seed kept for it goes with it (S20), whether or not
+     * ProcessLifecycleOwner ever says stop (a Back that finishes the activity
+     * inside its 700 ms hold never does).
+     */
     fun destroy() {
         destroyed = true
+        services.vault.forgetNativeSeed()
         webView?.let {
             container.removeView(it)
             it.destroy()
@@ -254,7 +262,6 @@ class WebHost(
     /** The page's process ended: drop what native held for it, and load it again in a new WebView. */
     private fun recreate() {
         Log.line("[foxy] webview: the page's process ended; loading it again")
-        services.vault.forgetNativeSeed()
         destroy()
         create()
     }

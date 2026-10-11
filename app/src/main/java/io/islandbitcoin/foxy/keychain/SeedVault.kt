@@ -70,6 +70,17 @@ class SeedVault(
 
     companion object {
         const val FILE_NAME = "foxy-seed.v1.bin"
+
+        /**
+         * Written (atomically) before a write makes the seed's key and removed
+         * once the seed file is in place. A key with no file and this marker is
+         * a first write cut off between the two (the process died while the
+         * Keystore made the key, which takes hundreds of ms in StrongBox): no
+         * seed was ever saved under it, so the orphan key is removed and the
+         * vault is absent. A key with no file and no marker stays failed (S4).
+         * iOS has no such window: one SecItemAdd is atomic.
+         */
+        const val CREATING_NAME = "foxy-seed.creating"
         private const val FORMAT: Byte = 1
         private const val IV_BYTES = 12
         private val AAD = "foxy.seed.v1".toByteArray(Charsets.US_ASCII)
@@ -100,6 +111,7 @@ class SeedVault(
     }
 
     val file: File get() = File(dir, FILE_NAME)
+    private val creating: File get() = File(dir, CREATING_NAME)
 
     private val lock = Any()
     private var nativeSeed: NUT13.Seed? = null
@@ -110,6 +122,7 @@ class SeedVault(
 
     /** Whether a seed is here at all, reading nothing: true, false, or null when the Keystore would not say. */
     fun isThere(): Boolean? = try {
+        clearCutOffWrite()
         file.exists() || keys.exists()
     } catch (e: Exception) {
         Log.line("[foxy] seed: the keystore would not say whether a key is there (${e.javaClass.simpleName})")
@@ -120,6 +133,7 @@ class SeedVault(
         val hasFile: Boolean
         val hasKey: Boolean
         try {
+            clearCutOffWrite()
             hasFile = file.exists()
             hasKey = keys.exists()
         } catch (e: Exception) {
@@ -161,6 +175,26 @@ class SeedVault(
     }
 
     /**
+     * A first write cut off after its key was made and before its file was in
+     * place leaves a key, no file and the [CREATING_NAME] marker: the key never
+     * sealed a saved seed, so it and the marker go and the vault reads absent.
+     * A marker beside a seed file is from a write cut off after its rename, and
+     * only the marker goes. Throws when the Keystore does not answer.
+     */
+    private fun clearCutOffWrite() {
+        if (!creating.exists()) return
+        if (file.exists()) {
+            creating.delete()
+            return
+        }
+        if (keys.exists()) {
+            Log.line("[foxy] seed: a first write was cut off before its seed was saved; its key is removed")
+            keys.delete()
+        }
+        creating.delete()
+    }
+
+    /**
      * A seed write (seedCreate, seedMigrate): never over a different saved seed
      * in P1 (replacing one is seedAdopt's, P3, behind a native question), never
      * blind over a vault that did not answer, and read back before it counts.
@@ -188,7 +222,12 @@ class SeedVault(
         var created = false
         val plain = words.toByteArray(Charsets.UTF_8)
         try {
-            val key = keys.get() ?: keys.create().also { created = true }
+            val key = keys.get() ?: run {
+                // the marker first: a death between the key and the file must read absent, not failed
+                AtomicWrite.write(creating, ByteArray(0))
+                created = true
+                keys.create()
+            }
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, key)
             cipher.updateAAD(AAD)
@@ -201,10 +240,15 @@ class SeedVault(
             System.arraycopy(iv, 0, out, 2, IV_BYTES)
             System.arraycopy(body, 0, out, 2 + IV_BYTES, body.size)
             AtomicWrite.write(file, out)
+            if (created) creating.delete()
         } catch (e: Exception) {
             Log.line("[foxy] seed: not written (${e.javaClass.simpleName})")
             // a key made for this write, with no seed under it, would read as a failure for good
-            if (created && !file.exists()) runCatching { keys.delete() }
+            if (created && !file.exists()) {
+                runCatching { keys.delete() }
+                // the marker stays if the key would not go, so the next read clears it
+                if (runCatching { !keys.exists() }.getOrDefault(false)) creating.delete()
+            }
             return "the keystore refused the write"
         } finally {
             Bytes.wipe(plain)
