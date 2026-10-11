@@ -13,7 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { validateSchema } = require('../lib/schema');
-const { checkRefs, pin } = require('../lib/refs');
+const { checkRefs, checkDocRefs, pin } = require('../lib/refs');
 const { upToDate } = require('../tools/contract-table');
 
 const CONTRACT = require('../contract.json');
@@ -129,6 +129,29 @@ test('against the iOS source: every evaluateJavaScript target is a push in the c
   const pushes = new Set(CONTRACT.filter((e) => e.direction === 'native->page').map((e) => e.name));
   const missing = [...named].filter((n) => !pushes.has(n));
   assert.deepEqual(missing, [], 'native evaluates into the page and the contract does not say so');
+});
+
+test('docs: every iOS file:line the documents cite is real at the pinned commit', (t) => {
+  const dir = path.join(ROOT, 'docs');
+  let checked = 0, skipped = 0;
+  const problems = [];
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.md'))) {
+    const r = checkDocRefs(fs.readFileSync(path.join(dir, f), 'utf8'), IOS || null, 'docs/' + f);
+    checked += r.checked; skipped += r.skipped; problems.push(...r.problems);
+  }
+  assert.deepEqual(problems, []);
+  t.diagnostic(checked + ' refs in docs/ checked' + (skipped ? ', ' + skipped + ' need FOXY_IOS_REF' : ''));
+});
+
+test('docs/BRIDGE.md states the counts contract.json has', () => {
+  const doc = fs.readFileSync(path.join(ROOT, 'docs', 'BRIDGE.md'), 'utf8');
+  const n = (f) => CONTRACT.filter(f).length;
+  const actions = n((e) => e.kind === 'action');
+  const messages = n((e) => e.kind === 'message');
+  const toPage = n((e) => e.direction === 'native->page');
+  assert.ok(doc.includes(actions + ' actions and ' + messages + ' actionless messages'), actions + ' actions, ' + messages + ' messages');
+  assert.ok(doc.includes('(' + toPage + ' native → page items)'), toPage + ' native → page');
+  assert.ok(doc.includes(CONTRACT.length + '\ncontract entries') || doc.includes(CONTRACT.length + ' contract entries'), CONTRACT.length + ' entries');
 });
 
 test('docs/BRIDGE.md ends with the table contract.json generates', () => {

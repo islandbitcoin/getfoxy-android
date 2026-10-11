@@ -59,7 +59,7 @@
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:359@\"log\"",
       "Foxy/Bridge/FoxyBridge.swift:560-563@handleLog",
-      "Foxy/Debug/FieldLog.swift:231-239@secrets"
+      "Foxy/Debug/FieldLog.swift:231-243@secrets"
     ]
   },
   {
@@ -253,7 +253,7 @@
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:394@\"privacy\"",
       "Foxy/Bridge/FoxyBridge.swift:855-857@handlePrivacy",
-      "Foxy/Network/Route.swift:479-521@snapshot"
+      "Foxy/Network/Route.swift:479-512@snapshot"
     ]
   },
   {
@@ -336,8 +336,8 @@
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:397@\"unprotected\"",
       "Foxy/Bridge/FoxyBridge.swift:878-902@handleUnprotected",
-      "Foxy/Bridge/FoxyBridge.swift:252-266@confirmUnprotected",
-      "Foxy/Network/Route.swift:42-46@unprotected"
+      "Foxy/Bridge/FoxyBridge.swift:252-264@confirmUnprotected",
+      "Foxy/Network/Route.swift:42-45@unprotected"
     ]
   },
   {
@@ -446,8 +446,8 @@
       "Foxy/Bridge/FoxyBridge.swift:1447-1486@sendMintRequest",
       "Foxy/Bridge/FoxyBridge.swift:1505-1510@movesMoney",
       "Foxy/Network/Route.swift:318-324@urlProblem",
-      "Foxy/Network/Route.swift:287-311@hostProblem",
-      "Foxy/Network/Route.swift:16-27@label"
+      "Foxy/Network/Route.swift:287-309@hostProblem",
+      "Foxy/Network/Route.swift:16-26@label"
     ]
   },
   {
@@ -664,7 +664,7 @@
       "Foxy/Bridge/FoxyBridge.swift:373@\"seedMigrate\"",
       "Foxy/Bridge/NativeSeedBridge.swift:294-310@handleSeedMigrate",
       "Foxy/Bridge/NativeSeedBridge.swift:201@seedMigrateCheck",
-      "Foxy/Keychain/SeedActions.swift:253-259@migrateReply"
+      "Foxy/Keychain/SeedActions.swift:253-260@migrateReply"
     ]
   },
   {
@@ -747,7 +747,7 @@
       "Foxy/Bridge/FoxyBridge.swift:375@\"counterReserve\"",
       "Foxy/Bridge/NativeSeedBridge.swift:339-344@handleCounterReserve",
       "Foxy/Bridge/NativeSeedBridge.swift:76@counterReserveCheck",
-      "Foxy/Keychain/SeedActions.swift:305-322@counterReserve",
+      "Foxy/Keychain/SeedActions.swift:305-320@counterReserve",
       "Foxy/Keychain/NUT13.swift:167-172@reply"
     ]
   },
@@ -792,7 +792,7 @@
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:376@\"counterReserveAt\"",
       "Foxy/Bridge/NativeSeedBridge.swift:349-354@handleCounterReserveAt",
-      "Foxy/Keychain/SeedActions.swift:325-344@counterReserveAt"
+      "Foxy/Keychain/SeedActions.swift:325-339@counterReserveAt"
     ]
   },
   {
@@ -949,7 +949,7 @@
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:382@\"p2pkReserve\"",
       "Foxy/Bridge/NativeSeedBridge.swift:372-377@handleP2PKReserve",
-      "Foxy/Keychain/SeedActions.swift:377-390@p2pkReserve",
+      "Foxy/Keychain/SeedActions.swift:377-391@p2pkReserve",
       "Foxy/Keychain/P2PK.swift:206-209@pubkeysReply"
     ]
   },
@@ -991,7 +991,7 @@
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:383@\"p2pkPubkeys\"",
       "Foxy/Bridge/NativeSeedBridge.swift:381-386@handleP2PKPubkeys",
-      "Foxy/Keychain/SeedActions.swift:407-418@p2pkPubkeys"
+      "Foxy/Keychain/SeedActions.swift:407-417@p2pkPubkeys"
     ]
   },
   {
@@ -1033,7 +1033,7 @@
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:384@\"p2pkKey\"",
       "Foxy/Bridge/NativeSeedBridge.swift:391-396@handleP2PKKey",
-      "Foxy/Keychain/SeedActions.swift:427-464@p2pkKey",
+      "Foxy/Keychain/SeedActions.swift:427-456@p2pkKey",
       "Foxy/Keychain/P2PK.swift:215-217@keyReply"
     ]
   },
@@ -1154,7 +1154,7 @@
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:387@\"seedAdopt\"",
       "Foxy/Bridge/NativeSeedBridge.swift:526-549@handleSeedAdopt",
-      "Foxy/Bridge/FoxyBridge.swift:196-219@confirmSeedChangeAndWait"
+      "Foxy/Bridge/FoxyBridge.swift:198-220@confirmSeedChangeAndWait"
     ]
   },
   {
@@ -1329,7 +1329,7 @@
       "Foxy/Bridge/FoxyBridge.swift:358@\"scan\"",
       "Foxy/Bridge/FoxyBridge.swift:548-550@handleScan",
       "Foxy/Bridge/FoxyBridge.swift:1083@scannerPrompts",
-      "Foxy/Bridge/FoxyBridge.swift:1062-1076@presentScanner"
+      "Foxy/Bridge/FoxyBridge.swift:1062-1075@presentScanner"
     ]
   },
   {
@@ -1489,7 +1489,7 @@
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:365@\"clipboard\"",
       "Foxy/Bridge/FoxyBridge.swift:750-752@handleClipboard",
-      "Foxy/Bridge/FoxyBridge.swift:1346-1360@readClipboard"
+      "Foxy/Bridge/FoxyBridge.swift:1346-1357@readClipboard"
     ]
   },
   {
@@ -1556,7 +1556,7 @@
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:406@\"share\"",
       "Foxy/Bridge/FoxyBridge.swift:1018-1020@handleShare",
-      "Foxy/Bridge/FoxyBridge.swift:1311-1343@presentShare"
+      "Foxy/Bridge/FoxyBridge.swift:1311-1339@presentShare"
     ]
   },
   {
@@ -1716,8 +1716,8 @@
       "build/app/26d-tap.js:1261@haptic: 'pulse'"
     ],
     "iosRef": [
-      "Foxy/Bridge/FoxyBridge.swift:456-470@haptic",
-      "Foxy/Bridge/FoxyBridge.swift:304-354@fireHaptic"
+      "Foxy/Bridge/FoxyBridge.swift:456-466@haptic",
+      "Foxy/Bridge/FoxyBridge.swift:304-347@fireHaptic"
     ]
   },
   {
@@ -1741,7 +1741,7 @@
       "build/app/05-device-shell.js:153@postMessage(payload)"
     ],
     "iosRef": [
-      "Foxy/Bridge/FoxyBridge.swift:456-470@guard let action"
+      "Foxy/Bridge/FoxyBridge.swift:456-466@guard let action"
     ]
   },
   {
@@ -2548,7 +2548,7 @@
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:436@\"cardOwnerKey\"",
       "Foxy/Bridge/NativeSeedBridge.swift:402-407@handleCardOwnerKey",
-      "Foxy/Keychain/SeedActions.swift:467-476@cardOwnerKey"
+      "Foxy/Keychain/SeedActions.swift:467-477@cardOwnerKey"
     ]
   },
   {
@@ -2588,7 +2588,7 @@
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:437@\"cardOwnerSign\"",
       "Foxy/Bridge/NativeSeedBridge.swift:412-417@handleCardOwnerSign",
-      "Foxy/Keychain/SeedActions.swift:489-498@cardOwnerSign"
+      "Foxy/Keychain/SeedActions.swift:489-499@cardOwnerSign"
     ]
   },
   {
@@ -2687,7 +2687,7 @@
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:157-160@_privacy",
-      "Foxy/Bridge/FoxyBridge.swift:89-117@startTor"
+      "Foxy/Bridge/FoxyBridge.swift:89-118@startTor"
     ]
   },
   {
@@ -2838,7 +2838,7 @@
     ],
     "iosRef": [
       "Foxy/FoxyWebView.swift:1102@_putAway",
-      "Foxy/FoxyWebView.swift:973-1105@appEnteredBackground",
+      "Foxy/FoxyWebView.swift:973-1104@appEnteredBackground",
       "Foxy/Network/Route.swift:200-206@leaving"
     ]
   },
@@ -3194,7 +3194,7 @@
     "pageRef": [],
     "iosRef": [
       "Foxy/FoxyWebView.swift:138-141@noWebRTC",
-      "Foxy/FoxyWebView.swift:434-443@noWebRTC"
+      "Foxy/FoxyWebView.swift:434-442@noWebRTC"
     ]
   },
   {
@@ -3215,7 +3215,7 @@
     "behaviour": "Look Up / Translate / Search Web would hand selected text to services on the open network.",
     "pageRef": [],
     "iosRef": [
-      "Foxy/FoxyWebView.swift:146-157@-webkit-touch-callout"
+      "Foxy/FoxyWebView.swift:146-156@-webkit-touch-callout"
     ]
   },
   {
@@ -3307,7 +3307,7 @@
     "behaviour": "Release builds silence the page console except console.error. Note: mirrorConsole() still forwards log/warn/error to the `log` action in every build.",
     "pageRef": [],
     "iosRef": [
-      "Foxy/FoxyWebView.swift:188-203@console.log = noop"
+      "Foxy/FoxyWebView.swift:191-204@console.log = noop"
     ]
   },
   {
@@ -3331,7 +3331,7 @@
     "pageRef": [],
     "iosRef": [
       "Foxy/FoxyWebView.swift:377-380@__foxyPageHash",
-      "Foxy/FoxyWebView.swift:852-879@manifestHash"
+      "Foxy/FoxyWebView.swift:852-874@manifestHash"
     ]
   }
 ]

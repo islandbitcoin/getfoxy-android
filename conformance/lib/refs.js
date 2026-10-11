@@ -72,4 +72,37 @@ function checkRefs(contract, iosClone) {
   return { checked, skipped, problems };
 }
 
-module.exports = { checkRefs, parse, pin };
+/* Every `path:line` or `path:start-end` written in a document, held to the
+ * pinned commit the same way: the file exists and the lines are inside it. A
+ * bare `Name.swift:N` is resolved by its basename, which must be unique in the
+ * iOS tree. Returns { checked, skipped, problems }. */
+function checkDocRefs(text, iosClone, label) {
+  const read = reader(iosClone);
+  const problems = [];
+  let checked = 0, skipped = 0;
+  let tree = null;
+  const commit = pin().commit;
+  const resolve = (name) => {
+    if (name.includes('/')) return name;
+    if (!iosClone) return null;
+    if (!tree) tree = execFileSync('git', ['-C', iosClone, 'ls-tree', '-r', '--name-only', commit], { encoding: 'utf8' }).split('\n');
+    const hits = tree.filter((f) => f === name || f.endsWith('/' + name));
+    if (hits.length !== 1) { problems.push(label + ': ' + name + ' names ' + hits.length + ' files in the iOS tree'); return undefined; }
+    return hits[0];
+  };
+  const re = /((?:Foxy|build|Web|tests|tools)\/[A-Za-z0-9_+.\/-]+\.[a-z]+|[A-Z][A-Za-z0-9+]*\.swift):(\d+)(?:-(\d+))?/g;
+  for (const m of text.matchAll(re)) {
+    const file = resolve(m[1]);
+    if (file === undefined) continue;
+    if (file === null) { skipped++; continue; }
+    const lines = read(file);
+    if (lines === null) { skipped++; continue; }
+    const from = Number(m[2]), to = Number(m[3] || m[2]);
+    if (!lines.length || (lines.length === 1 && lines[0] === '')) { problems.push(label + ': ' + m[0] + ' — no such file at the pinned commit'); continue; }
+    if (from < 1 || to < from || to > lines.length) { problems.push(label + ': ' + m[0] + ' — past the end of ' + file + ' (' + lines.length + ' lines)'); continue; }
+    checked++;
+  }
+  return { checked, skipped, problems };
+}
+
+module.exports = { checkRefs, checkDocRefs, parse, pin };
