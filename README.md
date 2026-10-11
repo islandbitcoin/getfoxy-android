@@ -24,6 +24,9 @@ dialog, to continue without Tor for the session.
 | `docs/ANDROID-MAPPING.md` | each iOS component and its Android replacement, by phase; the audit findings closed by design |
 | `docs/SECURITY-INVARIANTS.md` | every host-dependent security claim, restated for Android with the test that proves it |
 | `conformance/` | `contract.json` and a node + jsdom suite that boots `core/web/index.html` against a fake native host built from it |
+| `app/` | the Kotlin app (P1): `MainActivity` and `web/WebHost` (the WebView and its walls), `bridge/` (the contract's table, the shim's other half, the seed actions' checks), `keychain/` (the seed vault, BIP-39, NUT-13, P2PK, the counter file), `network/Route.kt` (refuse-all in P1), `debug/` (the field log); JVM tests in `app/src/test`, phone tests in `app/src/androidTest` |
+| `tools/check-no-network.sh` | fail if anything under `app/src` can reach the network other than through `network/Route.kt` (with its self-test, `tools/check-no-network.test.sh`) |
+| `docs/DEVICE-TESTS.md` | what is checked on a phone: the instrumented tests and the checks by hand |
 
 ## Checks
 
@@ -32,10 +35,22 @@ tools/verify-core.sh
 cd conformance && npm ci && npm test
 # with a clone of getfoxy/iOS, every iOS file:line in the contract and the docs is checked too:
 FOXY_IOS_REF=/path/to/ios-clone npm test
+
+# the app (JDK 17, Android SDK 36)
+tools/check-no-network.sh && tools/check-no-network.test.sh
+./gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest
+# on a phone (docs/DEVICE-TESTS.md)
+./gradlew connectedDebugAndroidTest
 ```
 
-CI (`.github/workflows/ci.yml`) runs both on every push and pull request, with
-the iOS repository fetched at the pinned commit.
+Dependencies are pinned to exact versions in `gradle/libs.versions.toml` and by
+SHA-256 in `gradle/verification-metadata.xml`, checked strictly on every build;
+after changing a pin, regenerate it on macOS and on Linux:
+`./gradlew --write-verification-metadata sha256 help testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest`.
+
+CI (`.github/workflows/ci.yml`) runs the core and conformance checks, with the
+iOS repository fetched at the pinned commit, and the app's checks and builds,
+on every push and pull request.
 
 ## Phases
 

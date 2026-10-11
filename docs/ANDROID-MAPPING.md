@@ -72,9 +72,22 @@ phone), **LATER** (onion inbox, Nostr, Bluetooth tap, NFC card).
    `SocketFactory` in Kotlin (domain-name CONNECT, username = label) and a `Dns`
    that never resolves. Needs its own tests, including that no `InetAddress`
    lookup happens (ROUTE.md §5).
-2. **`setBlockNetworkLoads(true)` with `WebViewAssetLoader`.** Expected to
-   leave intercepted responses working; to be confirmed on a device in P1
-   before it is relied on.
+2. **`setBlockNetworkLoads(true)` with `WebViewAssetLoader`.** Checked on a
+   device in P1 (ENG-647, 2026-10-11, Pixel 8 Pro, API 37, the debug build):
+   with `setBlockNetworkLoads(true)`, the dead-end proxy (`127.0.0.1:9`, no
+   direct fallback, implicit loopback bypass removed) and no `INTERNET`
+   permission, the asset loader still serves every file of the page, and the
+   unmodified page boots to CANNOT CONNECT TO TOR (`PageBootTest`); the iOS
+   net-block set (fetch, WebSocket, preconnect, DNS prefetch, prefetch, `<img>`,
+   beacon, a Worker's fetch) reaches nothing (`NetBlockTest`, against a loopback
+   listener in the test package's own process). **Decided: kept as the second
+   wall.** Found on the way: `addDocumentStartJavaScript` does not reach a
+   same-origin `about:blank` or `srcdoc` frame, where WKWebView's
+   all-frames user scripts do, so the `noWebRTC` script carries the removal into
+   each child frame itself (`web/Scripts.kt`; `PageBootTest` checks a blank frame
+   reached through `contentWindow`, through `window[n]` straight after the
+   append, and one frame further down). The intro video with the network
+   blocked is a manual check (`docs/DEVICE-TESTS.md`).
 3. **Orbot on Android.** Different API and VPN model from iOS; out of P2 unless
    decided otherwise.
 4. **`pasteStart`.** See BRIDGE.md §4 item 4.
