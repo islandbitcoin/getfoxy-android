@@ -24,9 +24,10 @@
  *   - fetch, XMLHttpRequest, WebSocket, EventSource, navigator.sendBeacon and
  *     RTCPeerConnection, replaced before the page's first script;
  *   - <img>, <link>, <source>, <video>, <audio>, <iframe> and the rest, whose
- *     URLs jsdom does not fetch: every such attribute in the document is
- *     checked when a run ends (`domUrls`), and as it is set, by a
- *     MutationObserver.
+ *     URLs jsdom does not fetch, and url(...) in <style> and in style
+ *     attributes: every such URL in the document, resolved against the page
+ *     (so `//host/x` counts), is checked when a run ends (`domUrls`), and as it
+ *     is set, by a MutationObserver.
  */
 const fs = require('fs');
 const path = require('path');
@@ -54,13 +55,27 @@ function assetFile(url) {
   return file;
 }
 
-/* A URL in an attribute that would leave the phone. */
+/* A URL in an attribute that would leave the phone. It is resolved against the
+ * page first, as the WebView resolves it, so a protocol-relative
+ * `//cdn.example/x` (https://cdn.example at this origin) is caught along with
+ * one that names its scheme. */
+const REMOTE = new Set(['http:', 'https:', 'ws:', 'wss:', 'ftp:']);
 function leaves(u) {
   const s = String(u || '').trim();
-  return /^(https?|wss?|ftp):/i.test(s) && !s.startsWith(ORIGIN + '/');
+  if (!s) return false;
+  let url;
+  try { url = new URL(s, BASE); } catch (e) { return false; }
+  return REMOTE.has(url.protocol) && url.origin !== ORIGIN;
+}
+
+/* Every url(...) in a stylesheet or a style attribute that would leave the phone. */
+const CSS_URL = /url\(\s*(['"]?)([^'")]*)\1\s*\)/gi;
+function cssLeaves(text) {
+  return [...String(text || '').matchAll(CSS_URL)].map((m) => m[2].trim()).filter(leaves);
 }
 
 const URL_ATTRS = ['src', 'href', 'srcset', 'poster', 'action', 'data', 'background', 'xlink:href', 'formaction', 'ping'];
+const WATCHED = [...URL_ATTRS, 'style'];
 
 /**
  * Load the page.
@@ -203,21 +218,24 @@ function loadPage(o) {
           if (leaves(part)) violate('dom', '<' + el.localName + ' ' + a + '="' + part + '">');
         }
       }
-      if (el.localName === 'style' && /url\(\s*['"]?(https?|wss?):/i.test(el.textContent || '')) {
-        violate('dom', '<style> with a remote url()');
-      }
+      for (const u of cssLeaves(el.getAttribute('style'))) violate('dom', '<' + el.localName + ' style="url(' + u + ')">');
+      if (el.localName === 'style') for (const u of cssLeaves(el.textContent)) violate('dom', '<style> with a remote url(' + u + ')');
     }
   };
   const watcher = new w.MutationObserver((records) => {
     for (const r of records) {
       if (r.type === 'attributes' && r.target.getAttribute) {
         const v = r.target.getAttribute(r.attributeName);
-        if (URL_ATTRS.includes(r.attributeName) && leaves(v)) violate('dom', '<' + r.target.localName + ' ' + r.attributeName + '="' + v + '">');
+        if (r.attributeName === 'style') {
+          for (const u of cssLeaves(v)) violate('dom', '<' + r.target.localName + ' style="url(' + u + ')">');
+        } else if (URL_ATTRS.includes(r.attributeName) && leaves(v)) {
+          violate('dom', '<' + r.target.localName + ' ' + r.attributeName + '="' + v + '">');
+        }
       }
       for (const n of r.addedNodes || []) if (n.nodeType === 1) scanUrls(n);
     }
   });
-  watcher.observe(w.document, { subtree: true, childList: true, attributes: true, attributeFilter: URL_ATTRS });
+  watcher.observe(w.document, { subtree: true, childList: true, attributes: true, attributeFilter: WATCHED });
 
   /* The page has booted when the wallet and the gate are both defined. */
   function ready(ms) {
@@ -244,4 +262,4 @@ function loadPage(o) {
   };
 }
 
-module.exports = { loadPage, ORIGIN, BASE, INDEX, WEB, ROOT, leaves };
+module.exports = { loadPage, ORIGIN, BASE, INDEX, WEB, ROOT, leaves, cssLeaves };

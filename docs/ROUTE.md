@@ -220,4 +220,6 @@ iOS builds four walls (`Foxy/FoxyWebView.swift`):
   while the app is away.
 - **P1, before Tor exists:** `Route.available` is always false, so `price`,
   `candles` and `mintRequest` answer the refusal and nothing is contacted. The
-  unprotected path is not built until P2.
+  unprotected path is not built until P2. Each answer P1 gives in place of a
+  later phase's is the `p1` stub on that entry in `conformance/contract.json`
+  (`BRIDGE.md` §2, *P1 answers*).

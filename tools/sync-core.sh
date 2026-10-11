@@ -9,7 +9,9 @@
 #
 # What it writes, and nothing else:
 #   core/web/            every file under Web/ at that commit (git's bytes, no
-#                        checkout filters), replacing what was there
+#                        checkout filters), replacing what was there. A Web/
+#                        holding a dot-file or dot-folder is refused, and core/
+#                        left as it was.
 #   core/UPSTREAM-LICENSE the iOS repository's LICENSE at that commit
 #   core/PIN             the repository URL, the commit, the page hash and the
 #                        licence's hash
@@ -52,6 +54,12 @@ git -C "$SRC" cat-file -e "$COMMIT^{commit}" 2>/dev/null || die "$COMMIT is not 
 mkdir -p "$TMP/out"
 git -C "$SRC" archive --format=tar "$COMMIT" Web LICENSE | tar -x -C "$TMP/out"
 [ -f "$TMP/out/Web/index.html" ] || die "no Web/index.html at $COMMIT"
+# The page-hash rule leaves dot-files out of SHA256SUMS, and verify-core.sh
+# counts any file the list does not name as extra, so a dot-file under Web/
+# could only produce a core/ that fails verification. Refuse it here, before
+# core/ is touched, and say which.
+dots=$(cd "$TMP/out/Web" && find . -name '.*' ! -name . | sed 's|^\./||' | LC_ALL=C sort)
+[ -z "$dots" ] || die "Web/ at $COMMIT holds dot-files, which the page hash leaves out and core/ cannot carry: $(printf '%s' "$dots" | tr '\n' ' ')"
 
 rm -rf "$CORE/web"
 mkdir -p "$CORE"

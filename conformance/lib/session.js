@@ -46,7 +46,8 @@ async function boot(o) {
     W._keysetCheckDelay = [0, 0];
   }
   if (w.CashuTS && w.CashuTS.createNewMintKeys) host.mint = fakeMint(w);
-  host.push('_privacy', snapshot(host.state));
+  // _privacy is a P2 push: a P1 host has no route to report
+  if (opts.phase !== 'P1') host.push('_privacy', snapshot(host.state));
   const s = {
     page, host, window: w, W,
     logic: () => page.logic(),

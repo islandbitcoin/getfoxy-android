@@ -34,17 +34,20 @@ trap 'rm -rf "$W"' EXIT INT TERM
 # 1. the list itself: well formed, in order, no duplicates
 if grep -Evq '^[0-9a-f]{64}  [^ ].*$' "$CORE/SHA256SUMS"; then bad "SHA256SUMS has a malformed line"; fi
 cut -c67- "$CORE/SHA256SUMS" > "$W/listed"
-LC_ALL=C sort -u "$W/listed" | cmp -s - "$W/listed" \
+LC_ALL=C sort -u "$W/listed" > "$W/listed.sorted"
+cmp -s "$W/listed.sorted" "$W/listed" \
   || bad "SHA256SUMS is not sorted as bytes, or lists a path twice"
 
 # 2. nothing but regular files and directories
 ( cd "$CORE/web" && find . ! -type f ! -type d ) | sed 's|^\./||' > "$W/odd"
 if [ -s "$W/odd" ]; then bad "core/web holds something that is not a file: $(tr '\n' ' ' < "$W/odd")"; fi
 
-# 3. exactly the listed files: none missing, none extra (dot-files count as extra here)
+# 3. exactly the listed files: none missing, none extra (dot-files count as extra here).
+#    Compared against the sorted list, so a list out of order is reported once,
+#    above, and not again here as files missing and extra that are both present.
 ( cd "$CORE/web" && find . -type f | sed 's|^\./||' | LC_ALL=C sort ) > "$W/found"
-missing=$(LC_ALL=C comm -23 "$W/listed" "$W/found")
-extra=$(LC_ALL=C comm -13 "$W/listed" "$W/found")
+missing=$(LC_ALL=C comm -23 "$W/listed.sorted" "$W/found")
+extra=$(LC_ALL=C comm -13 "$W/listed.sorted" "$W/found")
 [ -z "$missing" ] || bad "missing from core/web: $(printf '%s' "$missing" | tr '\n' ' ')"
 [ -z "$extra" ] || bad "not in SHA256SUMS: $(printf '%s' "$extra" | tr '\n' ' ')"
 

@@ -114,6 +114,19 @@ allowlisted, plus the WebRTC removal in every frame.
   › `seedProtection` › `p2pkReserve` › `covered` (several). `candles` comes as
   the chart draws. With Tor still connecting, nothing after `privacy` that needs
   a route is asked at all.
+- **P1 answers.** The page asks `hostsKnown` (P2), `captured` (P3) and
+  `privacy` (P2) before anything else, and its Tor gate offers `torRetry`,
+  `unprotected`, `orbotRefresh` and `orbotAccess`. A P1 host does not leave
+  those as "Unknown action": each such entry in `contract.json` carries a `p1`
+  stub, shown as **In P1** under §3, and the P1 host answers it. `privacy`,
+  `torRetry` and `unprotected` answer the snapshot iOS answers in a build with
+  no Tor (`tor: "none"`, `Foxy/Network/Route.swift:485-491`), so the gate shows
+  CANNOT CONNECT TO TOR with PROCEED OFFLINE; `price`, `candles` and
+  `mintRequest` answer the refusal (`ROUTE.md`, *P1, before Tor exists*). P1
+  pushes no `_privacy`. The flow *P1: a host serving only P1 actions and the p1
+  stubs* (`conformance/test/flows.test.js`) boots on exactly that host and is
+  the one to run against the Kotlin bridge in P1; an action of a later phase
+  with no stub fails it.
 - **Native pushes the route first.** iOS starts Tor before the page loads and
   pushes `_privacy` on every change (`FoxyBridge.swift:89-118`, `startTor`); the
   page also asks `privacy`. Android: push `_privacy` as soon as the page has
@@ -187,6 +200,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Called from:** `Web/foxy-wallet.js:25621`
 - **Native:** Whether the screen is being recorded or mirrored right now, for a page that starts while it already is; changes are pushed with _captured.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "yes" / "no"
+- **In P1:** `no`. No capture detection until P3.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:395`, `Foxy/Bridge/FoxyBridge.swift:861-863`
 
 #### `username` — P1
@@ -346,6 +360,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Called from:** `Web/foxy-wallet.js:14685`
 - **Native:** Reads the route snapshot (Route.snapshot). The same object is pushed with _privacy on every change.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {tor: string, progress: integer, everUp: boolean, unprotected: boolean, transport: string, orbot: string, firstSetup: boolean, vpn: boolean, orbotKey: boolean, network: string}
+- **In P1:** `{"tor":"none","progress":0,"everUp":false,"unprotected":false,"transport":"direct","orbot":"none","firstSetup":false,"vpn":false,"orbotKey":false,"network":"unknown"}`. No Tor in P1: the snapshot a build without Tor answers (Route.snapshot, the #else branch), so the gate shows CANNOT CONNECT TO TOR.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:394`, `Foxy/Bridge/FoxyBridge.swift:855-857`, `Foxy/Network/Route.swift:479-512`
 
 #### `torRetry` — P2
@@ -355,6 +370,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Called from:** `Web/foxy-wallet.js:14691`
 - **Native:** RETRY / RESTART TOR: a full Tor restart (TorService.restart), answered with the snapshot.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {tor: string, progress: integer, everUp: boolean, unprotected: boolean, transport: string, orbot: string, firstSetup: boolean, vpn: boolean, orbotKey: boolean, network: string}
+- **In P1:** `{"tor":"none","progress":0,"everUp":false,"unprotected":false,"transport":"direct","orbot":"none","firstSetup":false,"vpn":false,"orbotKey":false,"network":"unknown"}`. Nothing to restart: the same no-Tor snapshot as privacy.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:396`, `Foxy/Bridge/FoxyBridge.swift:868-873`
 
 #### `unprotected` — P2
@@ -364,6 +380,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Called from:** `Web/foxy-wallet.js:14708`
 - **Native:** CONTINUE WITHOUT TOR. on=true asks a native alert ("Continue without Tor?") that no script can answer, and is ignored while Tor is running; on=false clears it with no question. Session only; Tor connecting clears it. Pushes _privacy and answers the snapshot.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {tor: string, progress: integer, everUp: boolean, unprotected: boolean, transport: string, orbot: string, firstSetup: boolean, vpn: boolean, orbotKey: boolean, network: string}
+- **In P1:** `{"tor":"none","progress":0,"everUp":false,"unprotected":false,"transport":"direct","orbot":"none","firstSetup":false,"vpn":false,"orbotKey":false,"network":"unknown"}`. The unprotected path is not built until P2 (ROUTE.md): on is ignored, and the no-Tor snapshot answers.
 - **Timing:** The page waits up to 600 s for an on=true answer (a person is reading an alert).
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:397`, `Foxy/Bridge/FoxyBridge.swift:878-902`, `Foxy/Bridge/FoxyBridge.swift:252-264`, `Foxy/Network/Route.swift:42-45`
 
@@ -374,6 +391,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Called from:** `Web/foxy-wallet.js:14700`
 - **Native:** Poll Orbot now instead of on its 15 s timer; answers OrbotLink.name.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "none" / "needs-access" / "bypass"
+- **In P1:** `none`. No Orbot link until P2.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:393`, `Foxy/Bridge/FoxyBridge.swift:847-851`, `Foxy/Network/OrbotLink.swift:79-85`
 
 #### `orbotAccess` — P2
@@ -383,6 +401,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Called from:** `Web/foxy-wallet.js:14704`
 - **Native:** Opens Orbot's own permission flow for a key with bypass.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "opened" / "no"
+- **In P1:** `no`. No Orbot link until P2: nothing is opened.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:392`, `Foxy/Bridge/FoxyBridge.swift:834-838`
 
 #### `_privacy` — P2
@@ -403,6 +422,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Native:** Every mint, LNURL / lightning-address and block-explorer request the page makes (cashu-ts customRequest, nativeRequest). In order: url parses; Route.urlProblem (https, or http to .onion; no localhost, IP literal, single label, .local family; .onion needs Tor); method GET or POST only; Route.available or the refusal; HostApprovals (an unknown host is asked about in a native alert first); then sent on the Tor circuit labelled `circuit` (16-64 lowercase hex, else a fresh one). Only content-type and accept headers are passed; generic Tor-Browser User-Agent. Plain http to an .onion goes through Tor SOCKS by hand (GET only). Answer capped at 4 MB. Redirects re-checked and never to another host. NSURLErrorBadURL retried once after 0.4 s.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "<HTTP status>\n<body>"
 - **Errors:** "That is not a mint address Foxy will use."; "That is not a request Foxy will send."; "Foxy is not connected to Tor."; "You did not allow Foxy to contact <host>."; "The answer from <host> was too large."; "An .onion address needs Tor, and Foxy is not connected to Tor."; "<host> could not be asked over Tor: <why>"; "Foxy's private connection was rebuilt mid-request. Try again."
+- **In P1:** the error "Foxy is not connected to Tor.". Route.available is false in P1 (ROUTE.md): the refusal, nothing contacted.
 - **Timing:** The page waits 65 s. A swap/melt/mint/restore POST is counted in moneyInFlight so backgrounding waits up to 20 s for it.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:398`, `Foxy/Bridge/FoxyBridge.swift:909-944`, `Foxy/Bridge/FoxyBridge.swift:950-953`, `Foxy/Bridge/FoxyBridge.swift:1382-1432`, `Foxy/Bridge/FoxyBridge.swift:1447-1486`, `Foxy/Bridge/FoxyBridge.swift:1505-1510`, `Foxy/Network/Route.swift:318-324`, `Foxy/Network/Route.swift:287-309`, `Foxy/Network/Route.swift:16-26`
 
@@ -415,6 +435,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Reply:** FoxyWallet._scanResult(id, text, error) — text (USD per BTC as a decimal string; "" with an error when none answered)
   The text is USD per BTC as a decimal string; "" with an error when none answered.
 - **Errors:** "Foxy is not connected to Tor."; "no price source answered"; "the price sources did not agree"
+- **In P1:** the error "Foxy is not connected to Tor.". Route.available is false in P1 (ROUTE.md): the refusal, nothing contacted.
 - **Timing:** Page waits 14 s (34 s bridged; 29/49 s with agree).
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:363`, `Foxy/Bridge/FoxyBridge.swift:601-690`, `Foxy/Bridge/FoxyBridge.swift:593`
 
@@ -426,6 +447,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Native:** Chart history from Kraken OHLC, interval chosen from the fixed set so the range fits 720 candles. g clamped to 60..86400 s, span to 3600 s..4 years.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — JSON array of array of [unixSeconds, close] number pairs, oldest first
 - **Errors:** "Foxy is not connected to Tor."; "unreadable candles"; "could not encode candles"
+- **In P1:** the error "Foxy is not connected to Tor.". Route.available is false in P1 (ROUTE.md): the refusal, nothing contacted.
 - **Timing:** Page waits 16 s; native times the request out at 12 s.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:364`, `Foxy/Bridge/FoxyBridge.swift:696-748`, `Foxy/Bridge/FoxyBridge.swift:715`
 
@@ -436,6 +458,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Called from:** `Web/foxy-wallet.js:26068`
 - **Native:** Once, the first time a version with host approvals runs: the mints and contact domains the wallet already used are carried over as approved (each approves only itself). Later calls change nothing.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
+- **In P1:** `ok`. No host approvals until P2, so nothing to carry over.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:399`, `Foxy/Bridge/FoxyBridge.swift:957-960`, `Foxy/Network/Route.swift:744`
 
 #### `noWebRTC` — P1

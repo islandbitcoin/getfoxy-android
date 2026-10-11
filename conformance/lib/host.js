@@ -81,6 +81,11 @@ function replyProblems(entry, text, error) {
  *   o.tor       'up' (default) | 'connecting' | 'failed'
  *   o.answers   { action: (msg, host) => [text, error] | undefined } overrides
  *   o.silent    a Set of actions to leave unanswered
+ *   o.phase     'P1': the host Android ships in P1. Every P1 action is served as
+ *               above; an action of a later phase answers its contract `p1`
+ *               stub, and one with no stub answers as iOS answers an action it
+ *               does not serve ("Unknown action: …") and is a violation
+ *               ('unserved'), so a P1 boot that leans on one fails here.
  */
 function makeHost(o) {
   const opts = o || {};
@@ -294,6 +299,15 @@ function makeHost(o) {
     if (p.length) violate('payload', m.action + ': ' + p.join('; ') + ' — ' + JSON.stringify(m).slice(0, 200));
     // 4. the answer
     if (opts.silent && opts.silent.has(m.action)) return;
+    if (opts.phase === 'P1' && entry.phase !== 'P1') {
+      if (!entry.p1) {
+        violate('unserved', 'P1 has no answer for ' + entry.phase + ' action "' + m.action + '" and the contract gives it no p1 stub');
+        reply({ name: m.action, reply: { format: 'text' } }, m.id, null, 'Unknown action: ' + m.action);
+        return;
+      }
+      reply(entry, m.id, entry.p1.text, entry.p1.error);
+      return;
+    }
     const over = opts.answers && opts.answers[m.action];
     const got = (over && over(m, host)) || answer[m.action](m, host);
     reply(entry, m.id, got[0], got[1]);

@@ -48,6 +48,22 @@ async function flow(opts, body) {
 }
 
 const routeActions = (s) => ['mintRequest', 'price', 'candles'].reduce((n, a) => n + (s.host.asked.get(a) || 0), 0);
+const shows = (s, text) => s.window.document.body.textContent.includes(text);
+
+/* No route, no request, proven over a window rather than at an instant: for
+ * QUIET_MS after the page has visibly settled, poll and fail the moment it
+ * asks anything that needs a route. The window is longer than the gate's own
+ * re-check (watchMs, 2 s) and than the wallet's first retry, so a page that
+ * asked price "a little later" with the route closed is caught here; a slower
+ * machine only makes the window start later, never shorter. */
+const QUIET_MS = 5000;
+async function staysQuiet(s, what) {
+  const end = Date.now() + QUIET_MS;
+  while (Date.now() < end) {
+    assert.equal(routeActions(s), 0, 'nothing that needs a route was asked ' + what);
+    await wait(50);
+  }
+}
 
 test('boot: a wallet with a seed, Tor up', async () => {
   const s = await flow({ seed: true, tor: 'up' }, async (s) => {
@@ -79,11 +95,14 @@ test('boot: words and counters left in page storage go to the phone once', async
 
 test('route closed: Tor connecting then failing, the page asks no mint, price or chart', async () => {
   await flow({ seed: true, tor: 'connecting' }, async (s) => {
-    await s.settle(1500);
-    assert.equal(routeActions(s), 0, 'nothing that needs a route was asked while Tor was connecting');
+    // settled into Tor connecting: the page asked privacy and shows the connecting screen
+    await s.until(() => s.host.asked.get('privacy') > 0 && shows(s, 'SECURING YOUR CONNECTION'), 30000, 'the connecting screen');
+    await staysQuiet(s, 'while Tor was connecting');
     s.torFailed();
-    await s.settle(1000);
-    assert.equal(routeActions(s), 0, 'nor after Tor failed');
+    // settled into Tor failed: the failure screen is up and the gate is polling privacy on it
+    const before = s.host.asked.get('privacy');
+    await s.until(() => shows(s, 'CANNOT CONNECT TO TOR') && s.host.asked.get('privacy') >= before + 2, 30000, 'the failed screen, re-checking');
+    await staysQuiet(s, 'after Tor failed');
     // what the gate's buttons do
     await s.W.torRetry();
     await s.W.orbotRefresh();
@@ -97,6 +116,37 @@ test('route closed: Tor connecting then failing, the page asks no mint, price or
     await s.W.setUnprotected(false);
     assert.equal(s.host.state.unprotected, false);
   });
+});
+
+test('P1: a host serving only P1 actions and the p1 stubs boots to a defined state, and nothing leaves', async () => {
+  // The flow to run against the Kotlin bridge in P1 (docs/BRIDGE.md §2, P1 answers):
+  // a later-phase action with no p1 stub is an 'unserved' violation and fails it.
+  const s = await flow({ seed: true, phase: 'P1' }, async (s) => {
+    const W = s.W, G = s.window.FoxyGate;
+    // no Tor in P1: the gate settles on CANNOT CONNECT TO TOR, re-checking privacy, offering PROCEED OFFLINE
+    await s.until(() => shows(s, 'CANNOT CONNECT TO TOR') && shows(s, 'PROCEED OFFLINE') && s.host.asked.get('privacy') >= 2,
+      30000, 'the no-Tor screen, re-checking');
+    assert.equal(W.connected, false, 'not connected to a mint');
+    await staysQuiet(s, 'on the no-Tor screen');
+    // the gate's buttons, answered by their p1 stubs
+    await W.torRetry();
+    await W.setUnprotected(true);
+    const p = W.privacy();
+    assert.equal(p.tor, 'none', 'the page holds the no-Tor snapshot');
+    assert.equal(p.unprotected, false, 'no unprotected path until P2');
+    assert.equal(await W.orbotRefresh(), 'none');
+    await W.orbotAccess();
+    assert.equal(await W.captureCheck(), false);
+    // PROCEED OFFLINE: the wallet itself refuses what needs a route
+    G.proceedOffline();
+    await assert.rejects(async () => W.rate({ fresh: true }), /offline/);
+    await assert.rejects(async () => W.candles(3600, 86400), /offline/);
+    await staysQuiet(s, 'working offline');
+  });
+  for (const a of ['hostsKnown', 'captured', 'privacy', 'seedStatus', 'torRetry', 'unprotected', 'orbotRefresh', 'orbotAccess']) {
+    assert.ok(s.host.asked.get(a) > 0, 'P1 boot asked ' + a);
+  }
+  assert.equal(s.host.pushes.includes('_privacy'), false, 'P1 pushes no _privacy');
 });
 
 test('screens: everything a screen asks native for, through the wallet', async () => {

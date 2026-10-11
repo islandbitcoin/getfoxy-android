@@ -191,6 +191,11 @@
     "name": "captured",
     "domain": "lifecycle",
     "phase": "P3",
+    "p1": {
+      "text": "no",
+      "error": null,
+      "why": "No capture detection until P3."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -221,6 +226,11 @@
     "name": "privacy",
     "domain": "tor",
     "phase": "P2",
+    "p1": {
+      "text": "{\"tor\":\"none\",\"progress\":0,\"everUp\":false,\"unprotected\":false,\"transport\":\"direct\",\"orbot\":\"none\",\"firstSetup\":false,\"vpn\":false,\"orbotKey\":false,\"network\":\"unknown\"}",
+      "error": null,
+      "why": "No Tor in P1: the snapshot a build without Tor answers (Route.snapshot, the #else branch), so the gate shows CANNOT CONNECT TO TOR."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -262,6 +272,11 @@
     "name": "torRetry",
     "domain": "tor",
     "phase": "P2",
+    "p1": {
+      "text": "{\"tor\":\"none\",\"progress\":0,\"everUp\":false,\"unprotected\":false,\"transport\":\"direct\",\"orbot\":\"none\",\"firstSetup\":false,\"vpn\":false,\"orbotKey\":false,\"network\":\"unknown\"}",
+      "error": null,
+      "why": "Nothing to restart: the same no-Tor snapshot as privacy."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -302,6 +317,11 @@
     "name": "unprotected",
     "domain": "tor",
     "phase": "P2",
+    "p1": {
+      "text": "{\"tor\":\"none\",\"progress\":0,\"everUp\":false,\"unprotected\":false,\"transport\":\"direct\",\"orbot\":\"none\",\"firstSetup\":false,\"vpn\":false,\"orbotKey\":false,\"network\":\"unknown\"}",
+      "error": null,
+      "why": "The unprotected path is not built until P2 (ROUTE.md): on is ignored, and the no-Tor snapshot answers."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -346,6 +366,11 @@
     "name": "orbotRefresh",
     "domain": "tor",
     "phase": "P2",
+    "p1": {
+      "text": "none",
+      "error": null,
+      "why": "No Orbot link until P2."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -378,6 +403,11 @@
     "name": "orbotAccess",
     "domain": "tor",
     "phase": "P2",
+    "p1": {
+      "text": "no",
+      "error": null,
+      "why": "No Orbot link until P2: nothing is opened."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -408,6 +438,11 @@
     "name": "mintRequest",
     "domain": "network",
     "phase": "P2",
+    "p1": {
+      "text": null,
+      "error": "Foxy is not connected to Tor.",
+      "why": "Route.available is false in P1 (ROUTE.md): the refusal, nothing contacted."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -456,6 +491,11 @@
     "name": "price",
     "domain": "network",
     "phase": "P2",
+    "p1": {
+      "text": null,
+      "error": "Foxy is not connected to Tor.",
+      "why": "Route.available is false in P1 (ROUTE.md): the refusal, nothing contacted."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -490,6 +530,11 @@
     "name": "candles",
     "domain": "network",
     "phase": "P2",
+    "p1": {
+      "text": null,
+      "error": "Foxy is not connected to Tor.",
+      "why": "Route.available is false in P1 (ROUTE.md): the refusal, nothing contacted."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -525,6 +570,11 @@
     "name": "hostsKnown",
     "domain": "network",
     "phase": "P2",
+    "p1": {
+      "text": "ok",
+      "error": null,
+      "why": "No host approvals until P2, so nothing to carry over."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",

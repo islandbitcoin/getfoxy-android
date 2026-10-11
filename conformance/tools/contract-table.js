@@ -95,6 +95,7 @@ function detail(contract) {
         if (e.reply.format === 'text' && e.reply.note) out.push('  The text is ' + e.reply.note + '.');
         if (e.reply.errors && e.reply.errors.length) out.push('- **Errors:** ' + e.reply.errors.map((x) => '"' + x + '"').join('; '));
       }
+      if (e.p1) out.push('- **In P1:** ' + (e.p1.error !== null ? 'the error "' + e.p1.error + '"' : '`' + e.p1.text + '`') + '. ' + e.p1.why);
       if (e.timing) out.push('- **Timing:** ' + e.timing);
       out.push('- **iOS:** ' + e.iosRef.map(refText).join(', '));
       out.push('');

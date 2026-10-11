@@ -15,6 +15,7 @@ const { execFileSync } = require('child_process');
 const { validateSchema } = require('../lib/schema');
 const { checkRefs, checkDocRefs, pin } = require('../lib/refs');
 const { upToDate } = require('../tools/contract-table');
+const { replyProblems } = require('../lib/host');
 
 const CONTRACT = require('../contract.json');
 const ROOT = path.join(__dirname, '..', '..');
@@ -47,6 +48,24 @@ test('contract.json: an array of entries, each with what docs/BRIDGE.md promises
       assert.equal(e.payloadSchema.fields.id, 'string', e.name + ' carries id');
       assert.match(e.reply.via, /_scanResult/, e.name + ' is answered through _scanResult');
     }
+  }
+});
+
+test('contract.json: every p1 stub is on a later-phase action and is an answer its reply allows', () => {
+  const stubbed = CONTRACT.filter((e) => 'p1' in e);
+  assert.ok(stubbed.length > 0, 'some entries carry a p1 stub');
+  for (const e of stubbed) {
+    assert.equal(e.kind, 'action', e.name + ': only an action is answered, so only an action has a p1 stub');
+    assert.notEqual(e.phase, 'P1', e.name + ': a P1 action is served in P1, not stubbed');
+    assert.deepEqual(Object.keys(e.p1).sort(), ['error', 'text', 'why'], e.name + ': p1 is { text, error, why }');
+    assert.ok((e.p1.text === null) !== (e.p1.error === null), e.name + ': p1 gives a text or an error, not both');
+    assert.ok(typeof e.p1.why === 'string' && e.p1.why.length > 0, e.name + ': p1 says why');
+    assert.deepEqual(replyProblems(e, e.p1.text, e.p1.error), [], e.name + ': p1 fits the reply');
+    if (e.p1.error !== null) assert.ok(e.reply.errors.includes(e.p1.error), e.name + ': p1 error is one the contract lists');
+  }
+  // what ROUTE.md says P1 answers: the refusal, for every action that needs a route
+  for (const n of ['price', 'candles', 'mintRequest']) {
+    assert.equal(CONTRACT.find((e) => e.name === n).p1.error, 'Foxy is not connected to Tor.', n + ' answers the refusal in P1');
   }
 });
 
