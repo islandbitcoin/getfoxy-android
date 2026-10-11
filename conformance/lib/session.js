@@ -51,6 +51,14 @@ async function boot(o) {
     page, host, window: w, W,
     logic: () => page.logic(),
     settle: (ms) => wait(ms === undefined ? 400 : ms),
+    /* Wait until fn() is true, polling; fail after ms. Slow machines (CI) take longer, never shorter. */
+    async until(fn, ms, what) {
+      const end = Date.now() + (ms || 20000);
+      while (!fn()) {
+        if (Date.now() > end) throw new Error('timed out waiting for ' + (what || 'a condition'));
+        await wait(50);
+      }
+    },
     torUp() { host.state.tor = 'up'; host.state.everUp = true; host.push('_privacy', snapshot(host.state)); },
     torFailed() { host.state.tor = 'failed'; host.push('_privacy', snapshot(host.state)); },
     violations() { page.domUrls(); return [...page.violations, ...host.violations]; },

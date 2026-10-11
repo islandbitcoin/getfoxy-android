@@ -51,8 +51,8 @@ const routeActions = (s) => ['mintRequest', 'price', 'candles'].reduce((n, a) =>
 
 test('boot: a wallet with a seed, Tor up', async () => {
   const s = await flow({ seed: true, tor: 'up' }, async (s) => {
-    await s.settle(2500);
-    assert.equal(s.W.connected, true, 'the page connected to its default mint over mintRequest');
+    await s.until(() => s.W.connected === true, 30000, 'the page to connect to its default mint over mintRequest');
+    await s.until(() => s.host.asked.get('covered') > 0 && s.host.asked.get('price') > 0, 30000, 'covered and price');
   });
   for (const a of ['covered', 'captured', 'hostsKnown', 'seedStatus', 'privacy', 'mintRequest', 'price', 'log']) {
     assert.ok(s.host.asked.get(a) > 0, 'boot asked ' + a);
@@ -62,7 +62,7 @@ test('boot: a wallet with a seed, Tor up', async () => {
 });
 
 test('boot: a fresh install makes its seed on the phone', async () => {
-  const s = await flow({ seed: false, tor: 'up' }, async (s) => { await s.settle(2500); });
+  const s = await flow({ seed: false, tor: 'up' }, async (s) => { await s.until(() => s.host.asked.get('seedCreate') > 0, 30000, 'seedCreate'); });
   assert.ok(s.host.asked.get('seedStatus') > 0);
   assert.ok(s.host.asked.get('seedCreate') > 0, 'no seed: the page asked the phone to make one');
   assert.equal(s.host.state.seed, true);
@@ -71,7 +71,7 @@ test('boot: a fresh install makes its seed on the phone', async () => {
 test('boot: words and counters left in page storage go to the phone once', async () => {
   const words = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
   const s = await flow({ seed: false, tor: 'up', storage: { 'foxy.seed.v1': words, 'foxy.counter.v1': JSON.stringify({ '009a1f293253e41e': 7 }) } },
-    async (s) => { await s.settle(2500); });
+    async (s) => { await s.until(() => s.host.asked.get('countersImport') > 0, 30000, 'countersImport'); });
   assert.ok(s.host.asked.get('seedMigrate') > 0, 'seedMigrate');
   assert.ok(s.host.asked.get('countersImport') > 0, 'countersImport');
   assert.equal(s.host.asked.get('seedCreate') || 0, 0, 'migrated words, so no new seed');
@@ -93,8 +93,7 @@ test('route closed: Tor connecting then failing, the page asks no mint, price or
     // CONTINUE WITHOUT TOR: native asks; the fake phone says yes
     await s.W.setUnprotected(true);
     assert.equal(s.host.state.unprotected, true);
-    await s.settle(2000);
-    assert.ok(routeActions(s) > 0, 'with the route opened by the person, the page goes on');
+    await s.until(() => routeActions(s) > 0, 30000, 'the page to go on once the person opened the route');
     await s.W.setUnprotected(false);
     assert.equal(s.host.state.unprotected, false);
   });
@@ -103,7 +102,7 @@ test('route closed: Tor connecting then failing, the page asks no mint, price or
 test('screens: everything a screen asks native for, through the wallet', async () => {
   await flow({ seed: true, tor: 'up' }, async (s) => {
     const W = s.W, w = s.window;
-    await s.settle(1500);
+    await s.until(() => W.connected === true, 30000, 'connected');
     await W.rate({ fresh: true }).catch(() => {});
     await W.agreedRate().catch(() => {});
     await W.candles(3600, 86400);
@@ -144,8 +143,7 @@ test('screens: everything a screen asks native for, through the wallet', async (
 test('money: receive, send a token, take it back, pay an invoice, on a mint of cashu-ts', async () => {
   await flow({ seed: true, tor: 'up' }, async (s) => {
     const W = s.W;
-    await s.settle(2000);
-    assert.equal(W.connected, true);
+    await s.until(() => W.connected === true, 30000, 'connected');
     const inv = await W.invoice(64, 'conformance');
     const claimed = await W.claim(inv.hash || inv.quote || inv.id);
     assert.ok(claimed, 'the invoice was claimed');
@@ -154,6 +152,9 @@ test('money: receive, send a token, take it back, pay an invoice, on a mint of c
     assert.match(String(tok.token), /^cashu/, 'a token');
     await W.receiveToken(tok.token);
     await W.pay('lnbc80n1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypq').catch(() => {});
+    assert.ok(s.host.mint.requests.includes('POST /v1/melt/quote/bolt11'), 'the payment asked the mint for a melt quote, over mintRequest');
+    assert.ok(s.host.mint.requests.includes('POST /v1/swap'), 'tokens were made and taken back with swaps');
+    assert.ok(s.host.mint.requests.includes('POST /v1/melt/bolt11'), 'and the invoice was paid with a melt');
     // a scan of this wallet's own seed at its mint, with no words (FoxyWebView.runSeedSelfTest does the same)
     const rows = await W.scanSeed(null, [W.mintUrl]);
     assert.ok(Array.isArray(rows) && rows.length === 1, 'the restore scan answered a row');
@@ -171,7 +172,7 @@ test('money: receive, send a token, take it back, pay an invoice, on a mint of c
 test('payment requests and lock keys: what Android serves later still has the contract\'s shape', async () => {
   await flow({ seed: true, tor: 'up' }, async (s) => {
     const W = s.W;
-    await s.settle(1500);
+    await s.until(() => W.connected === true, 30000, 'connected');
     await W.openInbox().catch(() => {});
     await W.closeInbox(0);
     await W.primeLocks().catch(() => {});
@@ -185,7 +186,7 @@ test('payment requests and lock keys: what Android serves later still has the co
 test('tap to pay and the card: their doors, with no radio', async () => {
   await flow({ seed: true, tor: 'up' }, async (s) => {
     const W = s.W;
-    await s.settle(1500);
+    await s.until(() => W.connected === true, 30000, 'connected');
     await W.shakeSense(true);
     await W.shakeSense(false);
     await W.tapReceive('lnbc80n1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypq', false).catch(() => {});
@@ -208,7 +209,7 @@ test('tap to pay and the card: their doors, with no radio', async () => {
 test('native pushes: each one the contract lists, delivered with a contract-shaped payload', async () => {
   await flow({ seed: true, tor: 'up' }, async (s) => {
     const w = s.window, W = s.W;
-    await s.settle(1500);
+    await s.until(() => W.connected === true && typeof W._putAway === 'function', 30000, 'connected');
     const pushes = {
       _privacy: { tor: 'up', progress: 100, everUp: true, unprotected: false, transport: 'direct', orbot: 'none', firstSetup: false, vpn: false, orbotKey: false, network: 'wifi' },
       _captured: true, _screenshot: undefined, _previewRefused: 'That pane is too small for a camera (1x1).', _liveScan: 'cashuBx', _pasted: '',
