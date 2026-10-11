@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  core-and-conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: conformance/package-lock.json
+
+      - name: The iOS repository at the pinned commit
+        run: |
+          commit=$(sed -n 's/^commit=//p' core/PIN)
+          repo=$(sed -n 's/^repo=//p' core/PIN)
+          git init --quiet "$RUNNER_TEMP/ios"
+          git -C "$RUNNER_TEMP/ios" fetch --quiet --depth 1 "$repo" "$commit"
+          git -C "$RUNNER_TEMP/ios" cat-file -e "$commit^{commit}"
+          echo "FOXY_IOS_REF=$RUNNER_TEMP/ios" >> "$GITHUB_ENV"
+
+      - name: core/web is the pinned iOS Web/, byte for byte
+        run: tools/verify-core.sh --against "$FOXY_IOS_REF"
+
+      - name: Install the conformance suite
+        working-directory: conformance
+        run: npm ci
+
+      - name: Conformance
+        working-directory: conformance
+        run: npm test
+
+      - name: docs/BRIDGE.md matches contract.json
+        run: node conformance/tools/contract-table.js --check
