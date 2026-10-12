@@ -7,6 +7,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 import java.util.concurrent.Executor
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * The card session over the radio (flashcard/NfcCardLink.kt), as a state
@@ -436,5 +438,76 @@ class NfcCardLinkTest {
         assertEquals(1, gone)
         link.putAway()
         assertEquals("once", 1, gone)
+    }
+
+    /** An io thread as an ExecutorService shuts down: work already queued still runs, new work is refused. */
+    private class ShutIo : Executor {
+        val queued = ArrayDeque<Runnable>()
+        var shut = false
+
+        override fun execute(command: Runnable) {
+            if (shut) throw RejectedExecutionException("shut down")
+            queued.add(command)
+        }
+
+        fun runQueued() {
+            while (queued.isNotEmpty()) queued.removeFirst().run()
+        }
+    }
+
+    @Test
+    fun aConnectThatCompletesAfterTheHostShutItsIoLetsTheCardGoWithoutACrash() {
+        val io = ShutIo()
+        val late = NfcCardLink(radio, sheet, main, io)
+        late.begin("Tap") { found.add(it) }
+        main.drain()
+        val tag = FakeTag()
+        radio.hold(tag)
+        main.drain()
+        assertEquals("the connect is on the io thread", 1, io.queued.size)
+        // the page goes (WebHost.destroy: pageGone, then the io thread shut down) while the card is connecting
+        late.end(null, null)
+        io.shut = true
+        io.runQueued()
+        main.drain() // the connect's answer: no longer this look's, and io refuses the close
+        assertTrue("the card is let go all the same", tag.closed)
+        assertEquals(listOf<CardLinkError?>(CardLinkError.CANCELLED), found)
+    }
+
+    @Test
+    fun aCardDeliveredJustBeforeTheRadioStoppedIsLetGoWhenIoIsShutDown() {
+        val io = Executors.newSingleThreadExecutor()
+        val late = NfcCardLink(radio, sheet, main, io)
+        late.begin("Tap") { found.add(it) }
+        main.drain()
+        val deliver = radio.looking!!
+        val tag = FakeTag()
+        deliver(tag) // on the radio's thread, posted to main
+        late.end(null, null)
+        io.shutdown()
+        main.drain()
+        assertTrue(tag.closed)
+        assertFalse(tag.connected)
+    }
+
+    @Test
+    fun aCommandWithIoShutDownIsALostCard() {
+        val io = ShutIo()
+        val late = NfcCardLink(radio, sheet, main, io)
+        late.begin("Tap") { found.add(it) }
+        main.drain()
+        val tag = FakeTag()
+        radio.hold(tag)
+        main.drain()
+        io.runQueued()
+        main.drain()
+        assertEquals(listOf<CardLinkError?>(null), found)
+        io.shut = true
+        var said: Pair<ByteArray?, CardLinkError?>? = null
+        late.send(byteArrayOf(0xB0.toByte(), 0x11, 0, 0, 4)) { a, why -> said = a to why }
+        assertNull(said!!.first)
+        assertEquals(CardLinkError.LOST, said!!.second)
+        assertTrue("never carried", tag.heard.isEmpty())
+        assertTrue("let go", tag.closed)
     }
 }

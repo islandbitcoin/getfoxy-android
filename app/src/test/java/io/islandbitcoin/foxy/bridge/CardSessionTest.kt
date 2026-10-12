@@ -38,6 +38,10 @@ class CardSessionTest {
         var found: ((CardLinkError?) -> Unit)? = null
         var answer: (ByteArray) -> ByteArray? = { byteArrayOf(0x90.toByte(), 0x00) }
 
+        /** When set, a command is held, unanswered, until the test answers it through [held]. */
+        var holding = false
+        var held: ((ByteArray?, CardLinkError?) -> Unit)? = null
+
         override fun begin(text: String, found: (CardLinkError?) -> Unit) {
             calls.add("begin: $text")
             this.found = found
@@ -50,6 +54,10 @@ class CardSessionTest {
 
         override fun send(apdu: ByteArray, done: (ByteArray?, CardLinkError?) -> Unit) {
             carried.add(CardGate.hex(apdu))
+            if (holding) {
+                held = done
+                return
+            }
             val a = answer(apdu)
             if (a == null) done(null, CardLinkError.LOST) else done(a, null)
         }
@@ -247,6 +255,29 @@ class CardSessionTest {
         assertEquals("ok" to null, reply(again))
         link.answer = { byteArrayOf(0x90.toByte(), 0x00) }
         assertEquals(null to CardBridge.NOT_FOXYS, reply(ask("cardSend", mapOf("apdu" to "b011000004"))))
+        assertEquals("9000" to null, reply(ask("cardSend", mapOf("apdu" to select))))
+        assertEquals("9000" to null, reply(ask("cardSend", mapOf("apdu" to "b011000004"))))
+    }
+
+    @Test
+    fun aChoosingAnsweredAfterTheCardWasLookedForAgainChoosesNothing() {
+        val link = open()
+        // the page chooses the applet, and looks for the card again before the answer comes back
+        link.holding = true
+        val chosen = ask("cardSend", mapOf("apdu" to select))
+        assertNull(reply(chosen))
+        val again = ask("cardAgain", mapOf("text" to "again"))
+        link.connect()
+        assertEquals("ok" to null, reply(again))
+        // the card that left answers the choosing late, and yes: still the same link object
+        link.held!!(byteArrayOf(0x90.toByte(), 0x00), null)
+        assertEquals("9000" to null, reply(chosen))
+        // the card now in hand (maybe a bank card) was never chosen: the applet's instructions are refused
+        link.holding = false
+        val carriedBefore = link.carried.size
+        assertEquals(null to CardBridge.NOT_FOXYS, reply(ask("cardSend", mapOf("apdu" to "b011000004"))))
+        assertEquals("nothing refused was carried", carriedBefore, link.carried.size)
+        // chosen afresh, it is the applet's again
         assertEquals("9000" to null, reply(ask("cardSend", mapOf("apdu" to select))))
         assertEquals("9000" to null, reply(ask("cardSend", mapOf("apdu" to "b011000004"))))
     }

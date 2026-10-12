@@ -3,6 +3,7 @@ package io.islandbitcoin.foxy.flashcard
 import io.islandbitcoin.foxy.debug.Log
 import java.io.IOException
 import java.util.concurrent.Executor
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * The phone's radio in reader mode, as [NfcCardLink] needs it ([ReaderModeRadio]
@@ -83,6 +84,10 @@ interface CardMain {
  *
  * Blocking work (connect, transceive) runs on [io], one command at a time;
  * everything else, and every callback, on the main thread through [main].
+ * [io] may be shut down under a link that is still finishing (WebHost.destroy:
+ * the renderer gone, or Foxy put away and destroyed at once); work it then
+ * refuses is not done, and a card is let go here instead (closing is safe on
+ * any thread), never a RejectedExecutionException on the main thread.
  */
 class NfcCardLink(
     private val radio: CardRadio,
@@ -154,7 +159,7 @@ class NfcCardLink(
     private fun tagFound(tag: CardTag, mine: Int) {
         if (mine != look || !open || card != null || found == null) {
             // not this look's, or no one is waiting for a card: it is let go, and the page asks again (cardAgain) if it wants it
-            io.execute { tag.close() }
+            release(tag)
             return
         }
         if (!tag.speaksCommands) {
@@ -162,7 +167,7 @@ class NfcCardLink(
             Log.line("[card] sheet: something in the field that is not a card that speaks commands")
             return
         }
-        io.execute {
+        onIo(instead = { closeHere(tag) }) {
             val connected = try {
                 tag.connect()
                 true
@@ -173,7 +178,7 @@ class NfcCardLink(
             }
             main.post {
                 if (mine != look || !open || card != null) {
-                    io.execute { tag.close() }
+                    release(tag)
                 } else if (!connected) {
                     // as iOS: a card that would not connect is left, and the sheet goes on looking
                     Log.line("[card] sheet: a card that would not connect; still looking")
@@ -192,7 +197,17 @@ class NfcCardLink(
     override fun send(apdu: ByteArray, done: (ByteArray?, CardLinkError?) -> Unit) {
         val tag = card
         if (tag == null || !open) return done(null, CardLinkError.LOST)
-        io.execute {
+        val answered = { answer: ByteArray? ->
+            if (answer == null) {
+                if (card === tag) letCardGo()
+                onProgress?.invoke("lost", CardLinkError.LOST.words)
+                done(null, CardLinkError.LOST)
+            } else {
+                done(answer, null)
+            }
+        }
+        // no io to carry it on: the card is as good as lost
+        onIo(instead = { answered(null) }) {
             val answer = try {
                 tag.transceive(apdu).takeIf { it.size >= 2 }
             } catch (e: IOException) {
@@ -200,15 +215,7 @@ class NfcCardLink(
             } catch (e: RuntimeException) {
                 null
             }
-            main.post {
-                if (answer == null) {
-                    if (card === tag) letCardGo()
-                    onProgress?.invoke("lost", CardLinkError.LOST.words)
-                    done(null, CardLinkError.LOST)
-                } else {
-                    done(answer, null)
-                }
-            }
+            main.post { answered(answer) }
         }
     }
 
@@ -271,7 +278,29 @@ class NfcCardLink(
     private fun letCardGo() {
         val tag = card ?: return
         card = null
-        io.execute { tag.close() }
+        release(tag)
+    }
+
+    /** A card let go: closed on [io] behind any command still on it, or here when [io] is shut down. */
+    private fun release(tag: CardTag) {
+        onIo(instead = { closeHere(tag) }) { closeHere(tag) }
+    }
+
+    private fun closeHere(tag: CardTag) {
+        try {
+            tag.close()
+        } catch (e: RuntimeException) {
+            // closing a card that has gone says nothing worth hearing
+        }
+    }
+
+    /** [task] on [io]; when [io] refuses it (shut down), [instead] runs on this thread. */
+    private fun onIo(instead: () -> Unit, task: () -> Unit) {
+        try {
+            io.execute(task)
+        } catch (e: RejectedExecutionException) {
+            instead()
+        }
     }
 
     private fun tell(why: CardLinkError?) {

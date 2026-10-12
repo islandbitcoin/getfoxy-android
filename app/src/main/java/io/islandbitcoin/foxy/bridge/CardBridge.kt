@@ -44,6 +44,14 @@ class CardBridge(
     private var link: CardLink? = null
     private var selected = false
 
+    /**
+     * Which card the session is talking to: one more each time a card is
+     * looked for ([begin], [again]). A SELECT answered after the look moved on
+     * was answered by the card that left, and chooses nothing for the next one,
+     * which may be another card altogether (a bank card, a transit card).
+     */
+    private var tap = 0
+
     /** Whether a session is open (the tests). */
     val open: Boolean get() = link != null
 
@@ -79,6 +87,7 @@ class CardBridge(
             }
             link = made
             selected = false
+            tap++
             made.onGone = {
                 if (link === made) {
                     link = null
@@ -119,12 +128,14 @@ class CardBridge(
                 return@post
             }
             val choosing = CardGate.read(apdu) == CardGate.Command.Select
+            val mine = tap
             current.send(apdu) { answer, why ->
                 if (answer == null) {
                     resolve(id, null, (why ?: CardLinkError.LOST).words)
                 } else {
-                    // chosen, or chosen again and refused: either way it is what the card last said
-                    if (choosing && link === current) selected = CardGate.succeeded(answer)
+                    // chosen, or chosen again and refused: either way it is what the card last said,
+                    // so long as it is still the card in hand (no cardAgain since it was asked)
+                    if (choosing && link === current && tap == mine) selected = CardGate.succeeded(answer)
                     resolve(id, CardGate.hex(answer), null)
                 }
             }
@@ -146,6 +157,7 @@ class CardBridge(
                 return@post
             }
             selected = false
+            tap++
             current.again(text.ifEmpty { AGAIN_LINE }) { why ->
                 if (why != null) {
                     if (link === current) link = null

@@ -36,11 +36,22 @@ object CardGate {
      * no owner, where the page sends the owner's form (34); and locking a card
      * for good (50).
      *
-     * SET_TAG (52, card software 1.19) is out too, as it is upstream: the page at
-     * the pinned commit does not send it, and FOXY-CARD-SPEC.md section 7's prose
-     * says the phone's gate should carry it. That is a drift between iOS and the
-     * card's spec, for getfoxy/iOS to settle; Android follows iOS and does not
-     * add it on its own (CardGateTest pins it out).
+     * The card's spec does not agree with this list, and not in one place only.
+     * FOXY-CARD-SPEC.md section 7 (getfoxy/card docs/FOXY-CARD-SPEC.md:1070-1072)
+     * gives the phone's gate as 01 10 11 13 14 15 16 20 30 31 32 34 36 37 40 41
+     * 42 43 44 45, and 52 and 1A besides. Against that list this one, which is
+     * CardGate.swift's byte for byte, differs in eleven:
+     * - ten carried here that section 7 does not name: 17, 18, 19, 22, 23, 24,
+     *   25, 26, 35, and 51 (RESET_CARD, which the spec's section 5.6a describes
+     *   but section 7 leaves out). The page sends every one of them, so a gate
+     *   without one would break that flow;
+     * - one section 7 names that is not carried here: SET_TAG (52, card
+     *   software 1.19). The page at the pinned commit does not send it, and
+     *   CardGate.swift does not carry it.
+     * Section 7 is stale against iOS, and getfoxy/iOS and getfoxy/card are to
+     * settle the whole set, not SET_TAG alone. Until they do, Android follows
+     * iOS and adds or drops nothing on its own (CardGateTest pins the 31, and
+     * 52 out).
      */
     val INSTRUCTIONS: Set<Int> = setOf(
         0x01, 0x10, 0x11, 0x13, 0x14, 0x15, 0x16, 0x17, // what it is, its key, what it holds, proof it is the card, its record, which pieces it holds
