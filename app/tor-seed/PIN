@@ -1,0 +1,8 @@
+# The relay directory seed (tor/TorSeed.kt): iOS's Foxy/TorSeed/tor-microdescs.xz
+# at getfoxy/iOS 5581c963dd29b28ebec547473ada532873d49a77, byte for byte, made
+# 2026-09-29 from Tor on a phone after a first launch. The build refuses an asset
+# whose SHA-256 is not xz-sha256; the app refuses to lay down an unpacked file
+# whose SHA-256 is not plain-sha256 (xz -dc of the same file).
+xz-sha256=0c38bbbf86c08ac37996fad66813dcfd4d82b1706a642edb1bce19c3b85a8261
+plain-sha256=ecafcc19079bbfa9fb5388ad02aa12ff67d39d2e0341c9f9ac3cc7119a642ec9
+plain-bytes=37114344
