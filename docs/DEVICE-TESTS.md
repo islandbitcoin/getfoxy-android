@@ -243,7 +243,10 @@ adb shell am instrument -w -e class io.islandbitcoin.foxy.DeviceExitTest -e foxy
 mint's invoice as `foxy-exit: PAY THIS …` and waits for the person to pay it.
 Unpaid in time, it fails saying so, having melted nothing; a quote paid later
 is claimed by Foxy's sweep on its next connect to that mint. Sats minted and
-not melted stay in the phone's Foxy wallet.
+not melted stay in the phone's Foxy wallet. A melt the mint answers PENDING
+(or with no state) fails the test, saying the melt is still pending: Foxy
+holds its ecash until it settles, so it is not recorded as a melt that went
+through.
 
 Then the instrumented suite, with nothing skipped but
 `KeystoreTest.onALockedPhone…`.
@@ -271,12 +274,19 @@ lost on the next run. Once the mint's quote is printed, `tools/leak-test.sh`
 never stops the emulator holding money. After a melt that paid, it exports
 what is left (the change, less the mint's fee on the send) as a cashu token,
 prints it on stderr and writes it to `<out>/<mode>.leftover.token` for the
-person to receive in their own wallet (the file is ecash: not committed),
-then stops the emulator. If the quote is not paid in time, the melt fails,
-the export fails, or anything else stops the run after the quote was printed,
-it exits non-zero and leaves the emulator running, printing the mint, the
-quote id and the commands to claim and drain it by hand; a quote paid later
-is claimed only there, before the next run.
+person to receive in their own wallet (the file is ecash: `.gitignore` keeps
+`*.leftover.token` out of git), then stops the emulator. A melt the mint
+answers PENDING, or answers with no state, has not gone through: `FoxyWallet.pay`
+resolves with `pending: true` and its ecash stays held in the emulator until
+the mint settles it (the fee reserve's change if it pays, all of it if it
+fails), so the script counts it as a failed melt. If the quote is not paid in
+time, the melt fails or is still pending, the export fails, or anything else
+stops the run after the quote was printed, it exits non-zero and leaves the
+emulator running, printing the mint, the quote id and the commands to claim
+and drain it by hand; a quote paid later is claimed only there. While an
+emulator is up on the script's serial (`emulator-5580`), the next run refuses
+to start (exit 4) instead of wiping it, or driving and stopping it undrained:
+drain it and stop it first.
 
 `tools/leak-test.sh` starts the AVD wiped and headless with `-tcpdump`, turns
 private DNS and the virtual Wi-Fi off (the capture sees the emulated cellular

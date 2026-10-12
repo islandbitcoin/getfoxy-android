@@ -46,6 +46,9 @@ jobs:
       - name: The leak test's analysis (tools/leak-check.js) and the money rules (tools/real-money.js)
         run: node --test tools/leak-check.test.js tools/fake-invoice.test.js tools/real-money.test.js
 
+      - name: The leak test never starts over a running emulator (tools/leak-test.sh)
+        run: tools/leak-test.test.sh
+
   android:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

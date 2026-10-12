@@ -126,9 +126,15 @@ class DeviceExitTest {
 
         val result = unquoted(Page.async(s, """
             var paid = await FoxyWallet.pay(${JSONObject.quote(leg.invoice)});
-            return JSON.stringify({ unprotected: FoxyWallet.privacy().unprotected, tor: FoxyWallet.privacy().tor, paid: !!paid });
+            return JSON.stringify({ unprotected: FoxyWallet.privacy().unprotected, tor: FoxyWallet.privacy().tor, paid: !!paid, pending: !!(paid && paid.pending) });
         """.trimIndent(), 240_000))
         say("without Tor: $result")
-        assertEquals("{\"unprotected\":true,\"tor\":\"connecting\",\"paid\":true}", result)
+        // FoxyWallet.pay resolves { pending: true } when the mint answers PENDING or with no state:
+        // the outcome is unknown, so it is not recorded as a melt that went through
+        if (result != null && JSONObject(result).optBoolean("pending")) {
+            say("the melt is still pending at the mint; Foxy holds the ecash until it settles (its sweep, on the next connect)")
+            fail("the melt is still pending at the mint; Foxy holds the ecash until it settles: $result")
+        }
+        assertEquals("{\"unprotected\":true,\"tor\":\"connecting\",\"paid\":true,\"pending\":false}", result)
     }
 }

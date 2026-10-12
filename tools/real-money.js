@@ -141,7 +141,20 @@ const fromEnv = (env) => (name) => env[ENV[name]];
  * connect moves nothing), given at all, even empty. */
 const asked = (get) => Object.keys(ENV).some((name) => name !== 'mint' && get(name) !== undefined);
 
-module.exports = { leg, asked, feeMarginSats, invoiceSats, mintOf, fromEnv, ENV, Refused, DEFAULT_MINT, DEFAULT_CAP_SATS, DEFAULT_PAY_TIMEOUT_SECONDS };
+/* Why the leak test's melt did not go through, or '' when it did. `d` is what
+ * the melt's page script returned: { paid, pending, payErr }. FoxyWallet.pay
+ * resolves, not rejects, with { pending: true } when the mint answers PENDING
+ * or with no state (core/web/foxy-wallet.js): its ecash stays held for the
+ * sweep and is in no balance, so a pending melt is not one that went through,
+ * and the emulator holding it must not be stopped. */
+function meltFailure(d) {
+  if (d && d.payErr) return String(d.payErr);
+  if (d && d.pending) return 'the melt is still pending at the mint; its ecash is held in this emulator';
+  if (d && d.paid) return '';
+  return 'the melt paid nothing';
+}
+
+module.exports = { leg, asked, meltFailure, feeMarginSats, invoiceSats, mintOf, fromEnv, ENV, Refused, DEFAULT_MINT, DEFAULT_CAP_SATS, DEFAULT_PAY_TIMEOUT_SECONDS };
 
 if (require.main === module) {
   const what = process.argv[2];
@@ -151,7 +164,8 @@ if (require.main === module) {
       if (asked(fromEnv(process.env))) process.stdout.write(JSON.stringify(leg(fromEnv(process.env))) + '\n');
     }
     else if (what === 'mint') process.stdout.write(mintOf(fromEnv(process.env)) + '\n');
-    else { process.stderr.write('usage: real-money.js leg|leg-if-asked|mint (reads REAL_MONEY, MAX_SATS, … from the environment)\n'); process.exit(2); }
+    else if (what === 'melt-failure') process.stdout.write(meltFailure(JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'))));
+    else { process.stderr.write('usage: real-money.js leg|leg-if-asked|mint|melt-failure <drive.json> (reads REAL_MONEY, MAX_SATS, … from the environment)\n'); process.exit(2); }
   } catch (e) {
     if (!(e instanceof Refused)) throw e;
     process.stderr.write('refused: ' + e.message + '\n');

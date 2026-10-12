@@ -31,9 +31,12 @@
 # holding money: after a melt that paid, what is left (the change) is exported
 # as a cashu token, printed on stderr and written to <out>/<mode>.leftover.token
 # for the person to receive in their own wallet, and only then is the emulator
-# stopped. If the quote is not paid in time, the melt fails, the export fails,
+# stopped. If the quote is not paid in time, the melt fails or is still pending
+# at the mint, the export fails,
 # or anything else stops the run after the quote was printed, the emulator is
-# LEFT RUNNING and the script says how to claim and drain it by hand.
+# LEFT RUNNING and the script says how to claim and drain it by hand. A run
+# refuses to start (exit 4) while an emulator is up on its serial, so one left
+# running is never wiped, or stopped undrained, by the next run.
 set -euo pipefail
 mode="$1"
 out="$(cd "$2" && pwd)"
@@ -51,6 +54,13 @@ apk="$root/app/build/outputs/apk/debug/app-debug.apk"
 pkg=io.islandbitcoin.foxy
 log() { echo "leak-test $mode: $*" >&2; }
 
+# an emulator already on this serial may be one a previous run LEFT RUNNING holding ecash:
+# starting another would fail on the port and the rest of this run would drive, and stop, that one
+if adb -s "$ANDROID_SERIAL" get-state > /dev/null 2>&1; then
+  echo "leak-test $mode: $ANDROID_SERIAL is already running (it may hold ecash from a previous run): drain it and stop it first (docs/DEVICE-TESTS.md \"Leftover sats\")" >&2
+  exit 4
+fi
+
 "$sdk/emulator/emulator" -avd "$avd" -port "$port" -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data \
   -gpu swiftshader_indirect -tcpdump "$out/$mode.pcap" > "$out/$mode.emulator.log" 2>&1 &
 emu=$!
@@ -63,7 +73,7 @@ drain_js='var b = await FoxyWallet.balanceSats(); if (!(b > 0)) return { left: 0
   var t = await FoxyWallet.sendToken(amt, { unit: "sat" }); return { left: b, sats: t.sats, token: t.token };'
 held() {
   echo "leak-test $mode: real ecash may be in this emulator ($1)." >&2
-  echo "leak-test $mode: it is LEFT RUNNING ($ANDROID_SERIAL, AVD $avd); the next leak-test.sh run wipes it, and what it holds with it." >&2
+  echo "leak-test $mode: it is LEFT RUNNING ($ANDROID_SERIAL, AVD $avd); the next leak-test.sh run refuses to start until it is drained and stopped." >&2
   echo "leak-test $mode: drain it by hand into your own wallet, then stop it:" >&2
   echo "  adb -s $ANDROID_SERIAL forward tcp:9444 localabstract:webview_devtools_remote_\$(adb -s $ANDROID_SERIAL shell pidof $pkg)" >&2
   echo "  node $root/tools/cdp-eval.js 9444 '$drain_js' 120000   # receive the token it returns" >&2
@@ -168,8 +178,10 @@ if [ -n "$leg" ]; then
   log "claimed $mint_sats sats; melting $invoice_sats to the person's invoice"
   cdp 'var paid = null, perr = null;
        try { paid = await FoxyWallet.pay("'"$invoice"'"); } catch (e) { perr = String(e.message || e); }
-       return { privacy: FoxyWallet.privacy(), mint: FoxyWallet.mintUrl, claimed: true, paid: !!paid, payErr: perr }' 600000 | tee "$out/$mode.drive.json"
-  pay_err="$(node -e 'var d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(d.payErr ? String(d.payErr) : (d.paid ? "" : "the melt paid nothing"))' "$out/$mode.drive.json")"
+       return { privacy: FoxyWallet.privacy(), mint: FoxyWallet.mintUrl, claimed: true, paid: !!paid, pending: !!(paid && paid.pending), payErr: perr }' 600000 | tee "$out/$mode.drive.json"
+  # a pending melt (FoxyWallet.pay resolves { pending: true }) is a failure here: its ecash is held
+  # in this emulator until the mint settles it, so the emulator is left running (held)
+  pay_err="$(node "$root/tools/real-money.js" melt-failure "$out/$mode.drive.json")"
   if [ -n "$pay_err" ]; then
     echo "leak-test $mode: the melt failed: $pay_err" >&2
     exit 1

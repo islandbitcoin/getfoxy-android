@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const { execFileSync, spawnSync } = require('node:child_process');
 const path = require('node:path');
 const { fakeInvoice, polymod, hrpExpand, CHARSET } = require('./fake-invoice');
-const { leg, asked, feeMarginSats, invoiceSats, mintOf, fromEnv, Refused, DEFAULT_MINT } = require('./real-money');
+const { leg, asked, meltFailure, feeMarginSats, invoiceSats, mintOf, fromEnv, Refused, DEFAULT_MINT } = require('./real-money');
 
 /* one fakeInvoice(8, 1_790_000_000_000), kept (its keys are random each time it is made): RealMoneyTest uses the same */
 const base = 'lnbc80n1p4tzwuqpp58q55ukf4eqqvmvgkn8v8mm46a6zjrzys2cn9nnemw6wvhz5d8y5ssp5xc50fqf9tzys007ymgq0zmvum7u3p2zfqywet7e9whask4ry6f4sdqhvehhs7fqw3jhxapqd4jkcaqxqrrsscqpj9qrsgqp7s3yl8umdm2z6q7ud5tqz5f9lhp5aq3s65ryllmp2cyagp7lpz9j6u78qg52afgm02sxfv6acnxpzlc9hz78smasm2y5pvnde4jksqqhl7tff';
@@ -143,4 +143,23 @@ test('asking for any part of a money leg without the go is refused, not skipped 
   // and a full go is the leg
   const ok = JSON.parse(execFileSync(process.execPath, [tool, 'leg-if-asked'], { env: { ...clean, REAL_MONEY: 'yes', MAX_SATS: '64', INVOICE: inv('lnbc80n') }, encoding: 'utf8' }));
   assert.equal(ok.invoiceSats, 8);
+});
+
+test('a pending melt is not one that went through (leak-test.sh: melt-failure)', () => {
+  // FoxyWallet.pay resolves { pending: true } on a PENDING or stateless answer: the ecash is held, in no balance
+  assert.equal(meltFailure({ paid: true, pending: false, payErr: null }), '');
+  assert.match(meltFailure({ paid: true, pending: true, payErr: null }), /still pending at the mint/);
+  assert.equal(meltFailure({ paid: false, pending: false, payErr: 'no route' }), 'no route');
+  assert.equal(meltFailure({ paid: true, pending: true, payErr: 'boom' }), 'boom');
+  assert.equal(meltFailure({ paid: false, pending: false, payErr: null }), 'the melt paid nothing');
+  assert.equal(meltFailure(null), 'the melt paid nothing');
+  // the command the script runs on <out>/<mode>.drive.json
+  const tool = path.join(__dirname, 'real-money.js');
+  const dir = require('node:fs').mkdtempSync(path.join(require('node:os').tmpdir(), 'melt-'));
+  const file = path.join(dir, 'drive.json');
+  require('node:fs').writeFileSync(file, JSON.stringify({ claimed: true, paid: true, pending: true, payErr: null }));
+  assert.match(execFileSync(process.execPath, [tool, 'melt-failure', file], { encoding: 'utf8' }), /still pending/);
+  require('node:fs').writeFileSync(file, JSON.stringify({ claimed: true, paid: true, pending: false, payErr: null }));
+  assert.equal(execFileSync(process.execPath, [tool, 'melt-failure', file], { encoding: 'utf8' }), '');
+  require('node:fs').rmSync(dir, { recursive: true });
 });
