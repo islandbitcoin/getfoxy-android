@@ -2,6 +2,7 @@ package io.islandbitcoin.foxy.bridge
 
 import io.islandbitcoin.foxy.debug.Log
 import io.islandbitcoin.foxy.keychain.BIP39
+import io.islandbitcoin.foxy.keychain.CardOwner
 import io.islandbitcoin.foxy.keychain.CounterRules
 import io.islandbitcoin.foxy.keychain.NUT13
 import io.islandbitcoin.foxy.keychain.P2PK
@@ -59,6 +60,14 @@ class SeedBridge(
         val P3_ACTIONS = setOf(
             "seedShow", "seedEnter", "seedAdopt", "seedCandidateForget", "seedWipe", "seedProtection", "seedProtect",
         )
+
+        /**
+         * A card's owner key (ENG-666): its public half, and signatures for a fixed list
+         * of labels ([CardOwner]). Seed actions, on the seed executor, as iOS has them
+         * in `nativeSeedActions`; served from P3 on. The card's time needs no seed and
+         * is FoxyBridge's (`cardTime`).
+         */
+        val CARD_ACTIONS = setOf("cardOwnerKey", "cardOwnerSign")
 
         const val BUSY_SCREEN = "a seed screen is already open"
         const val PAUSED = "try again in a moment"
@@ -212,6 +221,27 @@ class SeedBridge(
             return Check.Ok(out)
         }
 
+        /**
+         * cardOwnerKey {key}: a card's compressed public key, 66 hex characters (either
+         * case) for 33 bytes that start 02 or 03. Nothing is read until it has passed
+         * (NativeSeedBridge.swift `cardOwnerKeyCheck`).
+         */
+        fun cardOwnerKeyCheck(body: Map<String, Any?>): Check<ByteArray> {
+            val key = CardOwner.key(body["key"]) ?: return Check.Refuse("bad request")
+            return Check.Ok(key)
+        }
+
+        /**
+         * cardOwnerSign {key, label, nonce, value}: the key as above; the label exactly one
+         * of change-pin, set-limit, set-owner, set-card, load and reset; the nonce 32 hex
+         * characters; the value hex of the shape that label takes (empty for load and
+         * reset). [CardOwner.signRequest] holds the rules.
+         */
+        fun cardOwnerSignCheck(body: Map<String, Any?>): Check<CardOwner.SignRequest> {
+            val request = CardOwner.signRequest(body) ?: return Check.Refuse("bad request")
+            return Check.Ok(request)
+        }
+
         /** seedMigrate {words}: a BIP-39 phrase, one string or an array, joined with single spaces. */
         fun seedMigrateCheck(body: Map<String, Any?>, wordlist: List<String>): Check<String> {
             val words: List<String> = when (val given = body["words"]) {
@@ -242,7 +272,7 @@ class SeedBridge(
     /** The seed screens, one at a time, none while a native question is up. Main thread. */
     private val screens = ScreenQueue({ host?.alertShowing() ?: false }, { ms, r -> host?.later(ms) { r() } })
 
-    fun handles(action: String) = action in ACTIONS || action in P3_ACTIONS
+    fun handles(action: String) = action in ACTIONS || action in P3_ACTIONS || action in CARD_ACTIONS
 
     /** Foxy went away, the page went, or the seed changed: every seed screen closes, and those waiting are answered as closed. Main thread. */
     fun closeScreens() {
@@ -297,6 +327,8 @@ class SeedBridge(
             "seedWipe" -> seedWipe(id)
             "seedProtection" -> onSeedQueue(id) { SeedActions.protection(it) }
             "seedProtect" -> run(id, protectCheck(body)) { mode, env -> SeedActions.setProtection(env, mode) }
+            "cardOwnerKey" -> run(id, cardOwnerKeyCheck(body)) { key, env -> SeedActions.cardOwnerKey(key, env) }
+            "cardOwnerSign" -> run(id, cardOwnerSignCheck(body)) { request, env -> SeedActions.cardOwnerSign(request, env) }
             else -> resolve(id, null, "Unknown action: $action")
         }
     }

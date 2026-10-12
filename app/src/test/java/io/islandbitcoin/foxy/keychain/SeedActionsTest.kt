@@ -17,8 +17,8 @@ import java.io.File
  * Every P1 seed and counter action, run with a stub vault holding a known
  * phrase: their rules end to end (review H1, M1, M4, L5), and that no reply text
  * or error ever holds a word of the phrase or the seed (S2, review L12).
- * Ported from SeedActionsTests.swift (the P1 actions; seedAdopt, seedWipe and the
- * card's owner key are P3/LATER).
+ * Ported from SeedActionsTests.swift (the P1 actions, and a card's owner key since
+ * ENG-666; seedAdopt and seedWipe are SeedActionsP3Test's).
  */
 class SeedActionsTest {
     /** The vault as SeedVault's rules treat it, in memory. */
@@ -137,12 +137,22 @@ class SeedActionsTest {
         run(SeedActions.p2pkKey(0, env))
         run(SeedActions.p2pkKey(19_999, env))
         run(SeedActions.p2pkKey(1_000_000, env))
+        // a card's owner key and its signatures, and what they refuse (ENG-666)
+        run(SeedActions.cardOwnerKey(cardKeyBytes, env))
+        run(SeedActions.cardOwnerKey(byteArrayOf(0x04) + cardKeyBytes.copyOfRange(1, 33), env))
+        run(SeedActions.cardOwnerKey(ByteArray(0), env))
+        for (label in CardOwner.Label.entries) run(SeedActions.cardOwnerSign(sampleRequest(label), env))
+        run(SeedActions.cardOwnerSign(CardOwner.SignRequest(cardKeyBytes, CardOwner.Label.SET_LIMIT, nonceBytes, byteArrayOf(1, 2, 3)), env))
         vault.words = null
         vault.windowOpen = false
         run(SeedActions.migrate(TestSupport.SAVED, env))
         run(SeedActions.status(env))
         run(SeedActions.counterReserve(range(v00, 0, 1), env))
+        run(SeedActions.cardOwnerKey(cardKeyBytes, env))
+        run(SeedActions.cardOwnerSign(sampleRequest(CardOwner.Label.LOAD), env))
         assertTrue(replies.size >= 30)
+        assertTrue("an owner key was answered, and checked", replies.any { it.text?.contains("\"pub\":\"04") == true })
+        assertTrue("signatures were answered, and checked", replies.any { it.text?.contains("\"sig\":\"30") == true })
         assertTrue("secrets were answered, and checked", replies.any { it.text?.contains("\"secrets\":[\"") == true })
         assertTrue("private keys were answered, and checked", replies.any { it.text?.contains("\"privkey\":\"") == true })
     }
@@ -392,5 +402,235 @@ class SeedActionsTest {
         assertEquals("{\"counters\":{\"$v00\":7,\"$v01\":0}}", SeedActions.countersReply(mapOf(v00 to 7L, v01 to 0L)))
         assertEquals("{\"keysetId\":\"$v00\",\"next\":9007199254740991}", SeedActions.json(mapOf("keysetId" to v00, "next" to 9_007_199_254_740_991L)))
         assertEquals("{\"keysetId\":\"$v00\",\"start\":12,\"secrets\":[],\"blindingFactors\":[]}", NUT13.reply(v00, 12, emptyList()))
+    }
+
+    // MARK: A card's owner key (ENG-666; SeedActionsTests.swift, "A card's owner key")
+
+    /** A card's compressed public key (secp256k1's generator), as the page gives it and as bytes. */
+    private val cardKey = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+    private val cardKeyBytes: ByteArray get() = Bytes.fromHex(cardKey)!!
+    private val nonce = "000102030405060708090a0b0c0d0e0f"
+    private val nonceBytes: ByteArray get() = Bytes.fromHex(nonce)!!
+
+    private fun bytes(hex: String): ByteArray = Bytes.fromHex(hex) ?: ByteArray(0)
+
+    /** A request of each label with a value of the shape it takes. */
+    private fun sampleValue(label: CardOwner.Label): String = when (label) {
+        CardOwner.Label.CHANGE_PIN -> "31323334"
+        CardOwner.Label.SET_LIMIT -> "000186a0"
+        CardOwner.Label.SET_OWNER -> "04" + "ab".repeat(64)
+        CardOwner.Label.SET_CARD -> "01" + "02" + "22".repeat(32) + "04" + "33".repeat(64) + "03" + "6d6d6d"
+        CardOwner.Label.LOAD, CardOwner.Label.RESET -> ""
+    }
+
+    private fun sampleRequest(label: CardOwner.Label, key: String? = null) =
+        CardOwner.SignRequest(bytes(key ?: cardKey), label, nonceBytes, bytes(sampleValue(label)))
+
+    @Suppress("UNCHECKED_CAST")
+    private fun fixtureCases(): List<Map<String, Any?>> = (TestSupport.fixture("card-owner-vectors.json") as Map<String, Any?>)["cases"] as List<Map<String, Any?>>
+
+    /** What the page is given: one `pub`, 130 lowercase hex characters. */
+    private fun ownerPub(key: String): String? {
+        val reply = run(SeedActions.cardOwnerKey(bytes(key), env))
+        val obj = parsed(reply)
+        assertEquals("nothing but the public key", if (reply.text == null) emptySet() else setOf("pub"), obj.keys)
+        return obj["pub"] as String?
+    }
+
+    /** The signature, or null: one `sig` and nothing else. */
+    private fun ownerSig(request: CardOwner.SignRequest): String? {
+        val reply = run(SeedActions.cardOwnerSign(request, env))
+        val obj = parsed(reply)
+        assertEquals("nothing but the signature", if (reply.text == null) emptySet() else setOf("sig"), obj.keys)
+        return obj["sig"] as String?
+    }
+
+    /** Whether `sig` is the owner key's signature over "FoxyCard/" + label ‖ nonce ‖ value. */
+    private fun verifies(sig: String?, pub: String?, label: String, nonce: String, value: String): Boolean {
+        if (sig == null || pub == null) return false
+        return P256.verify(bytes(pub), "FoxyCard/$label".toByteArray(Charsets.UTF_8) + bytes(nonce) + bytes(value), bytes(sig))
+    }
+
+    /** The public key is Node's, for the two phrases the stub vault can hold, and moves nothing. */
+    @Test
+    fun theOwnerPublicKeyIsTheSeedAndTheKeysAndMovesNothing() {
+        val cases = fixtureCases()
+        vault.words = TestSupport.ABANDON_ABOUT
+        assertEquals(cases[0]["pub"], ownerPub(cardKey))
+        assertEquals("asked again, answered the same", cases[0]["pub"], ownerPub(cardKey))
+        // the same words on a new phone give the same key; other words, another
+        vault.words = TestSupport.SAVED
+        assertEquals(TestSupport.SAVED, cases[1]["mnemonic"])
+        val elsewhere = ownerPub(cases[1]["cardKey"] as String)
+        assertEquals(cases[1]["pub"], elsewhere)
+        assertFalse(elsewhere == cases[0]["pub"])
+        // another card under the same seed, and one bit of the key
+        val sameSeed = ownerPub(cardKey)
+        assertFalse(sameSeed == ownerPub("03" + cardKey.drop(2)))
+        assertFalse(sameSeed == ownerPub(cardKey.dropLast(2) + "99"))
+        val pub = elsewhere!!
+        assertEquals(130, pub.length)
+        assertTrue(pub.startsWith("04"))
+        assertEquals(pub.lowercase(), pub)
+        // no counter and no index moved
+        assertEquals(emptyMap<String, Long>(), env.counters.snapshot())
+        assertEquals(0L, env.counters.p2pkNext())
+    }
+
+    /** A signature made on the phone verifies against the key cardOwnerKey gave, for each label, and only for what was asked. */
+    @Test
+    fun aSignatureVerifiesAgainstTheOwnerKeyForWhatWasAskedAndNothingElse() {
+        vault.words = TestSupport.ABANDON_ABOUT
+        val pub = ownerPub(cardKey)
+        val otherCard = "03" + cardKey.drop(2)
+        for (label in CardOwner.Label.entries) {
+            val value = sampleValue(label)
+            val sig = ownerSig(sampleRequest(label))
+            assertTrue(label.raw, verifies(sig, pub, label.raw, nonce, value))
+            // over the label, the nonce and the value together: change any one and it is no signature
+            for (other in CardOwner.Label.entries) {
+                if (other != label) assertFalse("${label.raw} as ${other.raw}", verifies(sig, pub, other.raw, nonce, value))
+            }
+            assertFalse("not a lock", verifies(sig, pub, "lock", nonce, value))
+            assertFalse("not a time", verifies(sig, pub, "time", nonce, value))
+            assertFalse("not a tag", verifies(sig, pub, "tag", nonce, value))
+            assertFalse("another nonce", verifies(sig, pub, label.raw, "ff" + nonce.drop(2), value))
+            assertFalse("a longer value", verifies(sig, pub, label.raw, nonce, value + "00"))
+            if (value.isNotEmpty()) {
+                val changed = value.dropLast(2) + if (value.endsWith("00")) "01" else "00"
+                assertFalse("another value", verifies(sig, pub, label.raw, nonce, changed))
+            }
+            // and not another card's key
+            assertFalse(verifies(sig, ownerPub(otherCard), label.raw, nonce, value))
+        }
+        // the signature is for this card: asked for another card's, it is that key's
+        val sig3 = ownerSig(sampleRequest(CardOwner.Label.LOAD, key = otherCard))
+        assertTrue(verifies(sig3, ownerPub(otherCard), "load", nonce, ""))
+        assertFalse(verifies(sig3, pub, "load", nonce, ""))
+        // another seed signs as another owner
+        vault.words = TestSupport.SAVED
+        val alien = ownerSig(sampleRequest(CardOwner.Label.LOAD))
+        assertFalse(verifies(alien, pub, "load", nonce, ""))
+        assertTrue(verifies(alien, ownerPub(cardKey), "load", nonce, ""))
+        assertEquals(emptyMap<String, Long>(), env.counters.snapshot())
+        assertEquals(0L, env.counters.p2pkNext())
+    }
+
+    /** Ours verify against Node's public keys: the stub vault holds two of its phrases. */
+    @Test
+    fun ourSignaturesVerifyAgainstTheKeysNodeWorkedOut() {
+        var checked = 0
+        for ((index, c) in fixtureCases().withIndex()) {
+            val words = c["mnemonic"] as? String ?: continue
+            vault.words = words
+            val card = c["cardKey"] as String
+            @Suppress("UNCHECKED_CAST")
+            for (s in c["signatures"] as List<Map<String, String>>) {
+                val label = s.getValue("label")
+                val value = s.getValue("value")
+                val n = s.getValue("nonce")
+                val request = CardOwner.signRequest(mapOf("key" to card, "label" to label, "nonce" to n, "value" to value))
+                assertTrue("case $index $label", request != null)
+                assertTrue("case $index $label", verifies(ownerSig(request!!), c["pub"] as String, label, n, value))
+                checked++
+            }
+        }
+        assertEquals(12, checked)
+    }
+
+    @Test
+    fun theOwnerAnswersHoldNeitherTheWordsNorTheSeedNorTheKey() {
+        vault.words = TestSupport.ABANDON_ABOUT
+        val seed = NUT13.seed(TestSupport.ABANDON_ABOUT)
+        val scalar = CardOwner.scalar(seed, cardKeyBytes)!!
+        val scalarHex = Bytes.hex(scalar)
+        Bytes.wipe(scalar)
+        val seedHex = seed.hex()
+        val texts = ArrayList<String>()
+        val key = run(SeedActions.cardOwnerKey(cardKeyBytes, env))
+        assertNull(key.error)
+        val pubText = key.text!!
+        val pub = parsed(key)["pub"] as String
+        assertEquals("{\"pub\":\"$pub\"}", pubText)
+        texts.add(pubText)
+        for (label in CardOwner.Label.entries) {
+            val reply = run(SeedActions.cardOwnerSign(sampleRequest(label), env))
+            assertNull(reply.error)
+            val text = reply.text!!
+            val sig = parsed(reply)["sig"] as String
+            assertEquals("{\"sig\":\"$sig\"}", text)
+            assertEquals(sig.lowercase(), sig)
+            assertTrue("DER", sig.startsWith("30"))
+            texts.add(text)
+        }
+        // refusals say a fixed thing too
+        vault.words = null
+        texts.addAll(listOfNotNull(run(SeedActions.cardOwnerKey(cardKeyBytes, env)).error, run(SeedActions.cardOwnerSign(sampleRequest(CardOwner.Label.LOAD), env)).error))
+        for (text in texts) {
+            val lower = text.lowercase()
+            for (part in listOf(seedHex, seedHex.take(32), seedHex.takeLast(32), scalarHex, scalarHex.take(32), scalarHex.takeLast(32), "abandon", "about")) {
+                assertFalse("an answer holds ${part.take(12)}", lower.contains(part))
+            }
+        }
+        assertFalse(pub.contains(scalarHex))
+        assertEquals(130, pub.length)
+    }
+
+    /** With no seed there is nothing to derive from: a refusal, and no answer. A seed that cannot be read is another. */
+    @Test
+    fun withNoSeedTheOwnerKeyAndItsSignaturesAreRefused() {
+        vault.words = null
+        for (reply in listOf(run(SeedActions.cardOwnerKey(cardKeyBytes, env)), run(SeedActions.cardOwnerSign(sampleRequest(CardOwner.Label.CHANGE_PIN), env)))) {
+            assertNull(reply.text)
+            assertEquals("no seed", reply.error)
+        }
+        vault.words = TestSupport.SAVED
+        vault.failRead = true
+        for (reply in listOf(run(SeedActions.cardOwnerKey(cardKeyBytes, env)), run(SeedActions.cardOwnerSign(sampleRequest(CardOwner.Label.SET_CARD), env)))) {
+            assertNull(reply.text)
+            assertEquals("the seed could not be read", reply.error)
+        }
+    }
+
+    /** A key that is not a compressed public key, and a request that is not whole, are refused before the seed is read. */
+    @Test
+    fun aRequestThatIsNotWholeIsRefusedBeforeTheSeedIsRead() {
+        val body = ByteArray(32) { 0x11 }
+        val before = vault.reads
+        val notCardKeys = listOf(ByteArray(0), byteArrayOf(0x02) + body.copyOf(31), byteArrayOf(0x04) + body, byteArrayOf(0x00) + body,
+            byteArrayOf(0x02) + body + byteArrayOf(0x11), byteArrayOf(0x04) + body + body)
+        for (key in notCardKeys) {
+            val reply = run(SeedActions.cardOwnerKey(key, env))
+            assertNull("${key.size} bytes", reply.text)
+            assertEquals("bad request", reply.error)
+            val sign = run(SeedActions.cardOwnerSign(CardOwner.SignRequest(key, CardOwner.Label.LOAD, nonceBytes, ByteArray(0)), env))
+            assertNull(sign.text)
+            assertEquals("bad request", sign.error)
+        }
+        val k = cardKeyBytes
+        val wrongShapes = listOf(
+            CardOwner.SignRequest(k, CardOwner.Label.LOAD, nonceBytes, byteArrayOf(0)),
+            CardOwner.SignRequest(k, CardOwner.Label.CHANGE_PIN, nonceBytes, byteArrayOf(0x31, 0x32, 0x33)),
+            CardOwner.SignRequest(k, CardOwner.Label.CHANGE_PIN, nonceBytes, byteArrayOf(0x31, 0x32, 0x33, 0x3A)),
+            CardOwner.SignRequest(k, CardOwner.Label.SET_LIMIT, nonceBytes, byteArrayOf(0, 0, 0)),
+            CardOwner.SignRequest(k, CardOwner.Label.SET_OWNER, nonceBytes, byteArrayOf(0x02) + ByteArray(64)),
+            CardOwner.SignRequest(k, CardOwner.Label.SET_CARD, nonceBytes, bytes(sampleValue(CardOwner.Label.SET_CARD)).let { it.copyOf(it.size - 1) }),
+            CardOwner.SignRequest(k, CardOwner.Label.SET_CARD, nonceBytes, ByteArray(0)),
+            CardOwner.SignRequest(k, CardOwner.Label.LOAD, nonceBytes.copyOf(15), ByteArray(0)),
+            CardOwner.SignRequest(k, CardOwner.Label.LOAD, nonceBytes + byteArrayOf(0), ByteArray(0)),
+            CardOwner.SignRequest(k, CardOwner.Label.LOAD, ByteArray(0), ByteArray(0)),
+        )
+        for (request in wrongShapes) {
+            assertFalse(request.isWellFormed)
+            val reply = run(SeedActions.cardOwnerSign(request, env))
+            assertNull("$request", reply.text)
+            assertEquals("bad request", reply.error)
+        }
+        assertEquals("the seed was not asked for", before, vault.reads)
+        // and a whole one is the one thing that asks for it
+        run(SeedActions.cardOwnerKey(cardKeyBytes, env))
+        assertEquals(before + 1, vault.reads)
+        run(SeedActions.cardOwnerSign(sampleRequest(CardOwner.Label.LOAD), env))
+        assertEquals(before + 2, vault.reads)
     }
 }

@@ -326,6 +326,46 @@ object SeedActions {
         SeedReply.refuse(problem(e))
     }
 
+    // MARK: A card's owner key (SeedActions.swift:458-499)
+
+    /**
+     * cardOwnerKey {key} → {"pub"}: the owner PUBLIC key for the card whose
+     * compressed public key is `key`, 65 bytes uncompressed as 130 lowercase hex
+     * characters ([CardOwner]). The page gives it to the card at set-up, with
+     * SET_OWNER. It depends on the seed and the key and nothing else, so no
+     * counter moves and no window applies. Only the public half is answered.
+     */
+    fun cardOwnerKey(key: ByteArray, env: SeedEnvironment): SeedReply {
+        // the bridge refuses this first; here too, so no caller reads the seed for a key that is not one
+        if (!CardOwner.isCardKey(key)) return SeedReply.refuse("bad request")
+        return try {
+            val seed = readSavedSeed(env)
+            val pub = CardOwner.publicKey(seed, key)
+            SeedReply.answer(json(mapOf("pub" to Bytes.hex(pub))))
+        } catch (e: Exception) {
+            SeedReply.refuse(problem(e))
+        }
+    }
+
+    /**
+     * cardOwnerSign {key, label, nonce, value} → {"sig"}: the owner key's
+     * signature, DER as lowercase hex, over "FoxyCard/" and the label, the nonce
+     * and the value. The label is one of six and the value has the shape that
+     * label takes; anything else is refused before the seed is read, so the page
+     * cannot have the key sign LOCK_CARD, a time, or anything else it invents.
+     */
+    fun cardOwnerSign(request: CardOwner.SignRequest, env: SeedEnvironment): SeedReply {
+        // the bridge checks every shape first; here too, so a request built another way reads no seed
+        if (!request.isWellFormed) return SeedReply.refuse("bad request")
+        return try {
+            val seed = readSavedSeed(env)
+            val sig = CardOwner.signature(request, seed)
+            SeedReply.answer(json(mapOf("sig" to Bytes.hex(sig))))
+        } catch (e: Exception) {
+            SeedReply.refuse(problem(e))
+        }
+    }
+
     // MARK: Adopting typed words, and wiping (P3)
 
     /**
