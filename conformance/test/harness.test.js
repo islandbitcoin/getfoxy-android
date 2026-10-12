@@ -145,6 +145,37 @@ test('a P1 host refuses, as a violation, a later-phase action the contract gives
   }
 });
 
+test('a P2 host serves P1 and P2 actions, stubs later ones, and refuses a later one with no stub', async () => {
+  const { laterThan } = require('../lib/host');
+  assert.equal(laterThan('P3', 'P2'), true);
+  assert.equal(laterThan('LATER', 'P2'), true);
+  assert.equal(laterThan('P2', 'P2'), false);
+  assert.equal(laterThan('P1', 'P2'), false);
+  assert.throws(() => laterThan('P9', 'P2'), /unknown phase/);
+  const s = await boot({ seed: true, tor: 'up', phase: 'P2' });
+  try {
+    await s.settle(300);
+    s.host.violations.length = 0;
+    const post = (m) => s.window.webkit.messageHandlers.foxy.postMessage(m);
+    // a P2 action is served: the route is up, so the price is a price, not the P1 refusal
+    post({ action: 'price', id: 'p2a', agree: false });
+    assert.ok(s.host.answered.some(([n, t, e]) => n === 'price' && t === '65000.5' && e === null));
+    // the Orbot actions are LATER on Android: their stubs answer
+    post({ action: 'orbotRefresh', id: 'p2b' });
+    assert.ok(s.host.answered.some(([n, t]) => n === 'orbotRefresh' && t === 'none'));
+    // a P3 action with a stub answers it; one without is unserved
+    post({ action: 'captured', id: 'p2c' });
+    assert.ok(s.host.answered.some(([n, t]) => n === 'captured' && t === 'no'));
+    assert.deepEqual(s.host.violations, []);
+    post({ action: 'seedShow', id: 'p2d', verify: false });
+    assert.deepEqual(kinds(s.host.violations), ['unserved']);
+    assert.match(s.host.violations[0].detail, /^P2 has no answer for P3 action "seedShow"/);
+    assert.deepEqual(s.host.replyProblems, []);
+  } finally {
+    s.close();
+  }
+});
+
 test('the asset origin serves core/web and nothing above it', async () => {
   const s = await boot({ seed: true, tor: 'up' });
   try {

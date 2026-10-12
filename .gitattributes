@@ -4,3 +4,5 @@
 core/web/** -text linguist-generated=true
 core/UPSTREAM-LICENSE -text
 core/SHA256SUMS -text
+# The relay directory seed, iOS's file byte for byte (app/tor-seed.pin)
+app/tor-seed/*.xz binary

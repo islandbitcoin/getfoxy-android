@@ -11,6 +11,10 @@ splashscreen = "1.2.0"
 lifecycle = "2.9.4"
 secp256k1 = "0.22.0"
 junit = "4.13.2"
+torAndroid = "0.4.9.12"
+iptproxy = "5.5.0"
+jtorctl = "0.4.5.7"
+okhttp = "4.12.0"
 androidxTestCore = "1.7.0"
 androidxTestRunner = "1.7.0"
 androidxTestRules = "1.7.0"
@@ -25,6 +29,11 @@ androidx-lifecycle-process = { module = "androidx.lifecycle:lifecycle-process", 
 secp256k1-jni-android = { module = "fr.acinq.secp256k1:secp256k1-kmp-jni-android", version.ref = "secp256k1" }
 secp256k1-jni-jvm = { module = "fr.acinq.secp256k1:secp256k1-kmp-jni-jvm", version.ref = "secp256k1" }
 junit = { module = "junit:junit", version.ref = "junit" }
+tor-android = { module = "info.guardianproject:tor-android", version.ref = "torAndroid" }
+iptproxy = { module = "com.netzarchitekten:IPtProxy", version.ref = "iptproxy" }
+jtorctl = { module = "info.guardianproject:jtorctl", version.ref = "jtorctl" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+okhttp-mockwebserver = { module = "com.squareup.okhttp3:mockwebserver", version.ref = "okhttp" }
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
 androidx-test-rules = { module = "androidx.test:rules", version.ref = "androidxTestRules" }

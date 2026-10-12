@@ -29,6 +29,7 @@ import io.islandbitcoin.foxy.FoxyServices
 import io.islandbitcoin.foxy.bridge.FoxyBridge
 import io.islandbitcoin.foxy.bridge.PageHost
 import io.islandbitcoin.foxy.debug.Log
+import io.islandbitcoin.foxy.tor.Tor
 import java.io.ByteArrayInputStream
 
 /**
@@ -44,7 +45,9 @@ import java.io.ByteArrayInputStream
  * 4. no navigation, no new windows, no WebRTC, no file or content access, no
  *    geolocation, no permissions, Safe Browsing and metrics off.
  *
- * The app has no INTERNET permission in P1 either: a fifth wall.
+ * In P1 the app had no INTERNET permission at all; P2 adds it for Tor and
+ * Route, and the four walls are what keeps the page off it (NetBlockTest runs
+ * with INTERNET granted).
  */
 @SuppressLint("SetJavaScriptEnabled")
 class WebHost(
@@ -52,7 +55,7 @@ class WebHost(
     private val services: FoxyServices,
     private val container: ViewGroup,
     private val onCovered: () -> Unit,
-) : PageHost {
+) : PageHost, PutAway.Page {
     companion object {
         const val DOMAIN = "appassets.androidplatform.net"
         const val PAGE_URL = "https://$DOMAIN/assets/web/index.html"
@@ -110,7 +113,7 @@ class WebHost(
     }
 
     /** evaluateJavascript with its result, as JSON text; null once the WebView is gone. */
-    fun read(js: String, answer: (String?) -> Unit) {
+    override fun read(js: String, answer: (String?) -> Unit) {
         val view = webView
         if (destroyed || view == null) return answer(null)
         view.evaluateJavascript(js) { answer(it) }
@@ -170,8 +173,11 @@ class WebHost(
         container.addView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         configure(view)
 
-        val b = FoxyBridge(this, services::environment, services.seedExecutor, BuildConfig.DEBUG)
+        val b = FoxyBridge(this, services::environment, services.seedExecutor, BuildConfig.DEBUG,
+            services.net { ms, r -> main.postDelayed(r, ms) })
         bridge = b
+        // every change of Tor's or of the network is pushed to the page (_privacy)
+        Tor.onChange = { bridge?.pushPrivacy() }
         WebViewCompat.addWebMessageListener(view, Scripts.NATIVE_OBJECT, ALLOWED_ORIGINS) { _, message, sourceOrigin, isMainFrame, _ ->
             b.onMessage(message.data, isMainFrame, sourceOrigin.toString().trimEnd('/'))
         }
@@ -237,7 +243,9 @@ class WebHost(
     }
 
     /** Seconds since the phone started, which moving the clock does not change (the PIN back-off clock). */
-    fun pushUptime() {
+    override val moneyInFlight: Int get() = bridge?.moneyInFlight ?: 0
+
+    override fun pushUptime() {
         val s = SystemClock.elapsedRealtime() / 1000.0
         evaluate("window.__foxyUptime = { s: $s, p: performance.now() }")
     }
@@ -249,6 +257,7 @@ class WebHost(
      */
     fun destroy() {
         destroyed = true
+        Tor.onChange = null
         services.vault.forgetNativeSeed()
         webView?.let {
             container.removeView(it)

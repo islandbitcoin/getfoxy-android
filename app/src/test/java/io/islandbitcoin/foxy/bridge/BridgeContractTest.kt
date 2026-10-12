@@ -13,11 +13,12 @@ import org.junit.Test
 import java.util.concurrent.Executor
 
 /**
- * S15: the bridge serves exactly the P1 contract. Every name in the table is in
- * conformance/contract.json; the 18 P1 actions and the 10 `p1` stubs are all
- * there; each stub answers the contract's text or error byte for byte; a later
- * phase's action is "Unknown action: <name>"; `{username}`, `{}`, a non-object
- * and `{haptic}` get no reply.
+ * S15: the bridge serves exactly the P2 contract. Every name in the table is in
+ * conformance/contract.json; the 18 P1 actions, the 7 P2 actions and the `p1`
+ * stubs of the later phases' actions are all there; each stub answers the
+ * contract's text or error byte for byte; with no Tor, each P2 action answers
+ * as its stub said P1 would; a later phase's action with no stub is "Unknown
+ * action: <name>"; `{username}`, `{}`, a non-object and `{haptic}` get no reply.
  */
 class BridgeContractTest {
     private val host = FakeHost()
@@ -40,7 +41,7 @@ class BridgeContractTest {
     private fun send(json: String) = bridge.onMessage(json, true, FoxyBridge.ORIGIN)
 
     /** What the page would be told: the (id, text, error) of every _scanResult evaluated. */
-    private fun replies(): List<Triple<String?, String?, String?>> = host.evaluated.map { js ->
+    private fun replies(): List<Triple<String?, String?, String?>> = host.evaluated.filter { it.contains("._scanResult(") }.map { js ->
         val args = js.substringAfter("_scanResult(").removeSuffix(")")
         @Suppress("UNCHECKED_CAST")
         val list = Json.parse("[$args]") as List<String?>
@@ -53,20 +54,44 @@ class BridgeContractTest {
         for (name in bridge.handlers.keys) assertTrue("$name is not in contract.json", name in actions)
     }
 
+    private val served = setOf("P1", "P2")
+
     @Test
-    fun theEighteenP1ActionsAndTheTenStubsAreAllThere() {
+    fun theP1AndP2ActionsAndTheLaterStubsAreAllThere() {
         val p1 = entries.filter { it["kind"] == "action" && it["phase"] == "P1" }.map { it["name"] as String }.toSet()
-        val stubs = entries.filter { it["kind"] == "action" && it["p1"] != null }.map { it["name"] as String }.toSet()
+        val p2 = entries.filter { it["kind"] == "action" && it["phase"] == "P2" }.map { it["name"] as String }.toSet()
+        val stubs = entries.filter { it["kind"] == "action" && it["p1"] != null && it["phase"] !in served }.map { it["name"] as String }.toSet()
         assertEquals(18, p1.size)
-        assertEquals(10, stubs.size)
+        assertEquals(setOf("privacy", "torRetry", "unprotected", "mintRequest", "price", "candles", "hostsKnown"), p2)
+        assertEquals(setOf("captured", "orbotRefresh", "orbotAccess", "seedProtection", "tapPayStart", "pasteStart", "pasteStop"), stubs)
         assertEquals(p1, FoxyBridge.P1_ACTIONS)
+        assertEquals(p2, FoxyBridge.P2_ACTIONS)
         assertEquals(stubs, ContractStubs.p1.keys)
-        assertEquals(p1 + stubs, bridge.handlers.keys)
+        assertEquals(p1 + p2 + stubs, bridge.handlers.keys)
+    }
+
+    @Test
+    fun withNoTorEachP2ActionAnswersAsP1Did() {
+        val p2 = entries.filter { it["kind"] == "action" && it["phase"] == "P2" }
+        for ((n, e) in p2.withIndex()) {
+            val name = e["name"] as String
+            @Suppress("UNCHECKED_CAST")
+            val p1 = e["p1"] as Map<String, Any?>
+            host.evaluated.clear()
+            send("""{"action":"$name","id":"n$n","on":true,"url":"https://mint.example.com","method":"GET","hosts":["a.b"]}""")
+            val r = replies().single()
+            assertEquals(name, "n$n", r.first)
+            assertEquals(name, p1["error"], r.third)
+            val want = p1["text"] as String? ?: continue
+            val got = r.second!!
+            // the snapshot is the same object, its keys written in another order
+            if (want.startsWith("{")) assertEquals(name, Json.parse(want), Json.parse(got)) else assertEquals(name, want, got)
+        }
     }
 
     @Test
     fun eachStubAnswersTheContractsTextOrErrorExactly() {
-        val stubs = entries.filter { it["kind"] == "action" && it["p1"] != null }
+        val stubs = entries.filter { it["kind"] == "action" && it["p1"] != null && it["phase"] !in served }
         for ((n, e) in stubs.withIndex()) {
             val name = e["name"] as String
             @Suppress("UNCHECKED_CAST")
@@ -79,7 +104,7 @@ class BridgeContractTest {
 
     @Test
     fun aLaterPhasesActionIsUnknown() {
-        val later = entries.filter { it["kind"] == "action" && it["phase"] != "P1" && it["p1"] == null }.map { it["name"] as String }
+        val later = entries.filter { it["kind"] == "action" && it["phase"] !in served && it["p1"] == null }.map { it["name"] as String }
         assertTrue(later.contains("seedShow"))
         for (name in later) {
             host.evaluated.clear()

@@ -30,6 +30,14 @@ const BY_NAME = new Map(CONTRACT.map((e) => [e.name, e]));
 const ACTIONS = new Map(CONTRACT.filter((e) => e.kind === 'action').map((e) => [e.name, e]));
 const MESSAGES = CONTRACT.filter((e) => e.kind === 'message');
 
+/* The phases in the order Android ships them. */
+const PHASE_ORDER = ['P1', 'P2', 'P3', 'LATER'];
+function laterThan(phase, host) {
+  const a = PHASE_ORDER.indexOf(phase), b = PHASE_ORDER.indexOf(host);
+  if (a < 0 || b < 0) throw new Error('unknown phase: ' + (a < 0 ? phase : host));
+  return a > b;
+}
+
 function snapshot(s) {
   return { tor: s.tor, progress: s.tor === 'up' ? 100 : s.progress, everUp: s.everUp, unprotected: s.unprotected,
     transport: 'direct', orbot: 'none', firstSetup: false, vpn: false, orbotKey: false, network: 'wifi' };
@@ -81,11 +89,13 @@ function replyProblems(entry, text, error) {
  *   o.tor       'up' (default) | 'connecting' | 'failed'
  *   o.answers   { action: (msg, host) => [text, error] | undefined } overrides
  *   o.silent    a Set of actions to leave unanswered
- *   o.phase     'P1': the host Android ships in P1. Every P1 action is served as
- *               above; an action of a later phase answers its contract `p1`
- *               stub, and one with no stub answers as iOS answers an action it
- *               does not serve ("Unknown action: …") and is a violation
- *               ('unserved'), so a P1 boot that leans on one fails here.
+ *   o.phase     'P1' | 'P2' | 'P3': the host Android ships in that phase. Every
+ *               action of that phase or an earlier one is served as above; an
+ *               action of a later phase answers its contract `p1` stub, and one
+ *               with no stub answers as iOS answers an action it does not serve
+ *               ("Unknown action: …") and is a violation ('unserved'), so a boot
+ *               that leans on one fails here. Unset: everything is served (the
+ *               iOS app's table).
  */
 function makeHost(o) {
   const opts = o || {};
@@ -299,9 +309,9 @@ function makeHost(o) {
     if (p.length) violate('payload', m.action + ': ' + p.join('; ') + ' — ' + JSON.stringify(m).slice(0, 200));
     // 4. the answer
     if (opts.silent && opts.silent.has(m.action)) return;
-    if (opts.phase === 'P1' && entry.phase !== 'P1') {
+    if (opts.phase && laterThan(entry.phase, opts.phase)) {
       if (!entry.p1) {
-        violate('unserved', 'P1 has no answer for ' + entry.phase + ' action "' + m.action + '" and the contract gives it no p1 stub');
+        violate('unserved', opts.phase + ' has no answer for ' + entry.phase + ' action "' + m.action + '" and the contract gives it no p1 stub');
         reply({ name: m.action, reply: { format: 'text' } }, m.id, null, 'Unknown action: ' + m.action);
         return;
       }
@@ -316,4 +326,4 @@ function makeHost(o) {
   return host;
 }
 
-module.exports = { makeHost, snapshot, replyProblems, CONTRACT };
+module.exports = { makeHost, snapshot, replyProblems, laterThan, PHASE_ORDER, CONTRACT };

@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- No INTERNET permission in P1: the page is served from the APK by the asset
-     loader, which needs none, and Route makes no call (docs/ROUTE.md §5). P2
-     adds it with Tor. -->
+<!-- INTERNET is for Tor (in this process, tor-android) and Route, the one HTTP
+     client (docs/ROUTE.md §5): every native request goes through Tor or, after
+     a native dialog's yes, the open connection, or is refused. The page itself
+     still has no network (docs/ROUTE.md §4: the asset loader, blocked network
+     loads, a dead-end proxy). ACCESS_NETWORK_STATE is for NetworkKind: Tor is
+     taken off the network while the phone has none. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:name=".FoxyApplication"

@@ -21,8 +21,21 @@ val pageHash: String = run {
     pin
 }
 
-/* The P1 stubs: the answer a P1 host gives to each later-phase action the page
- * asks before anything else (docs/BRIDGE.md §2, "P1 answers"). Generated from
+/* The relay directory seed (tor/TorSeed.kt): iOS's tor-microdescs.xz, unpacked
+ * and checked against app/tor-seed/PIN when the APK is built (gradle/tor-seed.gradle.kts).
+ * The app is handed the unpacked file's pin, which it checks again before Tor
+ * reads the file. */
+apply(from = rootProject.file("gradle/tor-seed.gradle.kts"))
+val torSeedPlainSha256: String = file("tor-seed/PIN").readLines()
+    .firstOrNull { it.startsWith("plain-sha256=") }?.removePrefix("plain-sha256=")?.trim()
+    ?.takeIf { Regex("^[0-9a-f]{64}$").matches(it) }
+    ?: throw GradleException("app/tor-seed/PIN has no plain-sha256 of 64 lowercase hex")
+val torSeedAssets = layout.buildDirectory.dir("generated/torseed")
+
+/* The later phases' stubs: the answer this host gives to each action of a phase
+ * it does not serve yet that the page asks before anything else (docs/BRIDGE.md
+ * §2, "P1 answers"; the contract's `p1` answers). The app serves P1 and P2, so
+ * only the stubs of P3 and LATER actions are emitted. Generated from
  * conformance/contract.json, never retyped, so the Kotlin table cannot drift
  * from the contract the conformance suite checks. */
 val contractFile = rootProject.file("conformance/contract.json")
@@ -57,12 +70,14 @@ abstract class GenerateContractStubs : DefaultTask() {
             }
             return out.append('"').toString()
         }
-        val stubs = entries.filter { it["kind"] == "action" && it["p1"] != null }.sortedBy { it["name"] as String }
+        val served = setOf("P1", "P2")
+        val stubs = entries.filter { it["kind"] == "action" && it["p1"] != null && it["phase"] !in served }
+            .sortedBy { it["name"] as String }
         val text = buildString {
             appendLine("// Generated from conformance/contract.json by :app:generateContractStubs. Do not edit.")
             appendLine("package io.islandbitcoin.foxy.bridge")
             appendLine()
-            appendLine("/** The `p1` answers of conformance/contract.json: what a P1 host says to a later phase's action. */")
+            appendLine("/** The `p1` answers of conformance/contract.json for the phases after P2: what this host says to a later phase's action. */")
             appendLine("internal object ContractStubs {")
             appendLine("    class Stub(val text: String?, val error: String?)")
             appendLine()
@@ -88,7 +103,9 @@ val generateContractStubs = tasks.register<GenerateContractStubs>("generateContr
 
 android {
     namespace = "io.islandbitcoin.foxy"
-    compileSdk = 36
+    compileSdk {
+        version = release(37) { minorApiLevel = 1 }
+    }
 
     defaultConfig {
         applicationId = "io.islandbitcoin.foxy"
@@ -98,6 +115,7 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PAGE_HASH", "\"$pageHash\"")
+        buildConfigField("String", "TOR_SEED_PLAIN_SHA256", "\"$torSeedPlainSha256\"")
     }
 
     buildFeatures {
@@ -117,8 +135,9 @@ android {
     sourceSets {
         getByName("main") {
             // core/web is served from the APK at assets/web/ (docs/ROUTE.md §4),
-            // with core/PIN and core/SHA256SUMS beside it, which the loader never serves.
-            assets.srcDirs("../core", "src/main/assets")
+            // with core/PIN and core/SHA256SUMS beside it, which the loader never serves;
+            // and the unpacked relay directory seed at assets/tor/ (gradle/tor-seed.gradle.kts).
+            assets.srcDirs("../core", "src/main/assets", torSeedAssets)
             kotlin.srcDir(generatedStubs)
         }
     }
@@ -142,6 +161,7 @@ android {
                 layout.buildDirectory.file("intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml")
                     .get().asFile.absolutePath)
             it.systemProperty("foxy.res", file("src/main/res").absolutePath)
+            it.systemProperty("foxy.torSeed", torSeedAssets.get().asFile.resolve("tor/cached-microdescs").absolutePath)
         }
     }
 
@@ -165,7 +185,7 @@ kotlin {
     jvmToolchain(17)
 }
 
-tasks.named("preBuild") { dependsOn(generateContractStubs) }
+tasks.named("preBuild") { dependsOn(generateContractStubs, "unpackTorSeed") }
 afterEvaluate {
     // ManifestTest reads the merged manifest, so the debug manifest is merged before the debug unit tests.
     tasks.named("testDebugUnitTest") { dependsOn("processDebugMainManifest") }
@@ -178,9 +198,16 @@ dependencies {
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.secp256k1.jni.android)
+    // Tor in this process (Guardian Project), its control library, the obfs4 and
+    // Snowflake transports, and the one HTTP client (network/, docs/ROUTE.md §5)
+    implementation(libs.tor.android)
+    implementation(libs.jtorctl)
+    implementation(libs.iptproxy)
+    implementation(libs.okhttp)
 
     testImplementation(libs.junit)
     testImplementation(libs.secp256k1.jni.jvm)
+    testImplementation(libs.okhttp.mockwebserver)
 
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.runner)

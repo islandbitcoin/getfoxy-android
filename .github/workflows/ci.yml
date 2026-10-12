@@ -43,6 +43,9 @@ jobs:
       - name: docs/BRIDGE.md matches contract.json
         run: node conformance/tools/contract-table.js --check
 
+      - name: The leak test's analysis (tools/leak-check.js)
+        run: node --test tools/leak-check.test.js tools/fake-invoice.test.js
+
   android:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -56,11 +59,12 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Android SDK 36
+      # compile SDK 37.1: tor-android 0.4.9.12's AAR asks for it (targetSdk stays 36)
+      - name: Android SDK 37.1
         run: |
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37.1" "build-tools;36.0.0" > /dev/null
 
-      - name: No network code outside network/Route.kt
+      - name: No network code outside network/
         run: tools/check-no-network.sh && tools/check-no-network.test.sh
 
       # Dependency verification is strict (gradle/verification-metadata.xml): an

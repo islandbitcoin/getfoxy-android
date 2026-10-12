@@ -10,9 +10,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The unmodified page, from the APK, boots to the P1 Tor gate (S26, S16, S17,
+ * The unmodified page, from the APK, boots to the Tor gate (S26, S16, S17,
  * S15): the shim is there, the page hash is core/PIN's, no action the page asks
- * is unknown, navigation and new windows go nowhere, and WebRTC is gone.
+ * is unknown, navigation and new windows go nowhere, and WebRTC is gone. In P2
+ * Tor starts with the page, so the gate is connecting, connected or failed,
+ * whichever the phone's network makes it; the claims are the same in each.
  *
  * This is also the device check of ANDROID-MAPPING decision 2: the page loads
  * through the asset loader with setBlockNetworkLoads(true) and the dead-end proxy on.
@@ -26,8 +28,9 @@ class PageBootTest {
 
     @Test
     fun theUnmodifiedPageBootsToTheTorGateAndAsksNothingUnknown() {
+        val began = System.currentTimeMillis()
         ActivityScenario.launch(MainActivity::class.java).use { s ->
-            assertTrue("the gate settles on CANNOT CONNECT TO TOR with PROCEED OFFLINE", Page.until(s, Page.BOOTED, 90_000))
+            assertTrue("the page boots to the Tor gate or past it", Page.until(s, Page.STARTED, 90_000))
 
             // the shim, locked, before the page's scripts: the page's bridge calls reached native and were answered
             assertEquals("true", Page.eval(s, "(function () { var d = Object.getOwnPropertyDescriptor(window, 'webkit');" +
@@ -48,8 +51,10 @@ class PageBootTest {
                 " var d = window[window.length - 1].document; var g = d.createElement('iframe'); d.body.appendChild(g);" +
                 " var b = typeof window[window.length - 1][0].RTCPeerConnection; f.remove(); return a + ' ' + b; })()"))
 
-            // nothing the page asked on boot was an unknown action (the P1 table and its stubs cover the boot)
-            val unknown = FieldLog.lines().filter { it.text.contains("Unknown action") }
+            // nothing the page asked on this boot was an unknown action (the P1 and P2 tables and the later
+            // stubs cover the boot); the field log also holds an earlier run's lines ("last run · …") and
+            // earlier tests' in this process, which are not this boot's
+            val unknown = FieldLog.lines().filter { it.at >= began && !it.text.startsWith("last run") && it.text.contains("Unknown action") }
             assertTrue("unknown actions on boot: ${unknown.map { it.text }}", unknown.isEmpty())
 
             // S16: navigation and new windows go nowhere
@@ -60,14 +65,14 @@ class PageBootTest {
             Thread.sleep(3_000)
             assertEquals(href, Page.eval(s, "location.href"))
             assertEquals("\"null\"", Page.eval(s, "window.__opened"))
-            assertTrue("still the page that booted", Page.until(s, Page.BOOTED, 5_000))
+            assertTrue("still the page that booted", Page.until(s, Page.STARTED, 5_000))
         }
     }
 
     @Test
     fun aSubframeIsNotAnsweredAndTheMainFrameIs() {
         ActivityScenario.launch(MainActivity::class.java).use { s ->
-            assertTrue(Page.until(s, Page.BOOTED, 90_000))
+            assertTrue(Page.until(s, Page.STARTED, 90_000))
             val result = Page.async(s, """
                 var heard = {};
                 var real = window.FoxyWallet._scanResult;

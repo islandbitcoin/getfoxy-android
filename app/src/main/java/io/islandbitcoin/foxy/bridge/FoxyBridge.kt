@@ -24,12 +24,14 @@ interface PageHost {
 }
 
 /**
- * The page ↔ native contract (docs/BRIDGE.md), as P1 serves it: a port of
+ * The page ↔ native contract (docs/BRIDGE.md), as P2 serves it: a port of
  * Foxy/Bridge/FoxyBridge.swift's dispatch and reply path.
  *
- * One table: the 18 P1 actions, and the 10 `p1` stubs of conformance/contract.json
- * ([ContractStubs], generated from it), which answer the later phases' actions
- * the page asks before anything else. Every other action is answered
+ * One table: the 18 P1 actions, the 7 P2 actions ([NetBridge]: Tor's snapshot,
+ * RETRY, CONTINUE WITHOUT TOR, and the three requests that leave through
+ * Route), and the `p1` stubs of conformance/contract.json for the later phases
+ * ([ContractStubs], generated from it), which answer the actions of P3 and
+ * LATER the page asks before anything else. Every other action is answered
  * "Unknown action: <name>"; `{haptic}` buzzes and answers nothing; anything else,
  * `{username}` included, is ignored (S15). Only the staged page's main frame at
  * the asset origin is heard (S14).
@@ -39,6 +41,7 @@ class FoxyBridge(
     seedEnvironment: () -> io.islandbitcoin.foxy.keychain.SeedEnvironment,
     seedExecutor: java.util.concurrent.Executor,
     private val isDebug: Boolean,
+    netEnvironment: NetEnvironment = NetEnvironment.noRoute(),
 ) {
     companion object {
         /** The asset loader's origin, the only one the bridge answers. */
@@ -51,6 +54,9 @@ class FoxyBridge(
         val P1_ACTIONS: Set<String> = setOf(
             "covered", "log", "fieldLog", "fieldLogClear", "isDebug", "awake",
         ) + SeedBridge.ACTIONS
+
+        /** The P2 actions: docs/BRIDGE.md, phase P2, kind action. */
+        val P2_ACTIONS: Set<String> = NetBridge.ACTIONS
 
         /** Main frame, asset origin, nothing else (FoxyBridge.swift `answers`). */
         fun answers(isMainFrame: Boolean, origin: String?): Boolean = isMainFrame && origin == ORIGIN
@@ -71,6 +77,13 @@ class FoxyBridge(
     }
 
     private val seeds = SeedBridge(seedEnvironment, seedExecutor, ::resolve)
+    private val net = NetBridge(netEnvironment, host, ::resolve)
+
+    /** Swaps, melts, mints and restores not yet answered: putting Foxy away waits for them. */
+    val moneyInFlight: Int get() = net.moneyInFlight.size
+
+    /** The route changed: the page hears it (`_privacy`), through the one evaluate path. */
+    fun pushPrivacy() = net.pushPrivacy()
 
     /** Every action the bridge answers, and the one function that answers it. */
     val handlers: Map<String, (id: String, body: Map<String, Any?>) -> Unit> = buildMap {
@@ -99,9 +112,12 @@ class FoxyBridge(
         for (action in SeedBridge.ACTIONS) {
             put(action) { id, body -> seeds.handle(action, id, body) }
         }
+        for (action in NetBridge.ACTIONS) {
+            put(action) { id, body -> net.handle(action, id, body) }
+        }
         // the later phases' actions the page asks first, answered as the contract's p1 stubs say
         for ((action, stub) in ContractStubs.p1) {
-            check(action !in P1_ACTIONS) { "$action is both a P1 action and a stub" }
+            check(action !in P1_ACTIONS && action !in P2_ACTIONS) { "$action is both a served action and a stub" }
             put(action) { id, _ -> resolve(id, stub.text, stub.error) }
         }
     }
@@ -142,6 +158,8 @@ class FoxyBridge(
 
     /** The one reply path: `_scanResult(id, text, error)`, on the main thread, from any thread. */
     fun resolve(id: String, text: String?, error: String?) {
+        // answered: no longer money in flight (FoxyBridge.swift `resolve`)
+        net.moneyInFlight.remove(id)
         val js = replyScript(id, text, error)
         host.post { host.evaluate(js) }
     }
