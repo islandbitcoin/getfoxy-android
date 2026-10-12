@@ -6,6 +6,13 @@
         <item name="android:navigationBarColor">@color/splash</item>
     </style>
 
+    <!-- Foxy's own screens over the page (the scanner, the seed screens): near-black, no splash -->
+    <style name="Theme.Foxy.Screen" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/seed_background</item>
+        <item name="android:statusBarColor">@color/seed_background</item>
+        <item name="android:navigationBarColor">@color/seed_background</item>
+    </style>
+
     <!-- AndroidX SplashScreen, held until the page says `covered` or 8 s pass -->
     <style name="Theme.Foxy.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash</item>

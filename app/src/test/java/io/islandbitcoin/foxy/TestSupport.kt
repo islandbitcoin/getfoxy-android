@@ -2,6 +2,8 @@ package io.islandbitcoin.foxy
 
 import io.islandbitcoin.foxy.bridge.Json
 import io.islandbitcoin.foxy.bridge.PageHost
+import io.islandbitcoin.foxy.bridge.PlatformRules
+import io.islandbitcoin.foxy.bridge.Prompt
 import io.islandbitcoin.foxy.keychain.BIP39
 import io.islandbitcoin.foxy.keychain.SeedKeys
 import java.io.File
@@ -78,12 +80,70 @@ object TestSupport {
     val ALIASES = listOf("009a1f293253e41e", "0000000033882270", "009a1f29b253e41d", "009a1f28b253e41f")
 }
 
-/** A page host that runs everything at once and keeps what was evaluated. */
+/**
+ * A page host that runs everything at once and keeps what was evaluated, and
+ * what each P3 door was asked: the tests set how a door answers and read what
+ * it was given.
+ */
 class FakeHost : PageHost {
     val evaluated = CopyOnWriteArrayList<String>()
     val haptics = CopyOnWriteArrayList<String>()
     var coveredCount = 0
     var awake: Boolean? = null
+
+    // P3 doors: what they answer
+    var page: Pair<Double, Double>? = 390.0 to 844.0
+    var scanAnswer: Pair<String?, String?> = "cashuBscanned" to null
+    var previewShows = true
+    var pasteShows = true
+    var clipboard = ""
+    var shareRefusal: String? = null
+    var biometricAnswer = "yes"
+    var settingsRefusal: String? = null
+    var urlRefusal: String? = null
+    var isCaptured = false
+    var promptAnswer: Boolean? = true
+    var ownerApproves = true
+    var alertUp = false
+    /** null: the screen is not shown (nothing to present it from). */
+    var showWordsAnswer: Triple<Boolean, Boolean, Boolean>? = Triple(true, false, true)
+    /** The screen answers this phrase (null: closed); [enterWordsShown] false: not shown at all. */
+    var enterWordsAnswer: String? = null
+    var enterWordsShown = true
+    /** Hold the seed screens' answers until [answerScreens] (a screen left up). */
+    var holdScreens = false
+
+    // P3 doors: what they were asked
+    val scans = CopyOnWriteArrayList<String>()
+    val previews = CopyOnWriteArrayList<PlatformRules.Rect>()
+    var liveCode: ((String) -> Unit)? = null
+    var previewStops = 0
+    val pastes = CopyOnWriteArrayList<PlatformRules.Rect>()
+    var pasteTap: ((String) -> Unit)? = null
+    var pasteStops = 0
+    var clipboardReads = 0
+    val copies = CopyOnWriteArrayList<Pair<String, Boolean>>()
+    val shares = CopyOnWriteArrayList<String>()
+    val notifications = CopyOnWriteArrayList<Pair<String, String>>()
+    val biometrics = CopyOnWriteArrayList<Pair<String, Boolean>>()
+    val urls = CopyOnWriteArrayList<String>()
+    var settingsOpened = 0
+    val prompts = CopyOnWriteArrayList<Prompt>()
+    val ownerReasons = CopyOnWriteArrayList<String>()
+    val shownWords = CopyOnWriteArrayList<Pair<List<String>, Boolean>>()
+    var enterScreens = 0
+    var screensClosed = 0
+    val later = CopyOnWriteArrayList<Pair<Long, Runnable>>()
+    /** A screen held up: how it answers when finished, and when closed from outside. */
+    private class Held(val finish: () -> Unit, val close: () -> Unit)
+    private val heldScreens = CopyOnWriteArrayList<Held>()
+
+    /** Lets every seed screen held by [holdScreens] answer. */
+    fun answerScreens() {
+        val held = heldScreens.toList()
+        heldScreens.clear()
+        held.forEach { it.finish() }
+    }
 
     override fun post(action: Runnable) = action.run()
     override fun evaluate(js: String) {
@@ -97,6 +157,115 @@ class FakeHost : PageHost {
     }
     override fun haptic(kind: String) {
         haptics.add(kind)
+    }
+
+    override fun later(ms: Long, action: Runnable) {
+        later.add(ms to action)
+    }
+
+    override fun pageSize() = page
+
+    override fun scan(prompt: String, done: (String?, String?) -> Unit) {
+        scans.add(prompt)
+        done(scanAnswer.first, scanAnswer.second)
+    }
+
+    override fun previewShow(rect: PlatformRules.Rect, onCode: (String) -> Unit): Boolean {
+        if (!previewShows) return false
+        previews.add(rect)
+        liveCode = onCode
+        return true
+    }
+
+    override fun previewStop() {
+        previewStops++
+        liveCode = null
+    }
+
+    override fun pasteShow(rect: PlatformRules.Rect, onPaste: (String) -> Unit): Boolean {
+        if (!pasteShows) return false
+        pastes.add(rect)
+        pasteTap = { text ->
+            clipboardReads++
+            onPaste(text)
+        }
+        return true
+    }
+
+    override fun pasteStop() {
+        pasteStops++
+        pasteTap = null
+    }
+
+    override fun clipboardText(): String {
+        clipboardReads++
+        return clipboard
+    }
+
+    override fun copy(text: String, sensitive: Boolean) {
+        copies.add(text to sensitive)
+    }
+
+    override fun share(text: String): String? {
+        if (shareRefusal == null) shares.add(text)
+        return shareRefusal
+    }
+
+    override fun notify(title: String, text: String) {
+        notifications.add(title to text)
+    }
+
+    override fun biometric(reason: String, passcode: Boolean, done: (String) -> Unit) {
+        biometrics.add(reason to passcode)
+        done(biometricAnswer)
+    }
+
+    override fun openSettings(): String? {
+        if (settingsRefusal == null) settingsOpened++
+        return settingsRefusal
+    }
+
+    override fun openUrl(url: String): String? {
+        if (urlRefusal == null) urls.add(url)
+        return urlRefusal
+    }
+
+    override fun captured() = isCaptured
+
+    override fun ask(prompt: Prompt, done: (Boolean) -> Unit): () -> Unit {
+        prompts.add(prompt)
+        val answer = promptAnswer
+        if (answer != null) done(answer)
+        return { if (answer == null) done(false) }
+    }
+
+    override fun alertShowing() = alertUp
+
+    override fun deviceOwnerApproves(reason: String): Boolean {
+        ownerReasons.add(reason)
+        return ownerApproves
+    }
+
+    override fun showWords(words: List<String>, verify: Boolean, done: (Boolean, Boolean, Boolean) -> Unit): Boolean {
+        val answer = showWordsAnswer ?: return false
+        shownWords.add(words to verify)
+        if (holdScreens) heldScreens.add(Held({ done(answer.first, answer.second, answer.third) }, { done(false, false, false) })) else done(answer.first, answer.second, answer.third)
+        return true
+    }
+
+    override fun enterWords(wordlist: List<String>, done: (String?) -> Unit): Boolean {
+        if (!enterWordsShown) return false
+        enterScreens++
+        val phrase = enterWordsAnswer
+        if (holdScreens) heldScreens.add(Held({ done(phrase) }, { done(null) })) else done(phrase)
+        return true
+    }
+
+    override fun closeSeedScreen() {
+        screensClosed++
+        val held = heldScreens.toList()
+        heldScreens.clear()
+        held.forEach { it.close() }
     }
 }
 

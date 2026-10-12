@@ -1,25 +1,40 @@
 package io.islandbitcoin.foxy
 
+import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.ProcessLifecycleOwner
 import io.islandbitcoin.foxy.network.Route
 import io.islandbitcoin.foxy.tor.Tor
 import io.islandbitcoin.foxy.tor.TorTransport
+import io.islandbitcoin.foxy.debug.Log
+import io.islandbitcoin.foxy.web.DeepLink
 import io.islandbitcoin.foxy.web.PutAway
 import io.islandbitcoin.foxy.web.WebHost
 
 /**
- * The one activity: portrait, FLAG_SECURE before anything is drawn (S19: the
+ * The page's activity: portrait, FLAG_SECURE before anything is drawn (S19: the
  * Recents thumbnail is blank and capture is refused), the splash held until the
  * page says `covered` or 8 s pass, and the WebView host.
+ *
+ * P3: the permission and screen-lock launchers the doors use, registered here
+ * because a launcher cannot be registered after STARTED; `_screenshot` from
+ * Android 14's screen-capture callback while Foxy is in front; the clipboard's
+ * 120 s clear looked at again whenever the window has focus (Android 10+ shows
+ * an app the clipboard only then); the camera let go on every stop; and in
+ * debug builds only, the `foxy://` deep link.
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), WebHost.Permissions {
     companion object {
         const val SPLASH_BACKSTOP_MS = 8_000L
 
@@ -32,9 +47,36 @@ class MainActivity : ComponentActivity() {
 
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var splashDone = false
+
+    private val cameraAsked = ArrayList<(Boolean) -> Unit>()
+    private val cameraLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val waiting = cameraAsked.toList()
+        cameraAsked.clear()
+        waiting.forEach { it(granted) }
+    }
+    private val notificationsAsked = ArrayList<(Boolean) -> Unit>()
+    private val notificationsLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val waiting = notificationsAsked.toList()
+        notificationsAsked.clear()
+        waiting.forEach { it(granted) }
+    }
+    private var confirmed: ((Boolean) -> Unit)? = null
+    private val confirmLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val done = confirmed
+        confirmed = null
+        done?.invoke(result.resultCode == RESULT_OK)
+    }
+
+    /** Android 14+: a screenshot was taken while Foxy was in front (FLAG_SECURE made it blank): the page hears `_screenshot`. */
+    private val screenshotTaken: Any? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        Activity.ScreenCaptureCallback { host?.bridge?.pushScreenshot() }
+    } else {
+        null
+    }
     var host: WebHost? = null
         private set
     private var putAway: PutAway? = null
+    private var confirmAnswered: ((Boolean) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
@@ -49,16 +91,31 @@ class MainActivity : ComponentActivity() {
 
         // the seed executor is FoxyServices', made with the process and so before the listener
         val services = (application as FoxyApplication).services
-        val webHost = WebHost(this, services, container) { splashDone = true }
+        val webHost = WebHost(this, services, container, { splashDone = true }, this)
         host = webHost
         webHost.create()
 
-        val away = PutAway({ host }, services.vault)
+        // Settings' screen-lock confirmation (API 28-29) stops this activity: Foxy's own question, not a put-away
+        val away = PutAway({ host }, services.vault, ownPrompt = { services.auth.confirming })
         putAway = away
+        // only a yes proves the stop was Foxy's own question; a no or a cancel is a return, and the PIN lock comes back
+        val answered: (Boolean) -> Unit = { away.promptAnswered(it) }
+        confirmAnswered = answered
+        services.auth.confirmAnswered = answered
         ProcessLifecycleOwner.get().lifecycle.addObserver(away)
 
         // native questions are asked on this activity; Tor starts as iOS starts it, with the web view
         services.inFront(this)
+        services.auth.confirmCredential = { intent, done ->
+            if (confirmed != null || isFinishing) {
+                false
+            } else {
+                confirmed = done
+                confirmLauncher.launch(intent)
+                true
+            }
+        }
+        receiveDeepLink(intent)
         val forced = if (BuildConfig.DEBUG) TorTransport.named(intent?.getStringExtra(FORCE_TRANSPORT)) else null
         Tor.install(this, release = !BuildConfig.DEBUG, forced = forced)
         // debug builds can be told not to start Tor, for the leak test's CONTINUE WITHOUT TOR run
@@ -68,8 +125,89 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // MARK: WebHost.Permissions
+
+    override fun camera(done: (Boolean) -> Unit) {
+        if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) return done(true)
+        if (isFinishing || isDestroyed) return done(false)
+        cameraAsked.add(done)
+        if (cameraAsked.size == 1) cameraLauncher.launch(Manifest.permission.CAMERA)
+    }
+
+    override fun notifications(done: (Boolean) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        ) {
+            return done(true)
+        }
+        if (isFinishing || isDestroyed) return done(false)
+        notificationsAsked.add(done)
+        if (notificationsAsked.size == 1) notificationsLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    // MARK: Lifecycle (P3)
+
+    override fun onStart() {
+        super.onStart()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            registerScreenCaptureCallback(mainExecutor, screenshotTaken as Activity.ScreenCaptureCallback)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        host?.resumed()
+    }
+
+    override fun onStop() {
+        // the camera light never stays on behind anything else, Foxy's own screen-lock confirmation included:
+        // stopping it touches no seed, screen or door, so it is not skipped for that confirmation (PutAway's away is)
+        host?.stopCamera()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            unregisterScreenCaptureCallback(screenshotTaken as Activity.ScreenCaptureCallback)
+        }
+        super.onStop()
+    }
+
+    /** Android 10+ lets an app see the clipboard only with focus: a sensitive copy whose 120 s ran out while away is cleared now (S23). */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) (application as FoxyApplication).services.clipboard.clearIfExpired()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        receiveDeepLink(intent)
+    }
+
+    /**
+     * DEBUG BUILDS ONLY (FoxyWebView.swift:476-507): `foxy://receive?amt=50&unit=sat`,
+     * rebuilt from a whitelist into the page's hash. A release build registers
+     * no scheme (ManifestTest) and reads no link here.
+     */
+    private fun receiveDeepLink(intent: Intent?) {
+        if (!BuildConfig.DEBUG) return
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val link = intent.dataString ?: return
+        val hash = DeepLink.hash(link) { Log.line("[deeplink] ignored parameter: ${it.take(32)}") }
+        if (hash == null) {
+            Log.line("[deeplink] no such screen")
+            return
+        }
+        host?.deepLink(hash)
+    }
+
     override fun onDestroy() {
-        (application as FoxyApplication).services.gone(this)
+        val services = (application as FoxyApplication).services
+        services.gone(this)
+        if (services.frontActivity == null) services.auth.confirmCredential = null
+        // a confirmation whose answer can no longer come back here is a no (and no longer Foxy's own prompt)
+        confirmed?.let {
+            confirmed = null
+            it(false)
+        }
+        if (services.auth.confirmAnswered === confirmAnswered) services.auth.confirmAnswered = null
+        confirmAnswered = null
         putAway?.let {
             it.cancel()
             ProcessLifecycleOwner.get().lifecycle.removeObserver(it)

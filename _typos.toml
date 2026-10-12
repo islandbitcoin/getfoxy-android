@@ -1,0 +1,10 @@
+# The typos spell check (`typos` at the repository root). Left out: what is
+# not this repository's own text and cannot be edited here, core/ (the iOS
+# page, byte for byte, tools/verify-core.sh) and the test fixtures copied from
+# the iOS repository unchanged (app/src/test/resources/fixtures/README.md),
+# whose tokens and bytewords are random letters.
+[files]
+extend-exclude = [
+    "core/",
+    "app/src/test/resources/fixtures/*.json",
+]

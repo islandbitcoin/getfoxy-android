@@ -31,6 +31,10 @@ class PutAwayLeavingTest {
         override var moneyInFlight = 0
         val evaluated = mutableListOf<String>()
         var reads = 0
+        var letGo = 0
+        override fun letGo() {
+            letGo++
+        }
         override fun keepAwake(on: Boolean) {}
         override fun evaluate(js: String) {
             evaluated.add(js)
@@ -43,7 +47,8 @@ class PutAwayLeavingTest {
     }
 
     private val page = FakePage()
-    private val away = PutAway({ page }, vault, parkTor = { parks++ }, torBack = { backs.add(it) }, sched = sched)
+    private var confirming = false
+    private val away = PutAway({ page }, vault, parkTor = { parks++ }, torBack = { backs.add(it) }, sched = sched, ownPrompt = { confirming })
 
     @After
     fun clean() {
@@ -135,5 +140,156 @@ class PutAwayLeavingTest {
         assertTrue("the door is open again", !Route.shut())
         sched.advance(60_000)
         assertEquals("no park after the return, from a look or a read timeout", 0, parks)
+    }
+
+    /**
+     * API 28-29: Foxy's own screen-lock confirmation is Settings' activity over
+     * Foxy, which stops it (DeviceAuth.confirming). That stop is not a put-away:
+     * the vault's epoch is not moved (a seed read under the prompt is kept), the
+     * page's screens are not let go (SeedBridge.closeScreens would bump the
+     * screen generation, and a seedShow would answer verified:false without
+     * opening), the door stays open and nothing comes back on the return.
+     */
+    @Test
+    fun aStopUnderFoxysOwnConfirmationPutsNothingAway() {
+        away.back()
+        val epoch = vault.epochNow
+        confirming = true
+        away.away()
+        assertEquals("the seed being read under the prompt is still kept after", epoch, vault.epochNow)
+        assertEquals("no screen is let go: the screen generation does not move", 0, page.letGo)
+        assertTrue("no _putAway pushed", page.evaluated.none { it.contains("_putAway") })
+        sched.advance(30_000)
+        assertTrue("the door stays open", !Route.shut())
+        assertEquals(0, parks)
+        assertEquals("no _tidying look", 0, page.reads)
+        confirming = false
+        away.back()
+        // the result comes after ProcessLifecycleOwner's start: the screen lock was given
+        away.promptAnswered(true)
+        sched.advance(PutAway.ANSWER_AT_MOST_MS + 1_000)
+        assertEquals("nothing was put away, so nothing comes back", emptyList<Long>(), backs)
+        assertTrue(page.evaluated.none { it.contains("_resumed") })
+        assertEquals("a yes keeps the seed read under it", epoch, vault.epochNow)
+        // a real put-away afterwards is one
+        away.away()
+        assertEquals(epoch + 1, vault.epochNow)
+        assertEquals(1, page.letGo)
+    }
+
+    @Test
+    fun aConfirmationLeftUpForTwoMinutesIsAPutAwayAfterAll() {
+        away.back()
+        val epoch = vault.epochNow
+        confirming = true
+        away.away()
+        sched.advance(PutAway.PROMPT_AT_MOST_MS - 1)
+        assertEquals(epoch, vault.epochNow)
+        sched.advance(1)
+        assertEquals("the person left from the prompt: put away", epoch + 1, vault.epochNow)
+        assertEquals(1, page.letGo)
+        sched.advance(PutAway.FIRST_LOOK_MS + 1_000)
+        assertEquals(1, parks)
+        confirming = false
+        away.back()
+        assertEquals("a return after it is a return", 1, backs.size)
+    }
+
+    /**
+     * The hole a skipped put-away opened: the owner leaves from Foxy's own
+     * confirmation (Home), someone opens Foxy from Recents within the 120 s and
+     * presses Back on the confirmation. That cancel proves nothing, so it is a
+     * return like any other: what the stop skipped is put away (the vault's epoch
+     * moves, the screens are let go) and `_resumed(secondsAway)` is pushed, which
+     * PIN-locks the page for an absence of a second or more (iOS index.html
+     * watchWake; docs/BRIDGE.md "Coming back").
+     */
+    @Test
+    fun aConfirmationAnsweredNoAfterTimeAwayIsAReturnAndThePageLocks() {
+        away.back()
+        val epoch = vault.epochNow
+        confirming = true
+        away.away()
+        sched.advance(30_000)
+        confirming = false
+        away.back()
+        assertTrue("nothing is decided before the answer", page.evaluated.none { it.contains("_resumed") })
+        assertEquals(epoch, vault.epochNow)
+        away.promptAnswered(false)
+        assertEquals("the put-away the stop skipped is run: the seed kept for the visit goes", epoch + 1, vault.epochNow)
+        assertEquals("the screens are let go", 1, page.letGo)
+        val resumed = page.evaluated.filter { it.contains("_resumed(") }
+        assertEquals(listOf("window.FoxyWallet && window.FoxyWallet._resumed(30)"), resumed)
+        assertTrue("the door is open", !Route.shut())
+        assertEquals("Tor was never parked for it, so it is not set up again", emptyList<Long>(), backs)
+        sched.advance(PutAway.PROMPT_AT_MOST_MS)
+        assertEquals("settled once", 1, page.evaluated.count { it.contains("_resumed(") })
+        assertEquals(0, parks)
+    }
+
+    @Test
+    fun aNoThatComesWhileStillStoppedIsKeptForTheReturn() {
+        away.back()
+        val epoch = vault.epochNow
+        confirming = true
+        away.away()
+        sched.advance(5_000)
+        confirming = false
+        away.promptAnswered(false)
+        assertEquals("still away: nothing yet", epoch, vault.epochNow)
+        away.back()
+        assertEquals(epoch + 1, vault.epochNow)
+        assertTrue(page.evaluated.any { it.contains("_resumed(5)") })
+    }
+
+    @Test
+    fun aYesThatComesWhileStillStoppedPutsNothingAway() {
+        away.back()
+        val epoch = vault.epochNow
+        confirming = true
+        away.away()
+        sched.advance(5_000)
+        confirming = false
+        away.promptAnswered(true)
+        away.back()
+        sched.advance(PutAway.ANSWER_AT_MOST_MS + 1_000)
+        assertEquals(epoch, vault.epochNow)
+        assertTrue(page.evaluated.none { it.contains("_resumed") })
+    }
+
+    @Test
+    fun noAnswerAfterTheReturnIsTakenAsNo() {
+        away.back()
+        val epoch = vault.epochNow
+        confirming = true
+        away.away()
+        sched.advance(3_000)
+        away.back()
+        sched.advance(PutAway.ANSWER_AT_MOST_MS - 1)
+        assertEquals(epoch, vault.epochNow)
+        sched.advance(1)
+        assertEquals("no answer in time: a no", epoch + 1, vault.epochNow)
+        assertTrue(page.evaluated.any { it.contains("_resumed(5)") })
+        // an answer arriving late changes nothing
+        away.promptAnswered(true)
+        assertEquals(1, page.evaluated.count { it.contains("_resumed(") })
+    }
+
+    @Test
+    fun leavingAgainBeforeTheAnswerIsAPutAway() {
+        away.back()
+        val epoch = vault.epochNow
+        confirming = true
+        away.away()
+        sched.advance(4_000)
+        away.back()
+        confirming = false
+        away.away()
+        assertEquals(epoch + 1, vault.epochNow)
+        assertTrue(page.evaluated.any { it.contains("_putAway(true)") })
+        sched.advance(1_000)
+        away.back()
+        assertEquals("the seconds away count from the first stop", listOf(5L), backs)
+        assertTrue(page.evaluated.any { it.contains("_resumed(5)") })
     }
 }

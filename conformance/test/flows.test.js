@@ -187,6 +187,52 @@ test('P2: a host serving P1 and P2 actions goes from connecting to up, mints and
   }
 });
 
+test('P3: a host serving P1, P2 and P3 actions answers every platform door the screens ask, and leans on nothing later without a stub', async () => {
+  // The flow to run against the Kotlin bridge in P3 (ENG-649): P1, P2 and P3 served,
+  // the LATER actions answered by their p1 stubs, and any without a stub an 'unserved'
+  // violation that fails it.
+  // Tor up from the start: the P2 flow covers connecting to up on the same phase rule
+  const s = await flow({ seed: true, tor: 'up', phase: 'P3' }, async (s) => {
+    const W = s.W, w = s.window;
+    await s.until(() => W.connected === true, 30000, 'the page to connect to its default mint');
+    // the screen is not captured, and native's doors answer
+    assert.equal(await W.captureCheck(), false);
+    assert.equal(await W.scan('Scan an ecash token'), 'cashuBconformance');
+    await W.clipboard();
+    assert.equal(W.share('cashuBconformance'), true);
+    assert.equal(W.notify('received'), true);
+    assert.equal(await W.biometric('Unlock Foxy', true), 'yes');
+    // the camera pane and the paste button, at rectangles the page measured (jsdom lays nothing out)
+    const pane = w.document.createElement('div');
+    pane.getBoundingClientRect = () => ({ left: 20, top: 400, width: 300, height: 200 });
+    assert.equal(W.startPreview(pane, () => {}), true);
+    W.stopPreview();
+    const paste = w.document.createElement('div');
+    paste.getBoundingClientRect = () => ({ left: 20, top: 600, width: 300, height: 60 });
+    assert.equal(W.startPasteButton(paste, () => {}), true);
+    W.stopPasteButton();
+    await W.openSettings();
+    await W.openCompany('strike');
+    // the seed's own screens, typed words adopted and forgotten, the protection, and the wipe
+    await W.showSeedNative({ verify: true });
+    const candidate = await W.enterSeedNative();
+    const found = await W.scanSeed({ candidate }, [W.mintUrl]);
+    await W.adoptScan(found, { candidate }).catch(() => {});
+    await W.forgetSeedCandidate(candidate);
+    await W.seedProtection();
+    await W.setSeedProtection('device').catch(() => {});
+    const app = s.logic();
+    assert.equal(app.copySecret('cashuBconformance-token'), true);
+    app.haptic('success', true);
+    await W.wipeDevice().catch(() => {});
+    await s.settle(800);
+  });
+  const p3 = CONTRACT.filter((e) => e.kind === 'action' && e.phase === 'P3').map((e) => e.name);
+  assert.equal(p3.length, 20);
+  assert.deepEqual(p3.filter((a) => !(s.host.asked.get(a) > 0)), [], 'every P3 action was asked of the P3 host');
+  assert.ok(s.host.asked.get('haptic') > 0, 'and a haptic');
+});
+
 test('screens: everything a screen asks native for, through the wallet', async () => {
   await flow({ seed: true, tor: 'up' }, async (s) => {
     const W = s.W, w = s.window;

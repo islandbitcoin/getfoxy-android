@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DEBUG BUILDS ONLY: the foxy:// deep link (BRIDGE.md `deepLink`;
+     FoxyWebView.swift:476-507), so a test can open a screen with an amount in
+     one command. A URL that drives a wallet to a send screen is an attack
+     surface any app on the phone could reach, so the release manifest registers
+     no scheme at all (ManifestTest) and MainActivity reads no link in a release
+     build. singleTop: a link while Foxy is up reaches the activity that is
+     there (onNewIntent), not a second page. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="foxy" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
