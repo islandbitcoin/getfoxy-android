@@ -214,16 +214,26 @@ class TorMachine(
         setUp(reason)
     }
 
+    /**
+     * A new daemon for one whose thread ended. `parked` is left as it is: a
+     * RETRY while Foxy is away (the page's `torRetry` keeps running in the
+     * background) launches Tor off the network, and `controlReady` sends
+     * `DisableNetwork 1` the moment its link is up; the return sets it up.
+     */
     private fun relaunch(reason: String) {
-        Log.line("[foxy] tor: $reason; starting Tor again")
+        Log.line(if (parked) "[foxy] tor: $reason; starting Tor again, off the network until Foxy comes back" else "[foxy] tor: $reason; starting Tor again")
         control = null
         launched = false
-        parked = false
         ready = false
         circuitUp = false
         failed = false
         changed()
         launch()
+        if (parked) {
+            // nothing is set up while away, so there is no bootstrap to time
+            deadline?.cancel()
+            deadline = null
+        }
     }
 
     private fun launch() {
@@ -623,9 +633,21 @@ class TorMachine(
      */
     fun backgrounded(done: () -> Unit) {
         val ctrl = control
-        // a Tor whose thread ended has nothing on the network to take off, and a
-        // park would make the return a set-up with no daemon to set up
-        if (!launched || parked || stopped) return done()
+        if (!launched || parked) return done()
+        if (stopped) {
+            // a Tor whose thread ended has nothing on the network to take off, so
+            // no DisableNetwork; it is still marked away, so a RETRY before the
+            // return launches the new Tor off the network (`relaunch`)
+            parked = true
+            setUpGen += 1
+            setUpPending = false
+            stallOff()
+            deadline?.cancel()
+            deadline = null
+            Log.line("[foxy] tor: put away while stopped; a new Tor stays off the network until Foxy comes back")
+            changed()
+            return done()
+        }
         if (ctrl == null) {
             // Tor is starting and its control link is not up yet: parked now, so
             // `controlReady` takes it off the network the moment the link arrives
@@ -666,9 +688,9 @@ class TorMachine(
     /** The app came forward after `awayS` seconds: a fresh set-up, unless the circuit never went down. */
     fun resumed(awayS: Long) {
         if (!launched) return
-        if (stopped) return relaunch("back after ${awayS}s; Tor had stopped")
         val wasParked = parked
         parked = false
+        if (stopped) return relaunch("back after ${awayS}s; Tor had stopped")
         if (ready && !wasParked && awayS < 30) {
             Log.line("[foxy] tor: back after ${awayS}s and the circuit is up; nothing to set up")
             return

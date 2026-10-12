@@ -347,17 +347,37 @@ class TorMachineTest {
         assertEquals("connecting", m.state)
     }
 
-    /** A Tor whose thread ended is not parked by going to the background; coming back launches it again. */
+    /**
+     * A Tor whose thread ended is marked away when Foxy goes to the background,
+     * with no DisableNetwork (there is no daemon to send it to); coming back
+     * launches it again.
+     */
     private fun stoppedThenPutAway(): TorMachine {
         val m = connected()
         daemon.ended = true
         m.daemonFinished("tor-android said STOPPING")
         assertEquals("stopped", m.state)
+        val sent = control.setConfs.size
         var done = 0
         m.backgrounded { done++ }
         assertEquals("backgrounded answers at once", 1, done)
-        assertFalse("a stopped Tor is not parked", m.parked)
+        assertTrue("a stopped Tor is marked away", m.parked)
+        assertEquals("nothing sent to a daemon that is gone", sent, control.setConfs.size)
         return m
+    }
+
+    /** The new Tor's control link comes up while Foxy is away: off the network, nothing set up, not ready. */
+    private fun assertHeldOffTheNetwork(m: TorMachine, link: FakeControl) {
+        m.controlReady(link)
+        sched.drain()
+        assertEquals("off the network the moment the link came up", listOf(listOf("DisableNetwork" to "1")), link.setConfs)
+        circuit(m)
+        assertFalse("a circuit while away is not ready", m.isRunning)
+        sched.advance(120_000)
+        assertFalse(m.isRunning)
+        assertTrue("still away", m.parked)
+        assertEquals("no set-up ran while away", 1, link.setConfs.size)
+        assertFalse("nothing turned the network back on", link.setConfs.any { it.contains("DisableNetwork" to "0") })
     }
 
     @Test
@@ -365,15 +385,65 @@ class TorMachineTest {
         val m = stoppedThenPutAway()
         m.resumed(0)
         assertEquals("launched again on resume", 2, daemon.torrcs.size)
+        assertFalse("the new Tor is not parked", m.parked)
+        assertEquals("connecting", m.state)
+        val link = FakeControl(sched)
+        m.controlReady(link)
+        sched.drain()
+        assertFalse("the new Tor is not taken off the network", link.setConfs.any { it.contains("DisableNetwork" to "1") })
+        circuit(m)
+        assertTrue(m.isRunning)
+    }
+
+    /** The next activity (MainActivity: `if (Tor.parked) Tor.resumed(0) else Tor.start()`). */
+    @Test
+    fun aStoppedTorPutAwayIsLaunchedAgainByTheNextActivity() {
+        val m = stoppedThenPutAway()
+        if (m.parked) m.resumed(0) else m.start()
+        assertEquals("launched again", 2, daemon.torrcs.size)
+        assertFalse("the new Tor is not parked", m.parked)
         assertEquals("connecting", m.state)
     }
 
+    /** The page's automatic torRetry while away (a network change pushes `_privacy`): launched off the network. */
     @Test
-    fun aStoppedTorPutAwayIsLaunchedAgainByStart() {
+    fun aRetryWhileAwayLaunchesAStoppedTorOffTheNetwork() {
+        val m = stoppedThenPutAway()
+        m.restart("network")
+        assertEquals("launched again", 2, daemon.torrcs.size)
+        assertTrue("the new Tor is still away", m.parked)
+        assertHeldOffTheNetwork(m, FakeControl(sched))
+        // back: a fresh set-up turns the network on
+        m.resumed(40)
+        sched.drain()
+        assertFalse(m.parked)
+        circuit(m)
+        assertTrue(m.isRunning)
+    }
+
+    @Test
+    fun aStartWhileAwayLaunchesAStoppedTorOffTheNetwork() {
         val m = stoppedThenPutAway()
         m.start()
         assertEquals("launched again on start", 2, daemon.torrcs.size)
-        assertEquals("connecting", m.state)
+        assertTrue("the new Tor is still away", m.parked)
+        assertHeldOffTheNetwork(m, FakeControl(sched))
+    }
+
+    /** A Tor that stops after the park, then a RETRY while still away: the new Tor stays off the network. */
+    @Test
+    fun aRetryWhileAwayLaunchesATorThatStoppedWhileParkedOffTheNetwork() {
+        val m = connected()
+        circuit(m)
+        m.backgrounded { }
+        sched.drain()
+        assertTrue(m.parked)
+        daemon.ended = true
+        m.daemonFinished("tor-android said STOPPING")
+        m.restart("network")
+        assertEquals("launched again", 2, daemon.torrcs.size)
+        assertTrue("the new Tor is still away", m.parked)
+        assertHeldOffTheNetwork(m, FakeControl(sched))
     }
 
     @Test
