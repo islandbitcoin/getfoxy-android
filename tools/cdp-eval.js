@@ -4,7 +4,10 @@
  * through the debug build's WebView remote debugging (docs/DEVICE-TESTS.md).
  *
  *   adb forward tcp:9333 localabstract:webview_devtools_remote_$(adb shell pidof io.islandbitcoin.foxy)
- *   node tools/cdp-eval.js 9333 'await FoxyWallet.connect("https://testnut.cashu.space"); return FoxyWallet.privacy()'
+ *   node tools/cdp-eval.js 9333 'await FoxyWallet.connect("https://mint.minibits.cash/Bitcoin"); return FoxyWallet.privacy()'
+ *
+ * The mints are real: a connect moves nothing, but a mint or a melt moves real
+ * sats and follows docs/DEVICE-TESTS.md "Real money".
  *
  * The script is an async function body; what it returns is printed as JSON.
  * A debug build only: release builds turn WebView debugging off.

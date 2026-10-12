@@ -28,7 +28,7 @@ dialog, to continue without Tor for the session.
 | `app/tor-seed/` | iOS's relay directory seed (`tor-microdescs.xz`, byte for byte) and its pins; `gradle/tor-seed.gradle.kts` unpacks it into the APK |
 | `tools/check-no-network.sh` | fail if anything under `app/src` can reach the network other than through `network/` (with its self-test, `tools/check-no-network.test.sh`) |
 | `tools/leak-test.sh`, `tools/leak-check.js` | the P2 leak test: an emulator capture through each transport, and the analysis that holds every flow of the app's to Tor (with its tests, `tools/leak-check.test.js`) |
-| `tools/cdp-eval.js`, `tools/fake-invoice.js` | drive the page of a debug build over WebView debugging; a fake-money invoice for a test mint's melt (docs/DEVICE-TESTS.md) |
+| `tools/cdp-eval.js`, `tools/real-money.js`, `tools/fake-invoice.js` | drive the page of a debug build over WebView debugging; the money rules of a leg on a real mint (the person's go, 100 sats or less, the person's own invoice: docs/DEVICE-TESTS.md "Real money"); an invoice that pays no one, for the scanner check only, never paid |
 | `docs/DEVICE-TESTS.md` | what is checked on a phone: the instrumented tests and the checks by hand |
 
 ## Checks
@@ -39,8 +39,8 @@ cd conformance && npm ci && npm test
 # with a clone of getfoxy/iOS, every iOS file:line in the contract and the docs is checked too:
 FOXY_IOS_REF=/path/to/ios-clone npm test
 
-# the leak test's analysis
-node --test tools/leak-check.test.js tools/fake-invoice.test.js
+# the leak test's analysis and the money rules
+node --test tools/leak-check.test.js tools/fake-invoice.test.js tools/real-money.test.js
 
 # the app (JDK 17, Android SDK platform 37.1: tor-android's AAR asks for it)
 tools/check-no-network.sh && tools/check-no-network.test.sh

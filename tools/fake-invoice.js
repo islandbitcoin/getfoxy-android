@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 'use strict';
-/* fake-invoice.js — a BOLT11 invoice with nothing behind it, for a test mint's
- * FakeWallet to "pay" when a test melts (docs/DEVICE-TESTS.md: the device exit
- * and the leak test melt on testnut.cashu.space, fake money). testnut marks its
- * own invoices paid the moment it makes them, so a melt needs one from
- * elsewhere; this one is signed with a fresh key and pays no one.
+/* fake-invoice.js — a BOLT11 invoice with nothing behind it. It was the melt's
+ * invoice on testnut.cashu.space (fake money) until Android moved to testing on
+ * real mints with real ecash (ENG-662): it is NEVER paid on a real mint, and no
+ * device leg or leak test melts to it any more (docs/DEVICE-TESTS.md "Real
+ * money"; melts pay only an invoice the person supplies). What is left: an
+ * invoice to show the scanner (scanned, never paid), and the vectors of
+ * tools/real-money.test.js. It is signed with a fresh key and pays no one.
  *
  *   node tools/fake-invoice.js 8      # an 8-sat invoice, mainnet prefix (lnbc)
  *

@@ -8,13 +8,34 @@
 # APK; samples the app's sockets from /proc/net every 0.2 s; launches Foxy on
 # the transport (FoxyForceTransport), or without Tor (FoxyNoTor) for the opt-out
 # run; drives the page over WebView debugging (tools/cdp-eval.js): Tor up, then
-# a mint and a melt on testnut.cashu.space (fake money); for the opt-out run,
-# CONTINUE WITHOUT TOR through the native dialog first. Then stops everything and
-# runs tools/leak-check.js on what was captured. Nothing here touches a phone.
+# a connection to a real mint (MINT, default https://mint.minibits.cash/Bitcoin:
+# its keys and info, no money); for the opt-out run, CONTINUE WITHOUT TOR through
+# the native dialog first. Then stops everything and runs tools/leak-check.js on
+# what was captured. Nothing here touches a phone.
+#
+# Android is tested on real mints with real ecash, so the mint and the melt are
+# opt-in, under the money rules (docs/DEVICE-TESTS.md "Real money",
+# tools/real-money.js), checked before the emulator starts:
+#
+#   REAL_MONEY=yes MAX_SATS=64 INVOICE=<the person's own invoice, under 64 sats> \
+#     tools/leak-test.sh direct out/
+#
+# only with the person's explicit go for this run; MAX_SATS at most 100 unless
+# OVER_DEFAULT_CAP=yes; MINT_SATS (default MAX_SATS) is the mint quote, printed
+# here for the person to pay from their own wallet within PAY_TIMEOUT_SECONDS
+# (default 600; the run stops cleanly, melting nothing, if it is not paid); the
+# melt pays only INVOICE, refused above MAX_SATS. No fake invoice is paid.
 set -euo pipefail
 mode="$1"
 out="$(cd "$2" && pwd)"
 root="$(cd "$(dirname "$0")/.." && pwd)"
+# the money rules first: a refusal here has started nothing
+mint="$(node "$root/tools/real-money.js" mint)"
+leg=""
+# asking for any part of a money leg without the go is refused, not quietly skipped
+if [ -n "${REAL_MONEY:-}${MAX_SATS:-}${MINT_SATS:-}${INVOICE:-}" ]; then
+  leg="$(node "$root/tools/real-money.js" leg)"
+fi
 sdk="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 avd="${AVD:-foxy_leak}"
 port=5580
@@ -84,17 +105,42 @@ if [ "$mode" = unprotected ]; then
 else
   cdp 'for (var i = 0; i < 1200; i++) { if (FoxyWallet.privacy().tor === "up") return "up after " + (i / 2) + " s"; await new Promise(function (r) { setTimeout(r, 500); }); } throw new Error("Tor did not come up")' 700000
 fi
-log "minting and melting on testnut.cashu.space"
-invoice="$(node "$root/tools/fake-invoice.js" 8)"
+log "connecting to $mint"
 cdp 'var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
      for (var t = 0; t < 120 && !FoxyWallet.connected; t++) await sleep(500);
-     for (var c = 0; c < 5 && FoxyWallet.mintUrl !== "https://testnut.cashu.space"; c++) { try { await FoxyWallet.connect("https://testnut.cashu.space"); } catch (e) { await sleep(2000); } }
-     var a = await FoxyWallet.invoice(64, "foxy leak test");
-     var claimed = null, err = null;
-     for (var i = 0; i < 20 && !claimed; i++) { try { claimed = await FoxyWallet.claim(a.hash); } catch (e) { err = String(e.message || e); await sleep(1500); } }
-     var paid = null, perr = null;
-     try { paid = await FoxyWallet.pay("'"$invoice"'"); } catch (e) { perr = String(e.message || e); }
-     return { privacy: FoxyWallet.privacy(), mint: FoxyWallet.mintUrl, claimed: !!claimed, claimErr: claimed ? null : err, paid: !!paid, payErr: perr }' 600000 | tee "$out/$mode.drive.json"
+     var mint = '"$(node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$mint")"', err = null;
+     for (var c = 0; c < 5 && FoxyWallet.mintUrl !== mint; c++) { try { await FoxyWallet.connect(mint); } catch (e) { err = String(e.message || e); await sleep(2000); } }
+     return { privacy: FoxyWallet.privacy(), mint: FoxyWallet.mintUrl, connected: FoxyWallet.mintUrl === mint, err: err }' 600000 | tee "$out/$mode.connect.json"
+if [ -n "$leg" ]; then
+  field() { node -e 'process.stdout.write(String(JSON.parse(process.argv[1])[process.argv[2]]))' "$leg" "$1"; }
+  mint_sats="$(field mintSats)"; invoice="$(field invoice)"; invoice_sats="$(field invoiceSats)"; timeout="$(field payTimeoutSeconds)"
+  quote="$(cdp 'var a = await FoxyWallet.invoice('"$mint_sats"', "foxy leak test"); return { bolt11: a.bolt11, hash: a.hash, sats: a.sats }' 180000)"
+  bolt11="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).bolt11)' "$quote")"
+  hash="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).hash)' "$quote")"
+  [[ "$hash" =~ ^[A-Za-z0-9_-]{1,128}$ ]] || { echo "the mint's quote id is not one to pass on: $hash" >&2; exit 1; }
+  # the mint's own invoice is read too: the person is never shown more than MINT_SATS to pay
+  quoted="$(node -e 'process.stdout.write(String(require(process.argv[1]).invoiceSats(process.argv[2])))' "$root/tools/real-money.js" "$bolt11")"
+  [ "$quoted" = "$mint_sats" ] || { echo "the mint's invoice is for $quoted sats, not $mint_sats: not paying it" >&2; exit 1; }
+  echo "leak-test $mode: PAY THIS from your own wallet: $mint_sats sats to $mint, within $timeout s:" >&2
+  echo "$bolt11" >&2
+  deadline=$(( $(date +%s) + timeout ))
+  claimed=""
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    r="$(cdp 'try { await FoxyWallet.claim("'"$hash"'"); return "claimed"; } catch (e) { return "not yet: " + String(e.message || e); }' 60000 || true)"
+    if [ "$r" = '"claimed"' ]; then claimed=1; break; fi
+    sleep 3
+  done
+  if [ -z "$claimed" ]; then
+    echo "leak-test $mode: not paid within $timeout s; nothing was melted (a quote paid later is claimed by Foxy's sweep on its next connect)" >&2
+    exit 1
+  fi
+  log "claimed $mint_sats sats; melting $invoice_sats to the person's invoice"
+  cdp 'var paid = null, perr = null;
+       try { paid = await FoxyWallet.pay("'"$invoice"'"); } catch (e) { perr = String(e.message || e); }
+       return { privacy: FoxyWallet.privacy(), mint: FoxyWallet.mintUrl, claimed: true, paid: !!paid, payErr: perr }' 600000 | tee "$out/$mode.drive.json"
+else
+  log "no money moved: REAL_MONEY not given (docs/DEVICE-TESTS.md \"Real money\")"
+fi
 sleep 3
 if [ "$mode" != unprotected ]; then
   adb shell run-as $pkg cat cache/TorService/cached-microdesc-consensus > "$out/$mode.consensus"
