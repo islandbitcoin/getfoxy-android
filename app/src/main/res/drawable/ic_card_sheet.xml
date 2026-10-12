@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The card sheet's mark while it looks for a card (flashcard/CardSheetView.kt): a phone, a card
+     at its back and the field between them, in iOS's sheet blue, as CoreNFC's sheet draws its own. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- the phone -->
+    <path
+        android:strokeColor="#FF0A84FF"
+        android:strokeWidth="4"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M30,14 L58,14 Q64,14 64,20 L64,76 Q64,82 58,82 L30,82 Q24,82 24,76 L24,20 Q24,14 30,14 Z" />
+    <!-- the card -->
+    <path
+        android:fillColor="#FF0A84FF"
+        android:pathData="M54,48 L84,40 Q88,39 89,43 L92,56 Q93,60 89,61 L59,69 Q55,70 54,66 L51,53 Q50,49 54,48 Z" />
+    <!-- the field -->
+    <path
+        android:strokeColor="#FF0A84FF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M70,26 Q78,30 80,36 M74,18 Q86,24 89,34" />
+</vector>
