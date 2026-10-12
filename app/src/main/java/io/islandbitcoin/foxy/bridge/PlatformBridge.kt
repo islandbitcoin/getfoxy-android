@@ -8,7 +8,9 @@ import java.util.concurrent.Executor
  * The P3 platform actions (FoxyBridge.swift): the camera (full screen and the
  * live pane), the paste button and the clipboard, copy, share, notifications,
  * the PIN lock's biometric, this app's settings and the four company sites, and
- * whether the screen is captured. The rules are [PlatformRules] and
+ * whether the screen is captured; and the first-install Bluetooth screen's
+ * APPROVE (`bluetoothAsk`), answered "unsupported" until tap to pay is built
+ * (ENG-650). The rules are [PlatformRules] and
  * [ClipboardFilter]; the doors are [PageHost]'s (WebHost on a phone, FakeHost
  * in the tests). Nothing the page writes is shown, opened or notified: it picks
  * from native's fixed lists or gets the default or a refusal (S24), and a
@@ -25,7 +27,18 @@ class PlatformBridge(
         val ACTIONS = setOf(
             "captured", "scan", "previewStart", "previewStop", "pasteStart", "pasteStop",
             "clipboard", "copy", "share", "notify", "biometric", "openSettings", "openCompany",
+            "bluetoothAsk",
         )
+
+        /**
+         * What `bluetoothAsk` answers until BLE tap to pay lands (ENG-650): one of
+         * the contract's states, and the one that asks nothing of the phone.
+         */
+        const val BLUETOOTH_UNSUPPORTED = "unsupported"
+
+        /** The gate's own global, not a FoxyWallet member: the gate is up before the wallet (FoxyBridge+Tap.swift `handleBluetoothAsk`). */
+        fun bluetoothAnswer(state: String): String =
+            "window.__foxyBluetoothAnswer && window.__foxyBluetoothAnswer(${FoxyBridge.literal(state)})"
 
         /** A push into the page, guarded so a page still booting or gone does nothing. */
         fun push(name: String, arg: String?): String =
@@ -102,8 +115,25 @@ class PlatformBridge(
                     if (refused == null) resolve(id, "ok", null) else resolve(id, null, refused)
                 }
             }
+            "bluetoothAsk" -> bluetoothAsk(id)
             else -> resolve(id, null, "Unknown action: $action")
         }
+    }
+
+    /**
+     * The first-install Bluetooth screen's APPROVE (foxy-tor-gate.js): the page
+     * sets `asking` and leaves only when `__foxyBluetoothAnswer(state)` is
+     * called, so a reply alone keeps the screen up for good (ENG-656). Answered
+     * twice, in iOS's order (FoxyBridge+Tap.swift `handleBluetoothAsk`): the
+     * gate's global first, then the action's own id. Android has no tap to pay
+     * yet (ENG-650), so the state is always "unsupported": no Bluetooth
+     * permission is asked or declared, nothing scans or advertises, and the
+     * page writes `foxy.bt.asked` and moves on.
+     */
+    private fun bluetoothAsk(id: String) = host.post {
+        Log.line("[foxy] bluetooth: asked; no tap to pay on Android yet, answering $BLUETOOTH_UNSUPPORTED")
+        host.evaluate(bluetoothAnswer(BLUETOOTH_UNSUPPORTED))
+        resolve(id, BLUETOOTH_UNSUPPORTED, null)
     }
 
     /**

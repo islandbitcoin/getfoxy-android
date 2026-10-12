@@ -147,6 +147,18 @@ allowlisted, plus the WebRTC removal in every frame.
   `orbotAccess`, `tapPayStart`). The flow *P3: a host serving P1, P2 and P3
   actions …* (`conformance/test/flows.test.js`) asks every P3 action and fails
   on any LATER action with no stub.
+- **The Bluetooth screen (ENG-656).** `bluetoothAsk` and
+  `__foxyBluetoothAnswer` are P3, not LATER: the first-install Bluetooth
+  screen's APPROVE posts `bluetoothAsk`, sets `asking` and leaves only when
+  native calls `window.__foxyBluetoothAnswer(state)`, so an "Unknown action"
+  reply left the screen up for good. Until BLE tap to pay lands (ENG-650) the
+  Android host asks nothing and declares no Bluetooth permission: it pushes
+  `__foxyBluetoothAnswer("unsupported")` and then answers `"unsupported"`,
+  in iOS's order (`Foxy/Bridge/FoxyBridge+Tap.swift:254-265`). The flow
+  *P3: APPROVE on the first-install Bluetooth screen …* presses it on a P3 host.
+  The rest of the Bluetooth, onion, Nostr and card actions stay LATER: each is
+  a request the page awaits with a timeout and a catch, not a push it waits
+  for, so an "Unknown action" reply ends it.
 - **Native pushes the route first.** iOS starts Tor before the page loads and
   pushes `_privacy` on every change (`FoxyBridge.swift:89-118`, `startTor`); the
   page also asks `privacy`. Android: `_privacy` is pushed on every change of
@@ -1031,12 +1043,12 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:425`, `Foxy/Bridge/FoxyBridge+Tap.swift:267-272`
 
-#### `bluetoothAsk` — LATER
+#### `bluetoothAsk` — P3
 
 - **Shape:** page → native, action: `{ action: "bluetoothAsk", id }`
 - **Payload:** —
 - **Called from:** `Web/foxy-tor-gate.js:2071`
-- **Native:** First-install screen: put the OS Bluetooth permission question up, answer the state (also pushed to window.__foxyBluetoothAnswer). Scans and advertises nothing.
+- **Native:** First-install screen: put the OS Bluetooth permission question up, answer the state (also pushed to window.__foxyBluetoothAnswer). Scans and advertises nothing. Android (ENG-656, until BLE tap to pay in ENG-650): no question is asked and no Bluetooth permission is declared or requested; native pushes window.__foxyBluetoothAnswer("unsupported") and then answers "unsupported", in iOS's order, so the page writes foxy.bt.asked and closes the screen. A reply without the push left the screen up for good: the page leaves only on the push, and every later APPROVE returns early on `asking`.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "allowed" / "denied" / "off" / "unsupported" / "unknown"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:426`, `Foxy/Bridge/FoxyBridge+Tap.swift:254-265`
 
@@ -1082,12 +1094,12 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Native:** M11 arrived on the payer.
 - **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:200`
 
-#### `__foxyBluetoothAnswer` — LATER
+#### `__foxyBluetoothAnswer` — P3
 
 - **Shape:** native → page, global: `window.__foxyBluetoothAnswer(state)`
 - **Payload:** `state`: string
 - **Called from:** `Web/foxy-tor-gate.js:2060`
-- **Native:** The Bluetooth question was answered (defined by the gate's first-install screen).
+- **Native:** The Bluetooth question was answered (defined by the gate's first-install screen). Android (ENG-656): pushed with "unsupported" on every bluetoothAsk, before its reply, until BLE tap to pay (ENG-650).
 - **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:259`
 
 #### `_turned` — LATER
@@ -1324,7 +1336,7 @@ kind, domain, phase, payloadSchema, reply, iosRef, pageRef, behaviour, timing? }
 | `tapQuote` | page → native | action | LATER | `body`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:423 |
 | `tapTerms` | page → native | action | LATER | `body`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:424 |
 | `tapPayStop` | page → native | action | LATER | — | "ok" | Foxy/Bridge/FoxyBridge.swift:425 |
-| `bluetoothAsk` | page → native | action | LATER | — | "allowed" / "denied" / "off" / "unsupported" / "unknown" | Foxy/Bridge/FoxyBridge.swift:426 |
+| `bluetoothAsk` | page → native | action | P3 | — | "allowed" / "denied" / "off" / "unsupported" / "unknown" | Foxy/Bridge/FoxyBridge.swift:426 |
 | `shakeStart` | page → native | action | LATER | — | "ok" | Foxy/Bridge/FoxyBridge.swift:441 |
 | `shakeStop` | page → native | action | LATER | — | "ok" | Foxy/Bridge/FoxyBridge.swift:442 |
 | `cardBegin` | page → native | action | LATER | `text`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:429 |
@@ -1351,7 +1363,7 @@ kind, domain, phase, payloadSchema, reply, iosRef, pageRef, behaviour, timing? }
 | `_tapQuote` | native → page | push | LATER | `text`: string | none | Foxy/Bridge/FoxyBridge+Tap.swift:130 |
 | `_tapChange` | native → page | push | LATER | `token`: string | none | Foxy/Bridge/FoxyBridge+Tap.swift:194 |
 | `_tapTerms` | native → page | push | LATER | `text`: string | none | Foxy/Bridge/FoxyBridge+Tap.swift:200 |
-| `__foxyBluetoothAnswer` | native → page | global | LATER | `state`: string | none | Foxy/Bridge/FoxyBridge+Tap.swift:259 |
+| `__foxyBluetoothAnswer` | native → page | global | P3 | `state`: string | none | Foxy/Bridge/FoxyBridge+Tap.swift:259 |
 | `_turned` | native → page | push | LATER | `upsideDown`: boolean | none | Foxy/Bridge/FoxyBridge+Tap.swift:303-307 |
 | `_tapChangeKeptLate` | native → page | push | LATER | — | none | Foxy/Bridge/FoxyBridge+Tap.swift:380 |
 | `_tap` | native → page | push | LATER | `side`: string, `stage`: string, `code`: string?, `edge`: string?, `pct`: integer? | none | Foxy/Bridge/FoxyBridge+Tap.swift:487-498 |

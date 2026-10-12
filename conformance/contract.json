@@ -2339,7 +2339,7 @@
     "kind": "action",
     "name": "bluetoothAsk",
     "domain": "bluetooth",
-    "phase": "LATER",
+    "phase": "P3",
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -2358,7 +2358,7 @@
       ],
       "errors": []
     },
-    "behaviour": "First-install screen: put the OS Bluetooth permission question up, answer the state (also pushed to window.__foxyBluetoothAnswer). Scans and advertises nothing.",
+    "behaviour": "First-install screen: put the OS Bluetooth permission question up, answer the state (also pushed to window.__foxyBluetoothAnswer). Scans and advertises nothing. Android (ENG-656, until BLE tap to pay in ENG-650): no question is asked and no Bluetooth permission is declared or requested; native pushes window.__foxyBluetoothAnswer(\"unsupported\") and then answers \"unsupported\", in iOS's order, so the page writes foxy.bt.asked and closes the screen. A reply without the push left the screen up for good: the page leaves only on the push, and every later APPROVE returns early on `asking`.",
     "pageRef": [
       "Web/foxy-tor-gate.js:2071@action: 'bluetoothAsk'"
     ],
@@ -3125,14 +3125,14 @@
     },
     "name": "__foxyBluetoothAnswer",
     "domain": "bluetooth",
-    "phase": "LATER",
+    "phase": "P3",
     "target": "window.__foxyBluetoothAnswer(state)",
     "payloadSchema": {
       "fields": {
         "state": "string"
       }
     },
-    "behaviour": "The Bluetooth question was answered (defined by the gate's first-install screen).",
+    "behaviour": "The Bluetooth question was answered (defined by the gate's first-install screen). Android (ENG-656): pushed with \"unsupported\" on every bluetoothAsk, before its reply, until BLE tap to pay (ENG-650).",
     "pageRef": [
       "Web/foxy-tor-gate.js:2060@__foxyBluetoothAnswer"
     ],
