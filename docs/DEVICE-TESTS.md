@@ -210,6 +210,18 @@ wallet. (This replaces ENG-661's advice to use testnut.cashu.space.)
    button's text inside its button, as on iOS. Foxy's text does not grow with
    the font size (`WebHost.PAGE_TEXT_ZOOM`, ANDROID-MAPPING decision 7);
    native screens (SHOW WORDS, the dialogs) still do.
+10. **A card's owner key from the same words (ENG-666). Pending: the
+    architect's on-device check; no phone was used for this change.** The JVM
+    tests hold the Kotlin to iOS's vectors (`CardOwnerTest`,
+    `SeedActionsTest`, `CardBridgeTest`); `CardOwnerOnDeviceTest`
+    (`./gradlew connectedDebugAndroidTest`) checks the same keys through the
+    phone's own providers (Conscrypt, not the desk JVM's). Then by hand: on the
+    Pixel restored from the iPhone's twelve words, and on the iPhone, post
+    `cardOwnerKey` with the key of a card the iPhone set up, as the page's
+    `cardOwnerPub` does (WebView debugging and `tools/cdp-eval.js` on the
+    Pixel, Safari's Web Inspector on the iPhone): the two `pub` answers are the
+    same 130 characters. `cardTime` answers the phone's clock and a signature.
+    No card is needed and nothing moves; the card itself is A5 (the NFC link).
 
 ## The P2 device exit (ENG-648)
 
