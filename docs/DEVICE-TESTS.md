@@ -40,6 +40,7 @@ adb shell am instrument -w -r io.islandbitcoin.foxy.test/androidx.test.runner.An
 | `CameraUnbindTest` | the live pane binds the camera, and the activity stopping unbinds it at once; a second stop does nothing (grants CAMERA) | S25 |
 | `SeedProtectTest` | the `device` key needs the person for every use (API 30+; on API 28-29 it refuses at `Cipher.init` outside the 10 s after a confirmation) and survives a new fingerprint; a move to `device` the person does not approve leaves the `none` seed readable and the protection unchanged. Needs a screen lock | S3, S5 |
 | `OwnPromptTest` | API 28-29 only, with `-e foxyPin <pin>` (skipped otherwise; it types the PIN with `input`): Settings' screen-lock confirmation stops MainActivity, and that stop is not a put-away. The vault's epoch does not move, the seed read under it is kept, the door stays open, and PutAway logs that it put nothing away; taking the guard off within 10 s of that yes still asks (`fresh`); Back on the confirmation after 2.5 s is not a yes, so the skipped put-away runs (the epoch moves) and PutAway logs a return. With a WebView that loads the page, a `seedShow` of a `device` seed opens SHOW WORDS once the PIN is given (skipped on an image whose WebView cannot load the page) | S3, S20, S21 |
+| `BluetoothApproveTest` | what the first-install Bluetooth screen's APPROVE posts (`bluetoothAsk`) comes back through the real shim twice, in iOS's order: `window.__foxyBluetoothAnswer("unsupported")`, which closes the screen, then the reply `unsupported` on its id; and the gate's own screen, launched with `FOXY_SHOW_WARNING` (debug builds) and raised through the banner's `leaveOffline` on a phone with a wallet, closes after PROCEED then APPROVE with `foxy.bt.asked` = `approved, iOS said unsupported` (the two keys are put back). ENG-656; no Bluetooth permission is asked. Passed on a Pixel 8 Pro (Android 17) 2026-10-12, and fails there with the push taken out; by hand on the same day, a fresh install on an API 35 emulator closed the screen on APPROVE | ENG-656 |
 
 P2 starts Tor with the page, so `PageBootTest`, `PutAwayTest` and
 `NetBlockTest` wait for the page to boot in whatever state Tor is in
@@ -122,6 +123,20 @@ Grant the camera when asked (or `adb shell pm grant io.islandbitcoin.foxy androi
    phone · not the web page"), the words behind TAP TO REVEAL, VERIFY with the
    quiz; HOME while it is up and back: the screen is gone. RESTORE: type twelve
    words; a phrase copied inside Foxy is refused when pasted.
+
+8. **The receive screen's TAP (ENG-656). Pending: the architect's on-device
+   check; no phone was used for this change.** RECEIVE → an amount → NEXT, and
+   press TAP on the invoice screen: the TAP HERE card says HOLD A PHONE HERE,
+   never UNKNOWN ACTION: TAPRECEIVESTART, and the TAP button keeps the accent
+   colour (not greyed). On a debug build,
+   `adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy)` shows
+   `[tap] receive: no tap to pay on Android yet; telling the page unsupported`
+   once as the receive screen arms itself (again after leaving it, but not
+   after putting Foxy away and coming back, which keeps the receiver as iOS
+   does), and never the page's `tap: not advertising` warning.
+   Nothing asks for a Bluetooth permission. The conformance flow *P3: the
+   receive screen's TAP …* and `TapReceiveTest` cover the same in jsdom and the
+   JVM; this is the check on the real WebView.
 
 ## The P2 device exit (ENG-648)
 

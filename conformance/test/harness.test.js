@@ -18,6 +18,7 @@ const { spawnSync } = require('child_process');
 const { boot, wait } = require('../lib/session');
 const { check, validateSchema } = require('../lib/schema');
 const { replyProblems, CONTRACT } = require('../lib/host');
+const TapRules = require('../lib/tap-rules');
 
 const ROOT = path.join(__dirname, '..', '..');
 const kinds = (vs) => vs.map((v) => v.kind).sort();
@@ -173,6 +174,157 @@ test('a P2 host serves P1 and P2 actions, stubs later ones, and refuses a later 
     assert.deepEqual(s.host.replyProblems, []);
   } finally {
     s.close();
+  }
+});
+
+test('host.global: a contract global, called on a later turn after nothing else, refused unlisted or from too early a phase', async () => {
+  const s = await boot({ seed: true, tor: 'up', phase: 'P3' });
+  try {
+    await s.settle(300);
+    s.host.violations.length = 0;
+    const w = s.window;
+    const got = [];
+    w.__foxyBluetoothAnswer = (state) => got.push(state);
+    s.host.global('__foxyBluetoothAnswer', 'unsupported');
+    assert.deepEqual(got, [], 'not inside the call that asked for it');
+    await wait(20);
+    assert.deepEqual(got, ['unsupported']);
+    assert.ok(s.host.pushes.includes('__foxyBluetoothAnswer'));
+    // bluetoothAsk on a P3 host: the push lands before the reply (iOS's order)
+    const order = [];
+    w.__foxyBluetoothAnswer = (state) => order.push('push ' + state);
+    const real = w.FoxyWallet._scanResult;
+    w.FoxyWallet._scanResult = function (id, text, error) { if (id === 'bt-h') order.push('reply ' + text); return real.apply(this, arguments); };
+    w.webkit.messageHandlers.foxy.postMessage({ action: 'bluetoothAsk', id: 'bt-h' });
+    await wait(50);
+    w.FoxyWallet._scanResult = real;
+    assert.deepEqual(order, ['push unsupported', 'reply unsupported']);
+    assert.deepEqual(s.host.violations, []);
+    // a name that is not a global of the contract
+    s.host.global('_privacy', {});
+    assert.deepEqual(kinds(s.host.violations), ['unknown']);
+  } finally {
+    s.close();
+  }
+  // a P2 host has no Bluetooth screen answer to push: bluetoothAsk is P3
+  const p2 = await boot({ seed: true, tor: 'up', phase: 'P2' });
+  try {
+    await p2.settle(300);
+    p2.host.violations.length = 0;
+    p2.host.global('__foxyBluetoothAnswer', 'unsupported');
+    assert.deepEqual(kinds(p2.host.violations), ['unserved']);
+    p2.host.violations.length = 0;
+    p2.window.webkit.messageHandlers.foxy.postMessage({ action: 'bluetoothAsk', id: 'bt-p2' });
+    assert.deepEqual(kinds(p2.host.violations), ['unserved'], 'bluetoothAsk has no p1 stub: a P2 host may not lean on it');
+  } finally {
+    p2.close();
+  }
+});
+
+test('tap-rules: the fake host refuses what TapRules.kt refuses (FoxyTests/TapProtocolTests.swift:41-80 vectors)', () => {
+  const invoice = 'lnbc10n1pn9xyzpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9qrsgq';
+  const req = 'creqApGF0gaNhdGVub3N0cmFheDQ3YWJjZGVmMTIzNDU2Nzg5MGFiY2RlZjEyMzQ1Njc4OTBhYmNk';
+  assert.ok(TapRules.isPayload(`{"v":2,"inv":"${invoice}"}`));
+  assert.ok(TapRules.isPayload(`{"v":2,"req":"${req}"}`));
+  assert.ok(TapRules.isPayload(`{"v":2,"inv":"${invoice}","req":"${req}"}`));
+  assert.ok(!TapRules.isPayload('{"v":2}'));
+  assert.ok(TapRules.isPayload(`{"v":2,"req":"${req}="}`), 'padded, as cashu-ts writes it');
+  assert.ok(TapRules.isPayload(`{"v":2,"req":"${req}=="}`));
+  assert.ok(TapRules.isRequest(req + '='));
+  assert.ok(!TapRules.isPayload('{"v":2,"inv":"bc1qxy2kgdygjrsqtzq2n0"}'));
+  assert.ok(!TapRules.isPayload('{"v":2,"req":"cashuBo2F0gaJhaUgA"}'));
+  assert.ok(!TapRules.isPayload(`{"v":3,"inv":"${invoice}"}`));
+  assert.ok(!TapRules.isPayload(invoice));
+  assert.ok(!TapRules.isPayload('{'));
+  assert.ok(!TapRules.isPayload('{"v":2,"inv":"lnbc10n1' + 'q'.repeat(5000) + '"}'));
+  assert.ok(!TapRules.isPayload(`{"v":true,"inv":"${invoice}"}`), 'true is not the number two');
+  assert.ok(TapRules.isPayload(`{"v":2.0,"inv":"${invoice}"}`));
+  assert.ok(TapRules.isPayload(JSON.stringify({ v: 2, inv: 5, req })), 'a half that is not a string counts as missing');
+  assert.ok(!TapRules.isPayload('[' + JSON.stringify({ v: 2, inv: invoice }) + ']'));
+  assert.ok(TapRules.isInvoice(invoice));
+  assert.ok(TapRules.isInvoice(invoice.toUpperCase()));
+  assert.ok(!TapRules.isInvoice('cashuBo2F0gaJhaUgA'));
+  assert.ok(!TapRules.isInvoice('bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh'));
+  assert.ok(!TapRules.isInvoice('lnbc10n1' + 'q'.repeat(3000)));
+  assert.ok(!TapRules.isInvoice('lnbc10n1pn9<script>'));
+  assert.ok(!TapRules.isInvoice('lnbc10n1pN9xyz' + 'q'.repeat(40)));
+});
+
+test('host.pushAs and o.unknown: a push after its reply, refused from too early a phase or off-shape; unknown only for an unserved, unstubbed action', async () => {
+  const s = await boot({ seed: true, tor: 'up', phase: 'P3' });
+  try {
+    await s.settle(300);
+    s.host.violations.length = 0;
+    const w = s.window;
+    // tapReceiveStart on a P3 host: the reply lands before the _tap push (iOS's order), and only the first makes a receiver
+    const order = [];
+    const realReply = w.FoxyWallet._scanResult;
+    const realTap = w.FoxyWallet._tap;
+    w.FoxyWallet._scanResult = function (id, text, error) { if (/^tr-/.test(id)) order.push('reply ' + id + ' ' + text); return realReply.apply(this, arguments); };
+    w.FoxyWallet._tap = function (ev) { order.push('push ' + ev.side + ' ' + ev.stage); return realTap.apply(this, arguments); };
+    const post = (m) => w.webkit.messageHandlers.foxy.postMessage(m);
+    post({ action: 'tapReceiveStart', id: 'tr-1', payload: '', early: true });
+    assert.deepEqual(order, [], 'nothing inside the call that asked');
+    await wait(50);
+    post({ action: 'tapReceiveStart', id: 'tr-2', payload: '', early: false });
+    await wait(50);
+    post({ action: 'tapReceiveStop', id: 'tr-3' });
+    post({ action: 'tapReceiveStart', id: 'tr-4', payload: '', early: true });
+    await wait(50);
+    w.FoxyWallet._scanResult = realReply;
+    w.FoxyWallet._tap = realTap;
+    assert.deepEqual(order, ['reply tr-1 ok', 'push receive unsupported', 'reply tr-2 ok', 'reply tr-3 ok', 'reply tr-4 ok', 'push receive unsupported']);
+    assert.deepEqual(s.host.violations, []);
+    // a payload Android (TapRules.kt) refuses: the page's own no-invoice, no-request advert (26d-tap.js), refused
+    // with TapRules' words, no push and no receiver made; the next good start is still the first receiver
+    order.length = 0;
+    w.FoxyWallet._scanResult = function (id, text, error) { if (/^tr-/.test(id)) order.push('reply ' + id + ' ' + (error || text)); return realReply.apply(this, arguments); };
+    w.FoxyWallet._tap = function (ev) { order.push('push ' + ev.side + ' ' + ev.stage); return realTap.apply(this, arguments); };
+    post({ action: 'tapReceiveStop', id: 'tr-5' });
+    post({ action: 'tapReceiveStart', id: 'tr-6', payload: JSON.stringify({ v: 2, up: true, ask: 1 }), early: false });
+    await wait(50);
+    post({ action: 'tapReceiveStart', id: 'tr-7', payload: '', early: true });
+    await wait(50);
+    w.FoxyWallet._scanResult = realReply;
+    w.FoxyWallet._tap = realTap;
+    assert.deepEqual(order, ['reply tr-5 ok', 'reply tr-6 Not something a payer could pay.', 'reply tr-7 ok', 'push receive unsupported']);
+    assert.deepEqual(s.host.violations, []);
+    // a name that is not a push of the contract, and a _tap the contract's schema does not allow
+    s.host.pushAs('__foxyBluetoothAnswer', 'x');
+    s.host.pushAs('_tap', { side: 'receive' });
+    assert.deepEqual(kinds(s.host.violations), ['payload', 'unknown']);
+  } finally {
+    s.close();
+  }
+  // a P2 host has no tap receive to answer: tapReceiveStart and _tap are P3
+  const p2 = await boot({ seed: true, tor: 'up', phase: 'P2', unknown: new Set(['tapReceiveStart']) });
+  try {
+    await p2.settle(300);
+    assert.deepEqual(kinds(p2.host.violations), [], 'naming a P3 action unknown on a P2 host is allowed: it is later than P2 and has no stub');
+    p2.host.pushAs('_tap', { side: 'receive', stage: 'unsupported' });
+    assert.deepEqual(kinds(p2.host.violations), ['unserved']);
+  } finally {
+    p2.close();
+  }
+  // o.unknown may not hide an action the host serves, or one with a stub
+  for (const [phase, name] of [['P3', 'tapReceiveStart'], ['P3', 'tapPayStart'], ['P3', 'nope']]) {
+    const h = await boot({ seed: true, tor: 'up', phase, unknown: new Set([name]) });
+    try {
+      assert.ok(h.host.violations.some((v) => v.kind === 'unknown' && v.detail.includes(name)), name + ' refused as unknown on ' + phase);
+    } finally {
+      h.close();
+    }
+  }
+  // and on a P3 host, an unknown action is answered as the Kotlin bridge answers it, with no violation
+  const p3 = await boot({ seed: true, tor: 'up', phase: 'P3', unknown: new Set(['shakeStart']) });
+  try {
+    await p3.settle(300);
+    p3.host.violations.length = 0;
+    await assert.doesNotReject(p3.W.shakeSense(true));
+    assert.deepEqual(p3.host.answered.filter((a) => a[0] === 'shakeStart').slice(-1), [['shakeStart', null, 'Unknown action: shakeStart']]);
+    assert.deepEqual(p3.host.violations, []);
+  } finally {
+    p3.close();
   }
 });
 

@@ -98,16 +98,16 @@ interface PageHost {
  *
  * One table: the 18 P1 actions, the 7 P2 actions ([NetBridge]: Tor's snapshot,
  * RETRY, CONTINUE WITHOUT TOR, and the three requests that leave through
- * Route), the 20 P3 actions ([SeedBridge]'s screens, adopting, wiping and
+ * Route), the 23 P3 actions ([SeedBridge]'s screens, adopting, wiping and
  * protection; [PlatformBridge]'s camera, clipboard, share, notifications,
- * biometric and the rest), and the `p1` stubs of conformance/contract.json for
- * the LATER phase ([ContractStubs], generated from it), which answer the
- * actions the page asks before anything else. A P3 action's stub is never put
- * in the table: every P3 action is answered by its real handler. Every other
- * action is answered "Unknown action: <name>"; `{haptic}` buzzes and answers
- * nothing; anything else,
- * `{username}` included, is ignored (S15). Only the staged page's main frame at
- * the asset origin is heard (S14).
+ * biometric, the Bluetooth screen's and the receive screen's TAP's fixed
+ * "unsupported" and the rest), and the `p1` stubs of conformance/contract.json
+ * for the LATER phase ([ContractStubs], generated from it), which answer the
+ * actions the page asks before anything else. A P3 action's stub is never put in the table: every P3
+ * action is answered by its real handler. Every other action is answered
+ * "Unknown action: <name>"; `{haptic}` buzzes and answers nothing; anything
+ * else, `{username}` included, is ignored (S15). Only the staged page's main
+ * frame at the asset origin is heard (S14).
  */
 class FoxyBridge(
     private val host: PageHost,
@@ -174,6 +174,16 @@ class FoxyBridge(
      */
     fun letGo() {
         platform.letGo()
+        seeds.closeScreens()
+    }
+
+    /**
+     * The page went (its process ended, or it is loading again): what [letGo]
+     * lets go, and the tap receiver it held (FoxyBridge.swift `pageGone` →
+     * `stopTap`). Putting Foxy away is [letGo] alone, as on iOS. Main thread.
+     */
+    fun pageGone() {
+        platform.pageGone()
         seeds.closeScreens()
     }
 
