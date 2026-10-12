@@ -165,4 +165,33 @@ class Socks5SocketFactoryTest {
         assertTrue("two factories for one label are still two (identity)", a != b)
         assertEquals(a, a)
     }
+
+    @Test
+    fun theHandshakeWaitsForTorWithinTheTimeItWasGiven() {
+        // Tor building a circuit for a new label before it grants the stream (ENG-655)
+        socks.grantAfterMs = 1_500
+        val factory = Socks5SocketFactory("aaaaaaaaaaaaaaaa", { socks.port })
+        connect(factory, "mint.minibits.cash", 443).close()
+        assertEquals(1, socks.handshakes.size)
+    }
+
+    @Test
+    fun aHandshakeTorDoesNotAnswerWithinTheTimeGivenIsAHandshakeFailure() {
+        socks.grantAfterMs = 5_000
+        val factory = Socks5SocketFactory("aaaaaaaaaaaaaaaa", { socks.port })
+        val started = System.nanoTime()
+        try {
+            factory.createSocket().connect(InetSocketAddress(TorDns.lookup("mint.minibits.cash").single(), 443), 500)
+            fail("Tor did not answer in time")
+        } catch (e: Socks5Failure) {
+            assertTrue("timed out: ${e.cause}", e.cause is java.net.SocketTimeoutException)
+        }
+        assertTrue("at the time given, not Tor's", (System.nanoTime() - started) / 1_000_000 < 3_000)
+    }
+
+    @Test
+    fun aHandshakeMayWaitAsLongAsIosGivesARequest() {
+        // TorService.swift:1831-1832: 60 s, which the proxy handshake waits inside (ENG-655; it was 30 s)
+        assertEquals(60_000, Socks5SocketFactory.HANDSHAKE_TIMEOUT_MS)
+    }
 }

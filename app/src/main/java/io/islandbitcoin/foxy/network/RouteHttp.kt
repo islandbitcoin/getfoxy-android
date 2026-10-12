@@ -29,6 +29,12 @@ class RouteRequest(
     val body: ByteArray? = null,
     /** The whole exchange, every redirect included. */
     val timeoutMs: Long = 60_000,
+    /**
+     * System.nanoTime by which every send of this request is over, however
+     * many: a retry of the same request gets the time the first try left, not
+     * [timeoutMs] again (ENG-655). Unbounded unless given.
+     */
+    val endsBy: Long = Long.MAX_VALUE,
 ) {
     init {
         require(method == "GET" || method == "POST") { "GET or POST only" }
@@ -71,7 +77,7 @@ class RouteCall internal constructor(private val client: OkHttpClient, private v
     }
 
     internal fun start(done: (RouteAnswer) -> Unit) {
-        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(request.timeoutMs)
+        val deadline = minOf(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(request.timeoutMs), request.endsBy)
         hop(request.url, request.method, request.body, 0, deadline, done)
     }
 
@@ -86,7 +92,13 @@ class RouteCall internal constructor(private val client: OkHttpClient, private v
         if (cancelled) return done(RouteAnswer.Failed(IOException("Canceled"), beforeRequest = false, dialled = 0))
         val left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
         if (left <= 0) return done(RouteAnswer.Failed(InterruptedIOException("timeout"), beforeRequest = false, dialled = 0))
-        val call = client.newBuilder().callTimeout(left, TimeUnit.MILLISECONDS).build().newCall(build(url, method, body))
+        // the SOCKS handshake waits for Tor as long as the request may, and no longer (ENG-655):
+        // OkHttp hands the connect timeout to Socks5Socket.connect, which waits for the CONNECT reply within it
+        val call = client.newBuilder()
+            .callTimeout(left, TimeUnit.MILLISECONDS)
+            .connectTimeout(left, TimeUnit.MILLISECONDS)
+            .build()
+            .newCall(build(url, method, body))
         current = call
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {

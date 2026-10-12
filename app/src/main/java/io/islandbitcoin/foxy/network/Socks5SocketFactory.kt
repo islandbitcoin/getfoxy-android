@@ -52,7 +52,24 @@ class Socks5SocketFactory(
          * listen on, and every request was refused (found on the Pixel).
          */
         val TOR_HOST: InetAddress = InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))
-        const val HANDSHAKE_TIMEOUT_MS = 30_000
+
+        /**
+         * The longest a handshake waits for Tor's answer to its CONNECT: iOS's
+         * request timeout (TorService.swift:1831-1832, `timeoutIntervalForRequest`
+         * and `...Resource` 60), which its proxy's handshake waits inside.
+         *
+         * It was 30 s, and that cut streams Tor was still opening (ENG-655).
+         * Each job's label is a circuit of its own (IsolateSOCKSAuth), so the
+         * first request on a label waits for Tor to build one, and right after
+         * "circuit established" Tor is still fetching relay descriptors and
+         * building on its first-run circuit timeout of 60 s (circuitstats.c),
+         * longer again for an onion's descriptor, introduction and rendezvous.
+         * On the Pixel the first requests after a cold launch each timed out at
+         * 30 s, their retries at 30 s more, for about two minutes. Within it,
+         * the request's own time left bounds it: the socket is dialled with
+         * OkHttp's connect timeout, which RouteCall sets to that (RouteHttp).
+         */
+        const val HANDSHAKE_TIMEOUT_MS = 60_000
         private const val VERSION: Byte = 5
         private const val USER_PASS: Byte = 2
         private const val CONNECT: Byte = 1

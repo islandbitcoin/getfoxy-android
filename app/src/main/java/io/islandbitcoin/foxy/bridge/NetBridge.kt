@@ -11,6 +11,7 @@ import io.islandbitcoin.foxy.network.RouteRequest
 import io.islandbitcoin.foxy.network.RouteUrl
 import io.islandbitcoin.foxy.tor.Snapshot
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 /**
  * What the P2 actions need from the rest of the app, passed in so the JVM
@@ -41,6 +42,12 @@ class NetEnvironment(
     val after: (Long, () -> Unit) -> Unit,
     /** Wall-clock seconds, for the chart's range. */
     val nowSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
+    /**
+     * A mint request's whole time, its one retry included (iOS's 60 s request
+     * timeout, TorService.swift:1831-1832); within the page's 65 s wait
+     * (foxy-wallet.js `bridgeAsk('mintRequest', ..., 65000)`). Tests shorten it.
+     */
+    val mintRequestMs: Long = 60_000,
 ) {
     companion object {
         private val timers = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
@@ -95,6 +102,13 @@ class NetBridge(
 
         const val NOT_A_REQUEST = "That is not a request Foxy will send."
         const val RETRY_AFTER_MS = 400L
+
+        /**
+         * A retry with less time than this left is not sent: a handshake that
+         * waited out the request's time for Tor is answered, not asked again
+         * on a circuit that would have no time to be built (ENG-655).
+         */
+        const val LEAST_RETRY_MS = 5_000L
 
         /** The methods a mint, a lightning-address server or an LNURL callback is asked with (FoxyBridge.swift:950-953). */
         fun mintMethod(body: Map<String, Any?>): String? {
@@ -276,7 +290,9 @@ class NetBridge(
         val headers = passedHeaders(body["headers"], payload != null)
         if (movesMoney(method, url.encodedPath)) moneyInFlight.add(id)
         val circuit = MintCircuit.label(body["circuit"])
-        val request = RouteRequest(url, method, headers, if (method == "POST") payload else null, timeoutMs = 60_000)
+        // the retry shares this time rather than starting its own: answered within it however it went
+        val endsBy = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(env.mintRequestMs)
+        val request = RouteRequest(url, method, headers, if (method == "POST") payload else null, timeoutMs = env.mintRequestMs, endsBy = endsBy)
         attempt(id, request, circuit, triesLeft = 1, firstDialled = 0)
     }
 
@@ -288,7 +304,8 @@ class NetBridge(
                 is RouteAnswer.Done -> resolve(id, "${answer.status}\n" + answer.text, null)
                 RouteAnswer.TooLarge -> resolve(id, null, "The answer from $host was too large.")
                 is RouteAnswer.Failed -> {
-                    if (answer.beforeRequest && triesLeft > 0) {
+                    val left = TimeUnit.NANOSECONDS.toMillis(request.endsBy - System.nanoTime()) - RETRY_AFTER_MS
+                    if (answer.beforeRequest && triesLeft > 0 && left >= LEAST_RETRY_MS) {
                         Log.line("[foxy] mint request to $host never left (Tor's SOCKS handshake failed: ${answer.error.message}); asking again")
                         env.after(RETRY_AFTER_MS) { attempt(id, request, circuit, triesLeft - 1, answer.dialled) }
                         return@send

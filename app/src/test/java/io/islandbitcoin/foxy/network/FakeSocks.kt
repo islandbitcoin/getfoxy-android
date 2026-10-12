@@ -39,6 +39,12 @@ class FakeSocks(var forwardTo: Int = 0) : AutoCloseable {
      * primary guard marked unreachable, ENG-652): the client's handshake times out.
      */
     @Volatile var holdConnects = false
+    /**
+     * CONNECT requests are granted only after this long, as Tor answers a stream
+     * on a label it is still building a circuit for (ENG-655): right after
+     * "circuit established", a new label's first stream took longer than 30 s.
+     */
+    @Volatile var grantAfterMs = 0L
 
     init {
         thread(isDaemon = true, name = "fake-socks") {
@@ -98,6 +104,7 @@ class FakeSocks(var forwardTo: Int = 0) : AutoCloseable {
                 out.write(byteArrayOf(5, refuseWith.toByte(), 0, 1, 0, 0, 0, 0, 0, 0))
                 return s.close()
             }
+            if (grantAfterMs > 0) Thread.sleep(grantAfterMs)
             val target = Socket()
             target.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), forwardTo), 5_000)
             out.write(byteArrayOf(5, 0, 0, 1, 127, 0, 0, 1, 0, 0))

@@ -52,6 +52,11 @@ class MintRequestRetryTest {
             override val socksPort get() = torPort()
         }
         RouteHttp.forgetTorConnections()
+        build()
+    }
+
+    /** The bridge, with `mintRequestMs` as a mint request's whole time. */
+    private fun build(mintRequestMs: Long = 60_000) {
         val prompts = PromptQueue { _, _ -> null }
         val net = NetEnvironment(
             torRunning = { true }, bridged = { false }, snapshot = { Snapshot.noTor() }, restartTor = {},
@@ -60,6 +65,7 @@ class MintRequestRetryTest {
             prompts = prompts,
             send = { r, c, d -> Route.start(r, c, d)?.let { call -> { call.cancel() } } },
             after = { ms, r -> timers.schedule(r, ms, TimeUnit.MILLISECONDS) },
+            mintRequestMs = mintRequestMs,
         )
         val dir = TestSupport.tempDir("retry")
         val env = SeedEnvironment(
@@ -88,8 +94,8 @@ class MintRequestRetryTest {
     }
 
     /** The (text, error) the page was answered for `id`. */
-    private fun answer(id: String): Pair<String?, String?> {
-        val end = System.nanoTime() + 20_000_000_000
+    private fun answer(id: String, withinMs: Long = 20_000): Pair<String?, String?> {
+        val end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(withinMs)
         while (System.nanoTime() < end) {
             host.evaluated.firstOrNull { it.contains("_scanResult(\"$id\"") }?.let { js ->
                 @Suppress("UNCHECKED_CAST")
@@ -167,5 +173,55 @@ class MintRequestRetryTest {
         assertEquals("waited for by putting Foxy away", 1, bridge.moneyInFlight)
         answer("m4")
         assertEquals(0, bridge.moneyInFlight)
+    }
+
+    /*
+     * ENG-655: right after "circuit established" Tor took longer than 30 s to
+     * answer the first CONNECT on a new label (a new circuit), and the
+     * handshake gave up at 30 s, then its retry at 30 s more, for two minutes
+     * on the Pixel. The handshake now waits as iOS's request does, within the
+     * request's own time; the retry shares that time.
+     */
+
+    @Test
+    fun aStreamTorTakesLongerThanThirtySecondsToOpenIsWaitedForAndReachesTheMintOnce() {
+        // longer than the old 30 s handshake timeout, within the request's 60 s
+        socks.grantAfterMs = 31_000
+        mint.enqueue(MockResponse().setBody("""{"paid":true}"""))
+        val started = System.nanoTime()
+        melt("s1")
+        assertEquals("200\n{\"paid\":true}" to null, answer("s1", withinMs = 50_000))
+        assertTrue("answered after Tor granted the stream", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started) >= 31_000)
+        assertEquals("one handshake, waited for: no timeout and no retry", 1, socks.handshakes.size)
+        assertEquals("the melt reached the mint exactly once", 1, mint.requestCount)
+        assertEquals(0, bridge.moneyInFlight)
+    }
+
+    @Test
+    fun aHandshakeThatWaitedOutTheRequestsTimeIsAnsweredAndNotAskedAgain() {
+        build(mintRequestMs = 8_000)
+        socks.holdConnects = true
+        val started = System.nanoTime()
+        melt("s2")
+        val (text, error) = answer("s2", withinMs = 15_000)
+        val took = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+        assertEquals(null, text)
+        assertTrue("an error: $error", !error.isNullOrEmpty())
+        assertTrue("answered within the request's time, not past it with a retry: $took ms", took < 8_000 + 2_000)
+        Thread.sleep(800)
+        assertEquals("not asked again with no time left", 1, socks.handshakes.size)
+        assertEquals(0, mint.requestCount)
+        assertEquals(0, bridge.moneyInFlight)
+    }
+
+    @Test
+    fun aHandshakeThatFailedEarlyIsStillAskedAgainWithTheTimeLeft() {
+        build(mintRequestMs = 8_000)
+        socks.dropNext = 1
+        mint.enqueue(MockResponse().setBody("""{"paid":true}"""))
+        melt("s3")
+        assertEquals("200\n{\"paid\":true}" to null, answer("s3", withinMs = 10_000))
+        assertEquals("dropped once, then granted", 2, socks.connections.get())
+        assertEquals(1, mint.requestCount)
     }
 }
