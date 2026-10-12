@@ -105,18 +105,14 @@ class Socks5SocketFactory(
 
     /** A socket whose connect is a SOCKS5 handshake with Tor for the name it was asked to reach. */
     inner class Socks5Socket : Socket() {
-        /** The SOCKS port this socket dialled, for telling a rebuilt Tor from any other failure. */
-        @Volatile var dialled: Int = 0
-            private set
-
         override fun connect(endpoint: SocketAddress) = connect(endpoint, 0)
 
         override fun connect(endpoint: SocketAddress, timeout: Int) {
             val target = endpoint as? InetSocketAddress ?: throw IllegalArgumentException("not an InetSocketAddress")
             // the name as it was given; never getHostName, which may look the address up
             val host = target.hostString ?: ""
+            // the port dialled travels in every Socks5Failure, for telling a rebuilt Tor from Tor being down
             val p = portNow()
-            dialled = p
             if (host.isEmpty() || host.toByteArray(Charsets.UTF_8).size > 255) throw Socks5Failure("no name to give Tor", p)
             if (Route.isIpLiteral(host)) throw Socks5Failure("an address, not a name, was to be given to Tor", p)
             if (target.port !in 1..65535) throw Socks5Failure("no port", p)

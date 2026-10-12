@@ -221,8 +221,11 @@ As built in P2 (ENG-648). Kotlin paths are under
   as it is then (`FoxyBridge.swift:1447-1460`). OkHttp's own retry is off
   (`retryOnConnectionFailure(false)`), and a failure on a redirect's later hop
   is never "before the request". So a POST that reached the mint is never sent
-  twice (`MintRequestRetryTest`, `RouteClientTest`). Two failed handshakes are
-  "Foxy's private connection was rebuilt mid-request. Try again."; a refusal
+  twice (`MintRequestRetryTest`, `RouteClientTest`). Two failed handshakes on
+  two different ports (Tor's listener moved under the request) are
+  "Foxy's private connection was rebuilt mid-request. Try again."; two on the
+  same port, or the retry on port 9, are "Foxy is not connected to Tor."
+  (`NetBridgeTest`); a refusal
   Tor itself answered (host unreachable, an onion not found) is
   "<host> could not be asked over Tor: <why>".
 - **No fallback.** When Tor is not running, `Route.start` returns no call and
@@ -267,9 +270,15 @@ As built in P2 (ENG-648). Kotlin paths are under
   `BRIDGE.md` §2: it waits up to 20 s while a swap, melt, mint or restore is
   out (the bridge's money in flight) or the change top-up runs, 3 s for any
   other request, then shuts the door and parks Tor (`DisableNetwork 1`: Tor has
-  no connection to lose and holds nothing against its guards). Android gives
-  no fixed background allowance, so Tor is not held on the network past that.
-  A return sets Tor up again. No `WorkManager` job, alarm or foreground service
+  no connection to lose and holds nothing against its guards). The 20 s is a
+  ceiling the page cannot hold open: a read of `_tidying` that has not
+  answered in 1 s counts as not tidying, and a watchdog at 21 s leaves even if
+  the page never answered (a WebView whose JS is throttled may never call
+  back). Android gives no fixed background allowance, so Tor is not held on
+  the network past that. Back finishing the activity (API 28-30) removes the
+  observer before `onStop` arrives, so `MainActivity.onDestroy` shuts the door
+  and parks Tor itself; the next activity sets Tor up again. A return sets Tor
+  up again. No `WorkManager` job, alarm or foreground service
   makes requests while the app is away.
 - **The phone's network.** `network/NetworkKind.kt` watches the default
   network (wifi, cellular, wired, other, none; a VPN with nothing under it is

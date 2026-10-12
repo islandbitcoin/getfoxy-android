@@ -48,7 +48,9 @@ sealed class RouteAnswer {
     /**
      * It failed. `beforeRequest`: the failure was Tor's SOCKS handshake, so no
      * byte of the request left (the one case that is retried). `dialled`: the
-     * SOCKS port that handshake used, 0 for the open connection.
+     * SOCKS port that handshake used (0 for the open connection, or a failure
+     * after the handshake); the retry compares it with the first try's to tell
+     * a rebuilt Tor from a Tor that is down ([RouteHttp.failureWords]).
      */
     class Failed(val error: IOException, val beforeRequest: Boolean, val dialled: Int) : RouteAnswer()
 }
@@ -268,13 +270,24 @@ object RouteHttp {
         return if (socks.code == 0) null else Socks5SocketFactory.replyWords(socks.code)
     }
 
+    /** A handshake that failed on one SOCKS port and again on another: Tor's listener moved under the request. */
+    const val REBUILT = "Foxy's private connection was rebuilt mid-request. Try again."
+
+    /** Whether a retry's handshake dialled another live SOCKS port than the first try's (never 0 or port 9). */
+    fun portMoved(first: Int, retry: Int): Boolean =
+        first != 0 && retry != 0 && retry != Socks5SocketFactory.DEAD_PORT && retry != first
+
     /**
      * What the person is told when a request failed, in the words iOS's
      * URLSession used. A SOCKS handshake that failed twice is Tor's listener
-     * moving under the request (FoxyBridge.swift `mintFailureWords`).
+     * moving under the request (FoxyBridge.swift `mintFailureWords`) only when
+     * `portMoved`: the retry dialled another port than the first try
+     * (ENG-648 plan, "If the port changed mid-request"). Twice on the same port
+     * (Tor down, port 9 while it is unknown, or a listener that refuses) is
+     * Foxy not being connected to Tor.
      */
-    fun failureWords(e: IOException, beforeRequest: Boolean): String = when {
-        beforeRequest -> "Foxy's private connection was rebuilt mid-request. Try again."
+    fun failureWords(e: IOException, beforeRequest: Boolean, portMoved: Boolean = false): String = when {
+        beforeRequest -> if (portMoved) REBUILT else Route.REFUSAL
         e is InterruptedIOException -> "The request timed out."
         e is UnknownHostException -> "A server with the specified hostname could not be found."
         e is SSLException -> "An SSL error has occurred and a secure connection to the server cannot be made."

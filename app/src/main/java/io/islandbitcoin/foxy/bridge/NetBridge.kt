@@ -277,10 +277,11 @@ class NetBridge(
         if (movesMoney(method, url.encodedPath)) moneyInFlight.add(id)
         val circuit = MintCircuit.label(body["circuit"])
         val request = RouteRequest(url, method, headers, if (method == "POST") payload else null, timeoutMs = 60_000)
-        attempt(id, request, circuit, triesLeft = 1)
+        attempt(id, request, circuit, triesLeft = 1, firstDialled = 0)
     }
 
-    private fun attempt(id: String, request: RouteRequest, circuit: String, triesLeft: Int) {
+    /** `firstDialled`: the SOCKS port the first try's failed handshake used, 0 on the first try. */
+    private fun attempt(id: String, request: RouteRequest, circuit: String, triesLeft: Int, firstDialled: Int) {
         val host = request.url.host
         val call = env.send(request, circuit) { answer ->
             when (answer) {
@@ -289,15 +290,17 @@ class NetBridge(
                 is RouteAnswer.Failed -> {
                     if (answer.beforeRequest && triesLeft > 0) {
                         Log.line("[foxy] mint request to $host never left (Tor's SOCKS handshake failed: ${answer.error.message}); asking again")
-                        env.after(RETRY_AFTER_MS) { attempt(id, request, circuit, triesLeft - 1) }
+                        env.after(RETRY_AFTER_MS) { attempt(id, request, circuit, triesLeft - 1, answer.dialled) }
                         return@send
                     }
                     Log.line("[foxy] mint request to $host failed: ${answer.error.javaClass.simpleName} (${answer.error.message})")
                     // Tor answered the stream with a refusal of its own (host unreachable, an onion not found):
                     // that names a real thing, as iOS's onion path names it; anything else before the request
-                    // is Tor's listener moving under it
+                    // is Tor's listener moving under it when the retry dialled another port, and Tor not
+                    // being there when it dialled the same one
                     val code = RouteHttp.torRefusal(answer.error)
-                    val words = RouteHttp.failureWords(answer.error, answer.beforeRequest)
+                    val moved = RouteHttp.portMoved(firstDialled, answer.dialled)
+                    val words = RouteHttp.failureWords(answer.error, answer.beforeRequest, portMoved = moved)
                     resolve(id, null, when {
                         code != null -> "$host could not be asked over Tor: $code"
                         host.endsWith(".onion") && !answer.beforeRequest -> "$host could not be asked over Tor: $words"

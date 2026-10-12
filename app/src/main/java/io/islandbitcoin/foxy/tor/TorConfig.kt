@@ -24,6 +24,13 @@ package io.islandbitcoin.foxy.tor
  *   logcat under its SyslogIdentityTag (TorService), as iOS's debug Tor
  *   writes to the Console.
  *
+ * Not carried over: iOS's release `--hush` (TorService.swift:820-822), which
+ * keeps Tor's startup notices, listener ports among them, from being printed
+ * before the torrc is read. tor-android builds Tor's command line itself, a
+ * fixed list with no room for another argument, so it cannot be passed; those
+ * notices go to the native stdout, which an Android app process does not
+ * capture. Said in SECURITY-INVARIANTS.md S27.
+ *
  * The transport's settings (the bridge lines and the transport's local port)
  * come last, as iOS passes them on the command line at launch.
  */

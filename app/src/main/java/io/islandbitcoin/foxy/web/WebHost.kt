@@ -55,7 +55,7 @@ class WebHost(
     private val services: FoxyServices,
     private val container: ViewGroup,
     private val onCovered: () -> Unit,
-) : PageHost {
+) : PageHost, PutAway.Page {
     companion object {
         const val DOMAIN = "appassets.androidplatform.net"
         const val PAGE_URL = "https://$DOMAIN/assets/web/index.html"
@@ -113,7 +113,7 @@ class WebHost(
     }
 
     /** evaluateJavascript with its result, as JSON text; null once the WebView is gone. */
-    fun read(js: String, answer: (String?) -> Unit) {
+    override fun read(js: String, answer: (String?) -> Unit) {
         val view = webView
         if (destroyed || view == null) return answer(null)
         view.evaluateJavascript(js) { answer(it) }
@@ -243,7 +243,9 @@ class WebHost(
     }
 
     /** Seconds since the phone started, which moving the clock does not change (the PIN back-off clock). */
-    fun pushUptime() {
+    override val moneyInFlight: Int get() = bridge?.moneyInFlight ?: 0
+
+    override fun pushUptime() {
         val s = SystemClock.elapsedRealtime() / 1000.0
         evaluate("window.__foxyUptime = { s: $s, p: performance.now() }")
     }

@@ -50,6 +50,9 @@ object Tor : TorRoute {
 
     val transport: TorTransport get() = machine?.transport ?: TorTransport.DIRECT
 
+    /** Off the network because Foxy was put away or its activity finished ([park]); [resumed] brings it back. */
+    val parked: Boolean get() = machine?.parked == true
+
     /** Once per process, before the first start. `forced`: a debug build's transport for the exit test. */
     @Synchronized
     fun install(context: Context, release: Boolean, forced: TorTransport?) {

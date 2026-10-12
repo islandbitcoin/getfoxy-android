@@ -64,6 +64,53 @@ class RouteClientTest {
 
     private fun bytes(n: Int) = Buffer().write(ByteArray(n) { 'a'.code.toByte() })
 
+    /**
+     * Tor dropped between the URL check and the send, with the person's
+     * CONTINUE WITHOUT TOR set: the request falls to the open connection,
+     * whose resolver refuses an onion (S11 "never for onion") before any
+     * lookup or socket. Without that refusal the name would go to the phone's
+     * resolver in the clear.
+     */
+    private fun sendOnionUnprotected(host: String) {
+        Route.tor = object : TorRoute {
+            override val isRunning = false
+            override val socksPort = 0
+        }
+        Route.openDoor()
+        Route.unprotected = true
+        try {
+            val url = Route.parse("http://$host:${mint.port}/v1/keys")!!
+            val got = AtomicReference<RouteAnswer>()
+            val done = CountDownLatch(1)
+            val call = Route.start(RouteRequest(url), "0123456789abcdef") {
+                got.set(it)
+                done.countDown()
+            }
+            assertTrue("the open connection took the request", call != null)
+            assertTrue("an answer within 20 s", done.await(20, TimeUnit.SECONDS))
+            val a = got.get()
+            assertTrue("failed, not answered: $a", a is RouteAnswer.Failed)
+            a as RouteAnswer.Failed
+            assertTrue("the resolver's refusal: ${a.error}", a.error is java.net.UnknownHostException)
+            assertEquals("an onion needs Tor", a.error.message)
+            assertFalse("not a SOCKS handshake failure", a.beforeRequest)
+            assertEquals("no socket reached the server", 0, mint.requestCount)
+            assertEquals("no SOCKS handshake either", 0, socks.connections.get())
+        } finally {
+            Route.unprotected = false
+        }
+    }
+
+    @Test
+    fun theOpenConnectionRefusesAnOnionWhenTorDroppedBeforeTheSend() {
+        sendOnionUnprotected("abcdefghijklmnop.onion")
+    }
+
+    @Test
+    fun theOpenConnectionRefusesAnOnionWithATrailingDot() {
+        sendOnionUnprotected("abcdefghijklmnop.onion.")
+    }
+
     @Test
     fun anAnswerOfFiveMegabytesIsCutOff() {
         mint.enqueue(MockResponse().setChunkedBody(bytes(5 * 1024 * 1024), 64 * 1024))

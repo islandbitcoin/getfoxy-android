@@ -40,6 +40,8 @@ class MintRequestRetryTest {
     private val timers = Executors.newSingleThreadScheduledExecutor()
     private lateinit var bridge: FoxyBridge
     private val onion = "mintmintmintmint.onion"
+    /** Tor's SOCKS port as Route reads it at each dial; a test moves it to model a rebuilt Tor. */
+    @Volatile private var torPort: () -> Int = { socks.port }
 
     @Before
     fun up() {
@@ -47,7 +49,7 @@ class MintRequestRetryTest {
         socks = FakeSocks(mint.port)
         Route.tor = object : TorRoute {
             override val isRunning = true
-            override val socksPort get() = socks.port
+            override val socksPort get() = torPort()
         }
         RouteHttp.forgetTorConnections()
         val prompts = PromptQueue { _, _ -> null }
@@ -124,12 +126,28 @@ class MintRequestRetryTest {
     }
 
     @Test
-    fun aListenerThatDropsTwiceSaysTheConnectionWasRebuiltAndNothingReachedTheMint() {
+    fun aListenerThatDropsTwiceOnTheSamePortIsNotConnectedToTorAndNothingReachedTheMint() {
+        // the same port both times: Tor's listener did not move, so it is not "rebuilt" (ENG-648 plan)
         socks.dropNext = 2
         melt("m3")
-        assertEquals(null to "Foxy's private connection was rebuilt mid-request. Try again.", answer("m3"))
+        assertEquals(null to Route.REFUSAL, answer("m3"))
         assertEquals(0, mint.requestCount)
         assertEquals("tried once more, and only once", 2, socks.connections.get())
+    }
+
+    @Test
+    fun aListenerThatMovedBetweenTheTriesSaysTheConnectionWasRebuiltAndNothingReachedTheMint() {
+        FakeSocks(mint.port).use { moved ->
+            // the first dial finds the old listener, which drops; by the retry Tor listens elsewhere, which drops too
+            torPort = { if (socks.connections.get() == 0) socks.port else moved.port }
+            socks.dropNext = 1
+            moved.dropNext = 1
+            melt("m6")
+            assertEquals(null to RouteHttp.REBUILT, answer("m6"))
+            assertEquals(0, mint.requestCount)
+            assertEquals("the first try on the old port", 1, socks.connections.get())
+            assertEquals("the retry on the new port, and only once", 1, moved.connections.get())
+        }
     }
 
     @Test

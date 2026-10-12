@@ -8,6 +8,7 @@ import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.ProcessLifecycleOwner
+import io.islandbitcoin.foxy.network.Route
 import io.islandbitcoin.foxy.tor.Tor
 import io.islandbitcoin.foxy.tor.TorTransport
 import io.islandbitcoin.foxy.web.PutAway
@@ -61,7 +62,10 @@ class MainActivity : ComponentActivity() {
         val forced = if (BuildConfig.DEBUG) TorTransport.named(intent?.getStringExtra(FORCE_TRANSPORT)) else null
         Tor.install(this, release = !BuildConfig.DEBUG, forced = forced)
         // debug builds can be told not to start Tor, for the leak test's CONTINUE WITHOUT TOR run
-        if (!(BuildConfig.DEBUG && intent?.getBooleanExtra(NO_TOR, false) == true)) Tor.start()
+        if (!(BuildConfig.DEBUG && intent?.getBooleanExtra(NO_TOR, false) == true)) {
+            // a finished activity parked Tor (onDestroy) and no PutAway return will follow: set it up again here
+            if (Tor.parked) Tor.resumed(0) else Tor.start()
+        }
     }
 
     override fun onDestroy() {
@@ -74,6 +78,16 @@ class MainActivity : ComponentActivity() {
         main.removeCallbacksAndMessages(null)
         host?.destroy()
         host = null
+        // Back finishing the activity (API 28-30): ProcessLifecycleOwner's stop comes 700 ms later, after
+        // the PutAway observer was removed above, so PutAway never parks Tor. The page is gone, so there
+        // is no work of leaving to wait for: shut the door and take Tor off the network now
+        // (docs/ROUTE.md "The door and backgrounding", S21). After the page went, so the park's
+        // _privacy push has no page to go to (WebHost.destroy clears Tor.onChange). A rotation is
+        // not a leaving.
+        if (isFinishing && !isChangingConfigurations) {
+            Route.shutDoor()
+            Tor.park()
+        }
         super.onDestroy()
     }
 }

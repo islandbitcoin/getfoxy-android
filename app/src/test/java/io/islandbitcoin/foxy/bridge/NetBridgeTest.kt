@@ -147,6 +147,27 @@ class NetBridgeTest {
     }
 
     @Test
+    fun twoHandshakeFailuresOnTheSamePortAreNotARebuiltTor() {
+        tor = true
+        mint("q", """{"url":"https://testnut.cashu.space/v1/keys"}""")
+        sent.single().done(RouteAnswer.Failed(IOException("refused"), beforeRequest = true, dialled = 9050))
+        timers.single().second()
+        sent[1].done(RouteAnswer.Failed(IOException("refused"), beforeRequest = true, dialled = 9050))
+        assertEquals("the same listener refused twice: Tor is not there", Triple("q", null, Route.REFUSAL), replies.single())
+    }
+
+    @Test
+    fun aRetryOnPortNineIsNotARebuiltTor() {
+        tor = true
+        mint("p", """{"url":"https://testnut.cashu.space/v1/keys"}""")
+        sent.single().done(RouteAnswer.Failed(IOException("refused"), beforeRequest = true, dialled = 9050))
+        timers.single().second()
+        // Tor's port became unknown between the tries: the retry dialled the dead port
+        sent[1].done(RouteAnswer.Failed(IOException("refused"), beforeRequest = true, dialled = 9))
+        assertEquals(Triple("p", null, Route.REFUSAL), replies.single())
+    }
+
+    @Test
     fun torRefusingTheStreamIsSaidAsTorsRefusal() {
         tor = true
         mint("u", """{"url":"https://testnut.cashu.space/v1/keys"}""")
