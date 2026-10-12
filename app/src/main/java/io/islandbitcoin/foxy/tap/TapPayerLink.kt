@@ -83,7 +83,7 @@ class TapPayerLink(
         /** The question is not asked again sooner than this. */
         const val AGAIN_EVERY = 5.0
 
-        /** A stop waits this long at most for a word still going out. */
+        /** How often a stop waiting for a word still going out looks again. */
         const val CLOSE_WAIT = 2.0
 
         /** Above this many bytes on the wire, the size is said first. */
@@ -134,12 +134,20 @@ class TapPayerLink(
         radio.subscribe()
     }
 
-    /** The subscribe landed (or failed): the payer speaks first, so M1 goes out here. */
+    /**
+     * The subscribe landed: the payer speaks first, so M1 goes out here.
+     *
+     * A subscribe that failed ([error] set) is ignored, as on iOS: there
+     * `didUpdateNotificationStateFor` returns at `guard ch.isNotifying` before
+     * its error branch is reached (TapLink.swift:1624-1625 at 8df0bb1), and a
+     * failed subscribe is not notifying. The link then waits out
+     * [CONNECT_WAIT] and gives up there, like an iOS payer.
+     */
     fun subscribed(error: String? = null) {
         val made = session ?: return
         if (spoke || spent || finished) return
         if (error != null) {
-            retry("subscribing failed: $error")
+            say("subscribing failed ($error); waiting out the connect clock, as iOS does")
             return
         }
         spoke = true
@@ -257,7 +265,15 @@ class TapPayerLink(
         write(sealed)
     }
 
-    /** Ends this link, after a word still going out (two seconds at most). */
+    /**
+     * Ends this link once a word still going out has gone (TapLink.swift
+     * `TapPayer.stop`, 1064-1079 at 8df0bb1). Every [CLOSE_WAIT] seconds the
+     * stop is asked again: while a write is still out and the link is up it
+     * waits again, so the link closes when [wrote] hears the write land or
+     * fail (the radio's own ATT timeout bounds that), or when the link drops.
+     * This is iOS's behaviour, not its comment's "two seconds at most": a
+     * word that the change was kept (M8) is never cut off mid-flight.
+     */
     fun stop() {
         if ((writing || outgoing.isNotEmpty()) && radio.connected && !closingAfterWrites) {
             closingAfterWrites = true
@@ -266,8 +282,8 @@ class TapPayerLink(
                 if (!closingAfterWrites) return@after
                 say("the word did not finish going out in ${CLOSE_WAIT.toInt()}s; closing anyway")
                 closingAfterWrites = false
-                // closed here, not by asking stop() again: with the write still out it would only wait again
-                close()
+                // as iOS: asked again, which waits again while the write is still out and the link up
+                stop()
             }
             return
         }

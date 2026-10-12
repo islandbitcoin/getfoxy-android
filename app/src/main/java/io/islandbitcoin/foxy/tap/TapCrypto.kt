@@ -238,6 +238,10 @@ object TapCrypto {
      * Conscrypt (API 28 on) calls it `ChaCha20/Poly1305/NoPadding`, the JDK the
      * JVM tests run on `ChaCha20-Poly1305`. A fresh instance each time, since a
      * JCA cipher refuses to encrypt twice under one key and nonce.
+     *
+     * No JVM test reaches the first branch: only `TapCryptoOnDeviceTest` runs
+     * Conscrypt's, and it must pass on a phone before ENG-670/671's radio
+     * merges (docs/DEVICE-TESTS.md, the hard gate under "Instrumented").
      */
     private fun cipher(): Cipher = try {
         Cipher.getInstance("ChaCha20/Poly1305/NoPadding")

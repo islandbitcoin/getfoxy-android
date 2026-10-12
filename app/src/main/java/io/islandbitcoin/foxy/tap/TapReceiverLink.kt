@@ -35,7 +35,15 @@ class TapReceiverLink(
     private val newSession: (UUID) -> TapSession = { TapSession(TapSession.Role.RECEIVER, it) },
     private val diary: (String) -> Unit = Log::line,
 ) {
-    /** What the GATT server does for this link. Every call is made on the link's thread. */
+    /**
+     * What the GATT server does for this link. Every call is made on the link's thread.
+     *
+     * After [close] the radio calls nothing more on the link: no advertising,
+     * radio state, subscribe, unsubscribe, write or ready-to-update. iOS gets
+     * that from `m.delegate = nil` in `reallyStop` (TapLink.swift:465 at
+     * 8df0bb1); on Android a callback already posted to the link's thread can
+     * still arrive, so the link also ignores every one once it has stopped.
+     */
     interface Radio {
         /**
          * Put the service up (once) and on the air: the service UUID and nothing
@@ -139,6 +147,7 @@ class TapReceiverLink(
 
     /** The radio's state: null when it is on, or what to tell the page (off, denied, unsupported). */
     fun radioState(bad: TapStage?) {
+        if (finished) return
         if (bad != null) {
             radioOn = false
             onEvent(bad, null)
@@ -150,6 +159,7 @@ class TapReceiverLink(
 
     /** The radio says the advertisement went up. */
     fun advertising() {
+        if (finished) return
         onEvent(TapStage.SEARCHING, null)
         say("on the air as ${service.toString().uppercase()}")
     }
@@ -288,7 +298,7 @@ class TapReceiverLink(
 
     /** A payer subscribed to the out door. Nothing is said: the payer speaks first. */
     fun subscribed(central: String) {
-        if (linked) return
+        if (finished || linked) return
         if (early) {
             say("a payer tried to join on the amount screen; not yet")
             return
@@ -330,6 +340,7 @@ class TapReceiverLink(
 
     /** A central let go of the out door. */
     fun unsubscribed(central: String) {
+        if (finished) return
         subscribed.remove(central)
         if (central != talkingTo) return
         if (busy) {
@@ -372,6 +383,8 @@ class TapReceiverLink(
      * from a phone that does not hold the place.
      */
     fun write(central: String, pieces: List<ByteArray>, inDoor: Boolean = true): Boolean {
+        // a write queued before the stop, arriving after it: refused, and nothing taken
+        if (finished) return false
         if (inDoor && TapPlace.taken(central, talkingTo, central in subscribed, linked, early)) takePlace(central)
         if (!inDoor || central != talkingTo) {
             say("a write from ${if (central == talkingTo) "the payer on another characteristic" else "a central that is not the payer"}; refused")
@@ -549,5 +562,8 @@ class TapReceiverLink(
     }
 
     /** The radio can take notifications again. */
-    fun readyToUpdate() = pump()
+    fun readyToUpdate() {
+        if (finished) return
+        pump()
+    }
 }

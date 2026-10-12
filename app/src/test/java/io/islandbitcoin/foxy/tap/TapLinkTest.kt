@@ -539,8 +539,13 @@ class TapLinkTest {
         assertEquals(listOf("{\"sats\":21}"), air.quotes)
     }
 
+    /**
+     * As iOS (TapLink.swift:1064-1079 at 8df0bb1): every two seconds the stop
+     * is asked again, and it waits again while the write is still out and the
+     * link is up. The link closes when the link itself goes.
+     */
     @Test
-    fun aPayerStopGivesUpOnAWordAfterTwoSeconds() {
+    fun aPayerStopWaitsWhileAWordIsOutAndClosesWhenTheLinkGoes() {
         val air = TapAir()
         air.link()
         air.payer.sendQuote("{\"sats\":21}")
@@ -549,7 +554,100 @@ class TapLinkTest {
         air.advance(1.9)
         assertFalse(air.payerClosed)
         air.advance(0.2)
-        assertTrue(air.payerClosed)
+        assertFalse("still out and the link still up: it waits again", air.payerClosed)
+        air.advance(20.0)
+        assertFalse(air.payerClosed)
+        air.connected = false
+        air.advance(2.0)
+        assertTrue("the next look finds the link gone and closes", air.payerClosed)
+    }
+
+    /**
+     * The page keeps the change and lets the link go with M8 the one write in
+     * flight, its acknowledgement five seconds away: the link waits for it,
+     * so the receiver hears KEPT, not NOT_HANDED and a change code for change
+     * the payer already holds.
+     */
+    @Test
+    fun aPayerStopWaitsForTheWordThatTheChangeWasKept() {
+        val air = TapAir()
+        air.link()
+        air.pay("{\"proofs\":[{\"amount\":32}]}")
+        air.holdWrites = true
+        val words = ArrayList<ChangeHandover.Word>()
+        assertTrue(air.receiver.handOverChange("cashuBchange") { words.add(it) })
+        air.settle()
+        assertEquals(listOf("cashuBchange"), air.changes)
+        air.payer.stop()
+        air.advance(2.1)
+        assertFalse("M8 is still going out: the link stays", air.payerClosed)
+        air.advance(2.9)
+        assertFalse(air.payerClosed)
+        assertTrue(words.isEmpty())
+        air.releaseWrites()
+        air.settle()
+        assertEquals(listOf(ChangeHandover.Word.KEPT), words)
+        assertTrue("closed once M8 went", air.payerClosed)
+        air.advance(10.0)
+        assertEquals("answered once", listOf(ChangeHandover.Word.KEPT), words)
+    }
+
+    /**
+     * A subscribe that failed is not retried at once: iOS never reaches its
+     * error branch (TapLink.swift:1624-1625 at 8df0bb1, `guard ch.isNotifying`
+     * first), so the payer waits out its eight seconds and gives up there.
+     */
+    @Test
+    fun aSubscribeThatFailedWaitsOutTheConnectClock() {
+        val air = TapAir()
+        air.receiver.radioState(null)
+        air.receiver.arm()
+        air.settle()
+        air.subscribeError = "the CCCD write failed"
+        air.payer.connecting()
+        air.payer.speak()
+        air.settle()
+        assertNull("not given up at once", air.gaveUp)
+        assertTrue("and M1 never went", air.written.isEmpty())
+        air.advance(7.9)
+        assertNull(air.gaveUp)
+        air.advance(0.2)
+        assertEquals("timed out", air.gaveUp)
+    }
+
+    /**
+     * Radio callbacks already on their way when the receiver stopped do
+     * nothing (iOS gets this from `m.delegate = nil`, TapLink.swift:465): no
+     * stage for the page, no place taken, no radio call.
+     */
+    @Test
+    fun aStoppedReceiverIgnoresLateRadioCallbacks() {
+        val air = TapAir()
+        air.receiver.radioState(null)
+        air.receiver.arm()
+        air.settle()
+        assertTrue(air.receiver.stop())
+        val events = air.receiverEvents.size
+        val advertises = air.advertiseCalls
+        val stops = air.stopAdvertisingCalls
+        val notifies = air.notified.size
+        air.receiver.advertising()
+        air.receiver.radioState(TapStage.OFF)
+        air.receiver.radioState(TapStage.DENIED)
+        air.receiver.radioState(null)
+        air.receiver.subscribed(TapAir.PAYER)
+        val stranger = TapSession(TapSession.Role.PAYER, air.receiver.service) {}
+        val m1 = TapProtocol.framed((stranger.begin() as TapSession.Step.Send).bytes)!!
+        assertFalse("a write after the stop is refused", air.receiver.write(TapAir.PAYER, listOf(m1)))
+        air.receiver.unsubscribed(TapAir.PAYER)
+        air.receiver.readyToUpdate()
+        air.advance(10.0)
+        assertEquals("no stage after the stop", events, air.receiverEvents.size)
+        assertEquals(advertises, air.advertiseCalls)
+        assertEquals(stops, air.stopAdvertisingCalls)
+        assertEquals(notifies, air.notified.size)
+        assertFalse(air.receiver.busy)
+        assertFalse(air.receiver.takenOne)
     }
 
     /** A notification the radio could not take now goes when it says it is ready. */

@@ -95,6 +95,15 @@ class TapAir(
     /** Writes fail while this says so (the next one, or all). */
     var failWrites = 0
 
+    /** While true, the payer's writes stay in the air, unanswered, until [releaseWrites]. */
+    var holdWrites = false
+    private val heldWrites = ArrayList<() -> Unit>()
+
+    /** What the next subscribe answers: null when it lands. */
+    var subscribeError: String? = null
+
+    var stopAdvertisingCalls = 0
+
     val notified = ArrayList<ByteArray>()
     val written = ArrayList<ByteArray>()
 
@@ -108,6 +117,7 @@ class TapAir(
         }
 
         override fun stopAdvertising() {
+            stopAdvertisingCalls++
             advertising = false
         }
 
@@ -127,8 +137,9 @@ class TapAir(
     val payerRadio: TapPayerLink.Radio = object : TapPayerLink.Radio {
         override fun subscribe() {
             pending.addLast {
-                receiver.subscribed(PAYER)
-                payer.subscribed(null)
+                val error = subscribeError
+                if (error == null) receiver.subscribed(PAYER)
+                payer.subscribed(error)
             }
         }
 
@@ -139,10 +150,11 @@ class TapAir(
                 pending.addLast { payer.wrote("the write was refused") }
                 return
             }
-            pending.addLast {
+            val land = {
                 val ok = receiver.write(PAYER, listOf(piece))
                 payer.wrote(if (ok) null else "insufficient authorization")
             }
+            if (holdWrites) heldWrites.add(land) else pending.addLast(land)
         }
 
         override fun writeLength() = mtu - 3
@@ -188,6 +200,17 @@ class TapAir(
         newSession = payerSession,
         diary = { diary.add(it) },
     )
+
+    /**
+     * The writes held in the air land now, and are acknowledged: unless the
+     * payer has closed its link meanwhile, which takes them down with it.
+     */
+    fun releaseWrites() {
+        holdWrites = false
+        val held = heldWrites.toList()
+        heldWrites.clear()
+        if (!payerClosed) held.forEach { pending.addLast(it) }
+    }
 
     /** Carries everything in the air across, and runs what the clock has due now, until nothing is left. */
     fun settle() {
