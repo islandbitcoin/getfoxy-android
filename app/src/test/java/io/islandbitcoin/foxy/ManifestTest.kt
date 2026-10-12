@@ -169,4 +169,14 @@ class ManifestTest {
         val page = elements(merged, "activity").single { it.getAttributeNS(android, "name") == "io.islandbitcoin.foxy.MainActivity" }
         assertEquals("a link reaches the page that is up, not a second one", "singleTop", page.getAttributeNS(android, "launchMode"))
     }
+
+    @Test
+    fun theLauncherIconIsTheAdaptiveFoxAndThePageStartsOnTheSplash() {
+        // ENG-665: the iOS fox (ArtTest), as the launcher's icon and its round one
+        val app = elements(merged, "application").single()
+        assertEquals("@mipmap/ic_launcher", app.getAttributeNS(android, "icon"))
+        assertEquals("@mipmap/ic_launcher", app.getAttributeNS(android, "roundIcon"))
+        val page = elements(merged, "activity").single { it.getAttributeNS(android, "name") == "io.islandbitcoin.foxy.MainActivity" }
+        assertEquals("@style/Theme.Foxy.Starting", page.getAttributeNS(android, "theme"))
+    }
 }

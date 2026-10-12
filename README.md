@@ -31,6 +31,7 @@ dialog, to continue without Tor for the session.
 | `tools/cdp-eval.js`, `tools/real-money.js`, `tools/fake-invoice.js` | drive the page of a debug build over WebView debugging; the money rules of a leg on a real mint (the person's go, 100 sats or less, the person's own invoice: docs/DEVICE-TESTS.md "Real money"); an invoice that pays no one, for the scanner check only, never paid |
 | `tools/cardsim-test.sh`, `tools/cardsim.PIN` | the card session end to end: getfoxy/card's applet at the pinned commit, built with that repository's own tooling and run in jCardSim, driven through the bridge and the debug build's simulator link (`CardSimEndToEndTest`) |
 | `docs/DEVICE-TESTS.md` | what is checked on a phone: the instrumented tests and the checks by hand |
+| `app/art/NOTICE.md`, `tools/make-art.py` | the app's icons and splash, cut from the iOS art at `core/PIN`'s commit: each source, its sha256 and the upstream licence; the script that cuts them (Pillow, by hand) |
 
 ## Checks
 

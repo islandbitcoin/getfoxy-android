@@ -18,6 +18,7 @@ okhttp = "4.12.0"
 camerax = "1.5.3"
 zxingCpp = "3.0.2"
 zxingCore = "3.5.4"
+tink = "1.23.0"
 androidxTestCore = "1.7.0"
 androidxTestRunner = "1.7.0"
 androidxTestRules = "1.7.0"
@@ -43,6 +44,7 @@ camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = 
 camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
 zxing-cpp = { module = "io.github.zxing-cpp:android", version.ref = "zxingCpp" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxingCore" }
+tink-android = { module = "com.google.crypto.tink:tink-android", version.ref = "tink" }
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
 androidx-test-rules = { module = "androidx.test:rules", version.ref = "androidxTestRules" }

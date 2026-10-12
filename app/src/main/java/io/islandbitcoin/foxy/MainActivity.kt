@@ -4,12 +4,16 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -24,8 +28,9 @@ import io.islandbitcoin.foxy.web.WebHost
 
 /**
  * The page's activity: portrait, FLAG_SECURE before anything is drawn (S19: the
- * Recents thumbnail is blank and capture is refused), the splash held until the
- * page says `covered` or 8 s pass, and the WebView host.
+ * Recents thumbnail is blank and capture is refused), Android's splash fading
+ * into the intro's still, which stays over the page until it says `covered` or
+ * 8 s pass (SplashCover, ENG-665), and the WebView host.
  *
  * P3: the permission and screen-lock launchers the doors use, registered here
  * because a launcher cannot be registered after STARTED; `_screenshot` from
@@ -36,7 +41,7 @@ import io.islandbitcoin.foxy.web.WebHost
  */
 class MainActivity : ComponentActivity(), WebHost.Permissions {
     companion object {
-        const val SPLASH_BACKSTOP_MS = 8_000L
+        const val SPLASH_BACKSTOP_MS = SplashCover.BACKSTOP_MS
 
         /** Debug builds only: start Tor on this transport (direct, obfs4, snowflake), for the device exit test. */
         const val FORCE_TRANSPORT = "FoxyForceTransport"
@@ -46,7 +51,15 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
     }
 
     private val main = Handler(Looper.getMainLooper())
-    @Volatile private var splashDone = false
+    private var cover: SplashCover? = null
+
+    /** The cover's view while it is up, and whether it is (SplashCoverViewTest). */
+    internal var coverView: ImageView? = null
+        private set
+    internal val coverUp: Boolean get() = cover?.isUp == true
+
+    /** Whether onCreate made a splash cover at all, up or down (SplashCoverViewTest). */
+    internal val coverMade: Boolean get() = cover != null
 
     private val cameraAsked = ArrayList<(Boolean) -> Unit>()
     private val cameraLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -82,8 +95,10 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
-        splash.setKeepOnScreenCondition { !splashDone }
-        main.postDelayed({ splashDone = true }, SPLASH_BACKSTOP_MS)
+        // Android's own splash goes with the first frame, fading onto the cover below (SplashCover)
+        splash.setOnExitAnimationListener { provider ->
+            provider.view.animate().alpha(0f).setDuration(SplashCover.SYSTEM_FADE_MS).withEndAction { provider.remove() }
+        }
 
         val container = FrameLayout(this)
         container.setBackgroundColor(getColor(R.color.page))
@@ -91,9 +106,11 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
 
         // the seed executor is FoxyServices', made with the process and so before the listener
         val services = (application as FoxyApplication).services
-        val webHost = WebHost(this, services, container, { splashDone = true }, this)
+        val webHost = WebHost(this, services, container, { main.post { cover?.down() } }, this)
         host = webHost
         webHost.create()
+        cover = addCover(container)
+        main.postDelayed({ cover?.down() }, SPLASH_BACKSTOP_MS)
 
         // Settings' screen-lock confirmation (API 28-29) stops this activity: Foxy's own question, not a put-away
         val away = PutAway({ host }, services.vault, ownPrompt = { services.auth.confirming })
@@ -122,6 +139,31 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         if (!(BuildConfig.DEBUG && intent?.getBooleanExtra(NO_TOR, false) == true)) {
             // a finished activity parked Tor (onDestroy) and no PutAway return will follow: set it up again here
             if (Tor.parked) Tor.resumed(0) else Tor.start()
+        }
+    }
+
+    /** The intro's still over the web view, at its size, until SplashCover takes it down; touches go through to the page, as iOS's. */
+    private fun addCover(container: FrameLayout): SplashCover {
+        val image = ImageView(this)
+        image.scaleType = ImageView.ScaleType.CENTER_CROP
+        image.setBackgroundColor(getColor(R.color.splash))
+        image.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        // above whatever the web host adds later (the live pane, the paste button), and casting no shadow
+        image.outlineProvider = null
+        image.translationZ = 1_000f
+        try {
+            assets.open(SplashCover.STILL).use { image.setImageBitmap(BitmapFactory.decodeStream(it)) }
+        } catch (e: java.io.IOException) {
+            // the page ships byte for byte (AssetsMatchPinTest); black, as iOS's splash colour, if it ever does not
+            Log.line("[foxy] splash still not read: ${e.javaClass.simpleName}")
+        }
+        container.addView(image, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        coverView = image
+        return SplashCover { fadeMs ->
+            image.animate().alpha(0f).setDuration(fadeMs).withEndAction {
+                container.removeView(image)
+                coverView = null
+            }
         }
     }
 
