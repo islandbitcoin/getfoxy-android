@@ -44,8 +44,10 @@ class NetEnvironment(
     val nowSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
     /**
      * A mint request's whole time, its one retry included (iOS's 60 s request
-     * timeout, TorService.swift:1831-1832); within the page's 65 s wait
-     * (foxy-wallet.js `bridgeAsk('mintRequest', ..., 65000)`). Tests shorten it.
+     * timeout, TorService.swift:1831-1832), counted from when it is sent, after
+     * any host-approval alert: within the page's 65 s wait (foxy-wallet.js
+     * `bridgeAsk('mintRequest', ..., 65000)`, counted from when the page asked)
+     * only when that alert took under 5 s, as on iOS. Tests shorten it.
      */
     val mintRequestMs: Long = 60_000,
 ) {
@@ -290,7 +292,8 @@ class NetBridge(
         val headers = passedHeaders(body["headers"], payload != null)
         if (movesMoney(method, url.encodedPath)) moneyInFlight.add(id)
         val circuit = MintCircuit.label(body["circuit"])
-        // the retry shares this time rather than starting its own: answered within it however it went
+        // the retry shares this time rather than starting its own: answered within it however it went,
+        // counted from here, after any host approval (the page's own wait started before the alert)
         val endsBy = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(env.mintRequestMs)
         val request = RouteRequest(url, method, headers, if (method == "POST") payload else null, timeoutMs = env.mintRequestMs, endsBy = endsBy)
         attempt(id, request, circuit, triesLeft = 1, firstDialled = 0)

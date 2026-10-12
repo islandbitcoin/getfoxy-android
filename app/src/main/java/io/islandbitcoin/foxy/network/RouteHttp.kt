@@ -16,6 +16,7 @@ import okio.Buffer
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.Proxy
+import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -282,6 +283,17 @@ object RouteHttp {
         return if (socks.code == 0) null else Socks5SocketFactory.replyWords(socks.code)
     }
 
+    /** URLSession's words for a request that ran out of time (NSURLErrorTimedOut). */
+    const val TIMED_OUT = "The request timed out."
+
+    /**
+     * The request ran out of time: OkHttp's call timeout (an InterruptedIOException,
+     * with the closed socket's Socks5Failure under it when it struck mid-handshake),
+     * or the socket's own read timeout under a Socks5Failure.
+     */
+    fun timedOut(e: Throwable): Boolean =
+        e is InterruptedIOException || generateSequence(e) { it.cause }.any { it is SocketTimeoutException }
+
     /** A handshake that failed on one SOCKS port and again on another: Tor's listener moved under the request. */
     const val REBUILT = "Foxy's private connection was rebuilt mid-request. Try again."
 
@@ -296,11 +308,16 @@ object RouteHttp {
      * `portMoved`: the retry dialled another port than the first try
      * (ENG-648 plan, "If the port changed mid-request"). Twice on the same port
      * (Tor down, port 9 while it is unknown, or a listener that refuses) is
-     * Foxy not being connected to Tor.
+     * Foxy not being connected to Tor. A handshake that waited out the
+     * request's time for Tor's answer (a circuit still being built, ENG-655) is
+     * the timeout iOS's URLSession reported (FoxyBridge.swift `mintFailureWords`,
+     * `localizedDescription`), not a refusal: it may be the only try, its retry
+     * skipped for lack of time.
      */
     fun failureWords(e: IOException, beforeRequest: Boolean, portMoved: Boolean = false): String = when {
+        beforeRequest && timedOut(e) -> TIMED_OUT
         beforeRequest -> if (portMoved) REBUILT else Route.REFUSAL
-        e is InterruptedIOException -> "The request timed out."
+        e is InterruptedIOException -> TIMED_OUT
         e is UnknownHostException -> "A server with the specified hostname could not be found."
         e is SSLException -> "An SSL error has occurred and a secure connection to the server cannot be made."
         e.message == "Canceled" -> "cancelled"

@@ -206,7 +206,8 @@ class MintRequestRetryTest {
         val (text, error) = answer("s2", withinMs = 15_000)
         val took = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
         assertEquals(null, text)
-        assertTrue("an error: $error", !error.isNullOrEmpty())
+        // Tor is connected and still opening the stream: a timeout, as iOS says, not "not connected to Tor"
+        assertEquals(RouteHttp.TIMED_OUT, error)
         assertTrue("answered within the request's time, not past it with a retry: $took ms", took < 8_000 + 2_000)
         Thread.sleep(800)
         assertEquals("not asked again with no time left", 1, socks.handshakes.size)
@@ -223,5 +224,36 @@ class MintRequestRetryTest {
         assertEquals("200\n{\"paid\":true}" to null, answer("s3", withinMs = 10_000))
         assertEquals("dropped once, then granted", 2, socks.connections.get())
         assertEquals(1, mint.requestCount)
+    }
+
+    @Test
+    fun aRetryHasOnlyTheTimeTheFirstTryLeftAndIsAnsweredWithinTheRequestsTime() {
+        // the first handshake is dropped after 3 s, the retry is held: with its own 10 s again it would
+        // still be in flight at about 13.4 s, past the request's 10 s, as a melt past the page's 65 s wait
+        build(mintRequestMs = 10_000)
+        socks.dropNext = 1
+        socks.dropAfterMs = 3_000
+        socks.holdConnects = true // reached only by the retry: the dropped connection closes before its CONNECT
+        val started = System.nanoTime()
+        melt("s4")
+        val (text, error) = answer("s4", withinMs = 20_000)
+        val took = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+        assertEquals(null, text)
+        assertEquals(RouteHttp.TIMED_OUT, error)
+        assertTrue("the retry was sent after the drop: $took ms", took >= 3_000)
+        assertTrue("answered within the request's 10 s, not the retry's own 10 s again: $took ms", took < 10_000 + 1_500)
+        assertEquals("dropped once, then asked again and held", 2, socks.connections.get())
+        assertEquals("only the retry reached its CONNECT", 1, socks.handshakes.size)
+        assertEquals(0, mint.requestCount)
+        assertEquals(0, bridge.moneyInFlight)
+    }
+
+    @Test
+    fun aHandshakeThatRanOutOfTimeIsATimeoutAndOneTorClosedIsNot() {
+        val readTimeout = Socks5Failure("the SOCKS handshake broke", 9050, java.net.SocketTimeoutException("Read timed out"))
+        val callTimeout = java.io.InterruptedIOException("timeout").apply { initCause(Socks5Failure("Tor closed the SOCKS connection", 9050)) }
+        assertEquals(RouteHttp.TIMED_OUT, RouteHttp.failureWords(readTimeout, beforeRequest = true))
+        assertEquals(RouteHttp.TIMED_OUT, RouteHttp.failureWords(callTimeout, beforeRequest = true, portMoved = true))
+        assertEquals(Route.REFUSAL, RouteHttp.failureWords(Socks5Failure("Tor closed the SOCKS connection", 9050), beforeRequest = true))
     }
 }

@@ -33,6 +33,8 @@ class FakeSocks(var forwardTo: Int = 0) : AutoCloseable {
     @Volatile var refuseWith = 4
     /** The next this many connections are closed before any reply, as a listener torn down mid-handshake. */
     @Volatile var dropNext = 0
+    /** How long a dropped connection is held, unanswered, before it is closed: a listener that went away after a while. */
+    @Volatile var dropAfterMs = 0L
     /**
      * CONNECT requests are read and never answered, as Tor holds a stream
      * "waiting for circuit" while it will not use the circuits it has (every
@@ -66,6 +68,7 @@ class FakeSocks(var forwardTo: Int = 0) : AutoCloseable {
             val out = s.getOutputStream()
             if (dropNext > 0) {
                 dropNext--
+                if (dropAfterMs > 0) Thread.sleep(dropAfterMs)
                 s.close()
                 return
             }
