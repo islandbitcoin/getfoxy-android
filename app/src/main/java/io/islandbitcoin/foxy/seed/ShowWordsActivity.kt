@@ -94,9 +94,7 @@ class ShowWordsActivity : SeedScreenActivity() {
             stateListAnimator = null
             text = getString(R.string.seed_hold_to_delete)
             setTextColor(SeedStyle.RED)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            letterSpacing = 0.06f
+            SeedType.DELETE.on(this)
             background = SeedStyle.rounded(this@ShowWordsActivity, SeedStyle.withAlpha(SeedStyle.RED, 0.1), 28f, SeedStyle.withAlpha(SeedStyle.RED, 0.5), 1.5f)
             contentDescription = getString(R.string.seed_hold_to_delete_hint)
         }
@@ -161,16 +159,14 @@ class ShowWordsActivity : SeedScreenActivity() {
         val number = TextView(this).apply {
             text = (i + 1).toString()
             setTextColor(SeedStyle.ink(0.38))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            SeedType.CELL_NUMBER.on(this)
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
         cell.addView(number, LinearLayout.LayoutParams(SeedStyle.dp(this, 22f), ViewGroup.LayoutParams.WRAP_CONTENT))
         val word = TextView(this).apply {
             text = if (revealed) session.words[i] else "••••••"
             setTextColor(if (revealed) SeedStyle.INK else SeedStyle.ink(0.3))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            SeedType.CELL_WORD.on(this)
             maxLines = 1
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
@@ -195,9 +191,7 @@ class ShowWordsActivity : SeedScreenActivity() {
         val pill = TextView(this).apply {
             text = getString(R.string.seed_tap_to_reveal)
             setTextColor(SeedStyle.INK)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            letterSpacing = 0.04f
+            SeedType.REVEAL.on(this)
             gravity = Gravity.CENTER
             background = SeedStyle.rounded(this@ShowWordsActivity, Color.argb(158, 0, 0, 0), 24f, SeedStyle.ink(0.16))
             setPadding(SeedStyle.dp(this@ShowWordsActivity, 24f), 0, SeedStyle.dp(this@ShowWordsActivity, 24f), 0)

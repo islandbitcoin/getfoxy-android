@@ -85,7 +85,23 @@ adb shell am instrument -w -r io.islandbitcoin.foxy.test/androidx.test.runner.An
 | `SeedProtectTest` | the `device` key needs the person for every use (API 30+; on API 28-29 it refuses at `Cipher.init` outside the 10 s after a confirmation) and survives a new fingerprint; a move to `device` the person does not approve leaves the `none` seed readable and the protection unchanged. Needs a screen lock | S3, S5 |
 | `OwnPromptTest` | API 28-29 only, with `-e foxyPin <pin>` (skipped otherwise; it types the PIN with `input`): Settings' screen-lock confirmation stops MainActivity, and that stop is not a put-away. The vault's epoch does not move, the seed read under it is kept, the door stays open, and PutAway logs that it put nothing away; taking the guard off within 10 s of that yes still asks (`fresh`); Back on the confirmation after 2.5 s is not a yes, so the skipped put-away runs (the epoch moves) and PutAway logs a return. With a WebView that loads the page, a `seedShow` of a `device` seed opens SHOW WORDS once the PIN is given (skipped on an image whose WebView cannot load the page) | S3, S20, S21 |
 | `BluetoothApproveTest` | what the first-install Bluetooth screen's APPROVE posts (`bluetoothAsk`) comes back through the real shim twice, in iOS's order: `window.__foxyBluetoothAnswer("unsupported")`, which closes the screen, then the reply `unsupported` on its id; and the gate's own screen, launched with `FOXY_SHOW_WARNING` (debug builds) and raised through the banner's `leaveOffline` on a phone with a wallet, closes after PROCEED then APPROVE with `foxy.bt.asked` = `approved, iOS said unsupported` (the two keys are put back). ENG-656; no Bluetooth permission is asked. Passed on a Pixel 8 Pro (Android 17) 2026-10-12, and fails there with the push taken out; by hand on the same day, a fresh install on an API 35 emulator closed the screen on APPROVE | ENG-656 |
+| `TapCryptoOnDeviceTest` | tap to pay's crypto through the phone's own providers: Tink's X25519 in the APK and Conscrypt's ChaCha20-Poly1305 (which the desk JVM does not have) give iOS's bytes from `fixtures/tap-vectors.json` (the keys, the code, every seal, and the first conversation's handshake and offer); the JVM's `TapVectorsTest` checks the whole file. ENG-669; not yet run on a phone, and must pass on one before ENG-670/671's radio merges (the gate below) | ENG-669 |
 | `TextZoomTest` | with the system font scale set to 1.3 through the shell (the phone's value put back afterwards), a WebView the activity makes and leaves alone starts at `textZoom` 130 (the control), and Foxy's is `WebHost.PAGE_TEXT_ZOOM`, 100: the page is laid out as WKWebView lays it out on iOS, whatever the font size. Skipped, saying why, when the scale cannot be set or a plain WebView does not follow it. ENG-661; compiled, not yet run on a phone | ENG-661 |
+| `NotifyChannelTest` | the payments channel `payments_heads_up` is `IMPORTANCE_HIGH` (heads-up, as iOS's foreground banner), and a phone holding the default-importance `payments` an earlier build made loses it when the channel is made (ENG-665). A channel the person turned off or down in Settings fails the first test: turn it back on | — |
+| `SplashCoverViewTest` | MainActivity's splash cover: the intro's still is an `ImageView` (`CENTER_CROP`, the still read from the APK) as the container's last child, drawn above every sibling (its `translationZ`), a view added after it included; the page's `covered` takes it down and it is out of the view tree within `SplashCover.FADE_MS` plus 1 s; a second `covered` is no news. Fails when MainActivity made no cover; skipped, saying why, only when the cover was made and the page said `covered` before the test could look. ENG-665; compiled, not yet run on a phone | ENG-665 |
+
+**A hard gate for tap to pay's radio (ENG-670, ENG-671).** `TapCryptoOnDeviceTest`
+must pass on a phone, and the run be recorded under "Runs" below, before any
+radio code that depends on `TapCrypto`'s seal and open merges. CI and the desk
+JVM never run the branch Android takes: the JDK has no
+`ChaCha20/Poly1305/NoPadding`, so `TapCrypto.cipher()` falls back to the JDK's
+`ChaCha20-Poly1305`, and Conscrypt's handling (the `IvParameterSpec`,
+`updateAAD` before `doFinal`, `AEADBadTagException` on a bad tag) is checked
+nowhere else. If it differed from the JDK's, every sealed message from M4 on
+would fail on a phone while every JVM test stayed green. Putting Conscrypt on
+the JVM test classpath (`org.conscrypt:conscrypt-openjdk-uber`) would move the
+check into CI, but it is a new pin and needs the person's supply-chain sign-off
+first, as Tink did; until then this run is the gate (ENG-669 review).
 
 P2 starts Tor with the page, so `PageBootTest`, `PutAwayTest` and
 `NetBlockTest` wait for the page to boot in whatever state Tor is in
@@ -222,6 +238,66 @@ wallet. (This replaces ENG-661's advice to use testnut.cashu.space.)
     Pixel, Safari's Web Inspector on the iPhone): the two `pub` answers are the
     same 130 characters. `cardTime` answers the phone's clock and a signature.
     No card is needed and nothing moves; the card itself is A5 (the NFC link).
+
+## The native design checks (ENG-665)
+
+Foxy's windows are FLAG_SECURE, so a screenshot or a screen recording of them
+is black: these are looked at by the person, on the debug build, with the iOS
+app (getfoxy/iOS at `core/PIN`'s commit) beside it where one is to hand. The
+art is the iOS art (`app/art/NOTICE.md`); `ArtTest`, `NotifierTest`,
+`SplashCoverTest`, `SeedTypeTest`, `SeedColoursTest` and `PromptQueueTest` check the files and the
+numbers; what follows is what only eyes can check. **Pending: no phone was used
+for this change.**
+
+1. **The launcher icon.** On the home screen and in the app drawer: the white
+   fox head of the iOS icon on black, ears whole (no tip cut by the launcher's
+   circle or squircle), the neck running off the bottom edge with no line or
+   grey band across it. Long-press and drag it a little: the fox moves over the
+   black (the two layers), and nothing white shows outside the mask.
+2. **The themed icon (Android 13+).** Settings → Wallpaper & style → Themed
+   icons on: Foxy's icon is the same fox in the theme's colours, its eyes, nose
+   and mouth open (drawn in the theme's background colour), not a plain blob and
+   not the old two-eared placeholder.
+3. **The cold start (the splash).** Force-stop Foxy (`adb shell am force-stop
+   io.islandbitcoin.foxy`), then tap the icon. Android's splash is black with
+   the sleeping white fox in the middle (the intro's fox, smaller); it fades in
+   about a fifth of a second into the same fox full size, filling the screen as
+   the iOS launch screen does. From there to the intro there is **no jump**: the
+   fox does not move, resize or flash when the intro starts playing (on iOS the
+   same). On a launch with no intro (it has played already), the still holds
+   until the page is up (CONNECTING, the PIN lock or the home screen), then
+   fades out in about a third of a second. Never the old orange two-eared fox,
+   never a white or grey frame. Repeat with the phone in dark and light mode:
+   the same.
+4. **The cold start on Android 9-11 (API 28-30), if a phone or an emulator is to
+   hand.** The splash is AndroidX's: the same fox on black, then the same fade.
+5. **"Payment received" as a heads-up.** With notifications allowed, Foxy open,
+   receive a payment (under "Real money" above, as in P3 check 5): a
+   banner drops from the top of the screen over Foxy for a few seconds, with
+   the default sound, as iOS's banner does; its small icon in the status bar
+   and on the banner is the white fox head (not a lightning bolt), tinted the
+   page's orange where Android tints it. Settings → Apps → Foxy →
+   Notifications lists one category, "Payments", set to make sound and pop on
+   screen. On a phone that had an earlier build installed (update with
+   `adb install -r`, do not uninstall): still one category, not two.
+6. **The native dialogs.** BACKUP → SHOW WORDS → RESTORE A WALLET → paste or
+   type a different phrase → the replace question; and the allow-a-new-host
+   question (a mint the page has not used). Each dialog is a near-black card
+   with rounded corners and a faint light edge, over a dimmed page; the title in
+   heavy, slightly spaced white; the message in a softer white; the buttons in
+   heavy spaced capitals, the no on the left in the orange, the yes on the right
+   in the orange, or in red when it replaces or deletes the seed. No teal or
+   pink (Android's Material default) anywhere.
+7. **The seed screens' type.** SHOW WORDS, VERIFY and RESTORE beside the iOS
+   app's: the titles (YOUR SEED PHRASE, VERIFY, BACKED UP, RESTORE A WALLET) in
+   the heaviest weight, letters spaced a little wider than before; the body in
+   a semibold, lighter than the titles; the twelve words and their numbers bold;
+   the orange button's label heavy and spaced; TAP TO REVEAL and HOLD TO DELETE
+   ALL DATA heavy and spaced. On RESTORE the typed words are in the phone's own
+   font (no longer a typewriter one). Then with font_scale 1.3
+   (`adb shell settings put system font_scale 1.3`; back with `1.0`): every
+   title and button label still fits its line or wraps cleanly inside its
+   button, nothing clipped.
 
 ## The P2 device exit (ENG-648)
 

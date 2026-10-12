@@ -3,7 +3,16 @@
     <!-- the iOS splash colour (FoxyWebView.splashGreen, which is black) and the page's own background -->
     <color name="splash">#FF000000</color>
     <color name="page">#FF0B0B0C</color>
-    <color name="fox_orange">#FFF28C28</color>
+    <!-- the page's orange (SeedScreens.swift SeedStyle.accent): native dialogs' buttons, the notification's tint -->
+    <color name="accent">#FFF2802E</color>
+    <!-- SeedStyle.red: a dangerous yes (iOS `.destructive`) -->
+    <color name="danger">#FFFF5C5C</color>
+    <!-- SeedStyle.ink, whole and at the page's 62 % for body text -->
+    <color name="ink">#FFF5F1EC</color>
+    <color name="ink_body">#9EF5F1EC</color>
     <!-- the seed screens' near-black (SeedScreens.swift SeedStyle.background) -->
     <color name="seed_background">#FF0A0A0A</color>
+    <!-- a native dialog: the seed screens' tile (SeedStyle TILE) with the page's hairline, ink at 12 % -->
+    <color name="dialog_background">#FF17171A</color>
+    <color name="dialog_edge">#1FF5F1EC</color>
 </resources>

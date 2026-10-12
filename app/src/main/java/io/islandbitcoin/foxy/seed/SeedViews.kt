@@ -8,6 +8,7 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
+import android.text.style.TypefaceSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -18,17 +19,76 @@ import android.widget.TextView
 import io.islandbitcoin.foxy.R
 
 /**
+ * One of iOS's text styles on the seed screens (SeedScreens.swift `SeedStyle`):
+ * the system font at a weight, a size in points and a kern in points. Android
+ * sizes in sp and spaces letters in ems, so the spacing is the kern over the
+ * size (ENG-665). Weights are the CSS ones UIFont.Weight stands for: heavy 800,
+ * bold 700, semibold 600; Typeface.create(…, weight, …) (API 28) takes them,
+ * and a phone whose font has no such weight draws the nearest it has.
+ */
+class SeedType(val sizeSp: Float, val weight: Int, val kern: Float = 0f) {
+    /** In ems, as TextView.letterSpacing wants it. */
+    val letterSpacing: Float get() = kern / sizeSp
+
+    fun on(view: TextView) {
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
+        view.typeface = SeedStyle.face(weight)
+        view.letterSpacing = letterSpacing
+    }
+
+    companion object {
+        const val HEAVY = 800
+        const val BOLD = 700
+        const val SEMIBOLD = 600
+
+        /** `SeedStyle.title`: `spaced(text, size: 22, kern: 1.4)`, heavy. */
+        val TITLE = SeedType(22f, HEAVY, 1.4f)
+
+        /** `SeedStyle.body`: 18 semibold (a size of its own where a screen asks). */
+        fun body(sizeSp: Float = 18f) = SeedType(sizeSp, SEMIBOLD)
+
+        /** `SeedStyle.setPrimary`: `spaced(title, size: 18, kern: 1.2)`, heavy. */
+        val BUTTON = SeedType(18f, HEAVY, 1.2f)
+
+        /** `SeedStyle.nativeBar`: 15 semibold. */
+        val NATIVE_BAR = SeedType(15f, SEMIBOLD)
+
+        /** `SeedStyle.chip`: the word 18 bold, its number 14 heavy. */
+        val CHIP_WORD = SeedType(18f, BOLD)
+        val CHIP_NUMBER = SeedType(14f, HEAVY)
+
+        /** `wordCell` (the phrase) and the restore screen's cells: the number 14 bold, the word 20 bold. */
+        val CELL_NUMBER = SeedType(14f, BOLD)
+        val CELL_WORD = SeedType(20f, BOLD)
+
+        /** `veil`: `spaced("TAP TO REVEAL", size: 16, kern: 0.7)`, heavy. */
+        val REVEAL = SeedType(16f, HEAVY, 0.7f)
+
+        /** `spaced("HOLD TO DELETE ALL DATA", size: 15, kern: 1)`, heavy. */
+        val DELETE = SeedType(15f, HEAVY, 1f)
+
+        /** The restore screen's suggestions (SeedScreens.swift:1567): 17 semibold. */
+        val SUGGESTION = SeedType(17f, SEMIBOLD)
+    }
+}
+
+/**
  * Foxy's look on its own seed screens, as the page draws it
- * (SeedScreens.swift `SeedStyle`): near-black, warm white, the orange, and bold
- * spaced capitals for titles and buttons. Plain Views (ENG-649 decision 4).
+ * (SeedScreens.swift `SeedStyle`): near-black, warm white, the orange, and heavy
+ * spaced capitals for titles and buttons ([SeedType]). Plain Views (ENG-649 decision 4).
  */
 object SeedStyle {
-    val BACKGROUND = Color.rgb(10, 10, 10)
-    val INK = Color.rgb(245, 241, 236)
-    val ACCENT = Color.rgb(242, 128, 46)
-    val RED = Color.rgb(255, 92, 92)
-    val TILE = Color.rgb(23, 23, 26)
-    val PLACED = Color.rgb(42, 42, 46)
+    // opaque ARGB, written out so the JVM tests can read them (SeedColoursTest): BACKGROUND, INK, ACCENT,
+    // RED and TILE are also res/values/colors.xml's seed_background, ink, accent, danger and dialog_background
+    const val BACKGROUND = 0xFF0A0A0A.toInt()
+    const val INK = 0xFFF5F1EC.toInt()
+    const val ACCENT = 0xFFF2802E.toInt()
+    const val RED = 0xFFFF5C5C.toInt()
+    const val TILE = 0xFF17171A.toInt()
+    const val PLACED = 0xFF2A2A2E.toInt()
+
+    /** The system font at a CSS weight (API 28). */
+    fun face(weight: Int): Typeface = Typeface.create(Typeface.DEFAULT, weight, false)
 
     fun ink(alpha: Double): Int = Color.argb((alpha * 255).toInt(), 245, 241, 236)
 
@@ -47,9 +107,7 @@ object SeedStyle {
     fun title(context: Context, text: String): TextView = TextView(context).apply {
         this.text = text.uppercase()
         setTextColor(INK)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        letterSpacing = 0.06f
+        SeedType.TITLE.on(this)
         gravity = Gravity.CENTER
         isFocusable = true
         isAccessibilityHeading = true
@@ -58,8 +116,7 @@ object SeedStyle {
     fun body(context: Context, text: String, sizeSp: Float = 18f, color: Int = ink(0.62)): TextView = TextView(context).apply {
         this.text = text
         setTextColor(color)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        SeedType.body(sizeSp).on(this)
         gravity = Gravity.CENTER
     }
 
@@ -83,9 +140,7 @@ object SeedStyle {
         button.background = rounded(context, if (enabled) ACCENT else ink(0.14), 30f)
         button.text = title.uppercase()
         button.setTextColor(if (enabled) Color.WHITE else ink(0.4))
-        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-        button.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        button.letterSpacing = 0.06f
+        SeedType.BUTTON.on(button)
     }
 
     fun backButton(context: Context): Button = Button(context).apply {
@@ -93,7 +148,7 @@ object SeedStyle {
         stateListAnimator = null
         text = "←"
         setTextColor(INK)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        SeedType(20f, SeedType.SEMIBOLD).on(this)
         background = rounded(context, ink(0.07), 26f, ink(0.16))
         contentDescription = context.getString(R.string.seed_back)
         val size = dp(context, 52f)
@@ -109,8 +164,7 @@ object SeedStyle {
     fun nativeBar(context: Context): TextView = TextView(context).apply {
         text = context.getString(R.string.seed_native_bar)
         setTextColor(INK)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        SeedType.NATIVE_BAR.on(this)
         gravity = Gravity.CENTER
         setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_lock, 0, 0, 0)
         compoundDrawablePadding = dp(context, 7f)
@@ -128,7 +182,8 @@ object SeedStyle {
         if (number != null) {
             label.append("$number  ")
             label.setSpan(ForegroundColorSpan(ink(0.45)), 0, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            label.setSpan(RelativeSizeSpan(0.78f), 0, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            label.setSpan(RelativeSizeSpan(SeedType.CHIP_NUMBER.sizeSp / SeedType.CHIP_WORD.sizeSp), 0, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            label.setSpan(TypefaceSpan(face(SeedType.CHIP_NUMBER.weight)), 0, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         val start = label.length
         label.append(text)
@@ -139,8 +194,7 @@ object SeedStyle {
         }
         label.setSpan(ForegroundColorSpan(colour), start, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         this.text = label
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        SeedType.CHIP_WORD.on(this)
         minWidth = 0
         minimumWidth = 0
         minHeight = 0

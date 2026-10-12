@@ -2,11 +2,9 @@ package io.islandbitcoin.foxy.seed
 
 import android.content.ClipboardManager
 import android.content.Context
-import android.graphics.Typeface
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
-import android.util.TypedValue
 import android.view.ActionMode
 import android.view.DragEvent
 import android.view.Gravity
@@ -104,8 +102,7 @@ class EnterWordsActivity : SeedScreenActivity() {
         val number = TextView(this).apply {
             text = (i + 1).toString()
             setTextColor(SeedStyle.ink(0.38))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            SeedType.CELL_NUMBER.on(this)
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
         frame.addView(number, LinearLayout.LayoutParams(SeedStyle.dp(this, 22f), ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -229,7 +226,7 @@ class EnterWordsActivity : SeedScreenActivity() {
                 isAllCaps = false
                 text = word
                 setTextColor(SeedStyle.INK)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+                SeedType.SUGGESTION.on(this)
                 background = SeedStyle.rounded(this@EnterWordsActivity, SeedStyle.ink(0.12), 8f)
                 setOnClickListener { pick(word) }
             }
@@ -283,8 +280,8 @@ class SeedField(context: Context, index: Int) : EditText(context) {
         isSingleLine = true
         background = null
         setTextColor(SeedStyle.INK)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        // the system font, 20 bold, as iOS's field (SeedScreens.swift:1255), not a monospace one
+        SeedType.CELL_WORD.on(this)
         highlightColor = SeedStyle.withAlpha(SeedStyle.ACCENT, 0.4)
         importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
         isSaveEnabled = false

@@ -30,3 +30,20 @@ signatures against `card-owner-vectors.json`, as `FoxyTests/NUT13Tests.swift`
 and `FoxyTests/SeedActionsTests.swift` do, and against `card-owner-proofs.json`:
 the message the phone signs is the one the card verified, and `lock` and `tag`
 are labels the phone refuses.
+
+One file made from the iOS code itself rather than copied:
+`tap-vectors.json`, written by `tools/tap-vectors/generate.sh` from
+getfoxy/iOS's `Foxy/Bluetooth/TapCrypto.swift`, `TapSession.swift` and
+`TapProtocol.swift` at the commit in `core/PIN` (read with `git show`, compiled
+with `swiftc` against CryptoKit on macOS). `FoxyTests/TapCryptoTests.swift` and
+`TapSessionTests.swift` run on random keys and carry no fixed bytes, so the
+generator seeds the session's private key and nonce (one mechanical change to
+`TapSession.swift`, made and checked by the script) and writes down what the
+iOS code does: the derived doors, X25519 (RFC 7748's vector, and the
+small-order points CryptoKit refuses), the commitment, the transcript at
+versions 2 to 4, the keys and the code, sealing, padding, the first version's
+code, and five whole conversations with every frame each side wrote and every
+answer each side gave (above 8 KB a frame is pinned by its length and
+SHA-256). `TapVectorsTest` replays all of it byte for byte;
+`tools/tap-vectors/generate.sh <ios-clone> --check` says whether the file is
+still what the iOS code writes.
