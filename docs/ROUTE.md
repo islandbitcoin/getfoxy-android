@@ -225,13 +225,13 @@ As built in P2 (ENG-648). Kotlin paths are under
   however it went, and a retry with under 5 s left is not sent. The 60 s
   start when the request is sent, after any host-approval alert; the page's
   65 s wait (`foxy-wallet.js` `bridgeAsk('mintRequest', ..., 65000)`) starts
-  when it asked, so an alert left open for more than 5 s can outlast the page's wait,
-  as on iOS, whose request timeout also starts after the alert. The handshake
-  waits for Tor's answer to its CONNECT as long as the request may, at most
-  60 s, iOS's request timeout (`TorService.swift:1831-1832`): a new label is a
-  new circuit, and right after "circuit established" Tor took longer than the
-  30 s the handshake used to allow, so every first request on a label timed
-  out, and its retry, for about two minutes (ENG-655,
+  when it asked, so an alert left open for more than 5 s can outlast the
+  page's wait, as on iOS, whose request timeout also starts after the alert.
+  The handshake waits for Tor's answer to its CONNECT as long as the request
+  may, at most 60 s, iOS's request timeout (`TorService.swift:1831-1832`): a
+  new label is a new circuit, and right after "circuit established" Tor took
+  longer than the 30 s the handshake used to allow, so every first request on
+  a label timed out, and its retry, for about two minutes (ENG-655,
   `MintRequestRetryTest`). OkHttp's own retry is off
   (`retryOnConnectionFailure(false)`), and a failure on a redirect's later hop
   is never "before the request". So a POST that reached the mint is never sent
