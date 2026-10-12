@@ -149,6 +149,37 @@ test('P1: a host serving only P1 actions and the p1 stubs boots to a defined sta
   assert.equal(s.host.pushes.includes('_privacy'), false, 'P1 pushes no _privacy');
 });
 
+test('P2: a host serving P1 and P2 actions goes from connecting to up, mints and melts, and leans on nothing later without a stub', async () => {
+  // The flow to run against the Kotlin bridge in P2: P1 and P2 served, the P3 and
+  // LATER actions answered by their p1 stubs, and any without a stub an 'unserved'
+  // violation that fails it.
+  const s = await flow({ seed: true, tor: 'connecting', phase: 'P2' }, async (s) => {
+    const W = s.W;
+    // Tor connecting: the route is closed, and the page holds to it on a P2 host too
+    await s.until(() => s.host.asked.get('privacy') > 0 && shows(s, 'SECURING YOUR CONNECTION'), 30000, 'the connecting screen');
+    await staysQuiet(s, 'while Tor was connecting, on a P2 host');
+    // Tor up, pushed as native pushes it
+    s.torUp();
+    await s.until(() => W.connected === true, 30000, 'the page to connect to its default mint once Tor is up');
+    // mint
+    const inv = await W.invoice(64, 'conformance p2');
+    assert.ok(await W.claim(inv.hash || inv.quote || inv.id), 'the invoice was claimed: minted');
+    assert.ok(s.host.mint.requests.includes('POST /v1/mint/bolt11'), 'minted over mintRequest');
+    // melt
+    await W.pay('lnbc80n1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypq').catch(() => {});
+    assert.ok(s.host.mint.requests.includes('POST /v1/melt/quote/bolt11'), 'a melt quote, over mintRequest');
+    assert.ok(s.host.mint.requests.includes('POST /v1/melt/bolt11'), 'and the melt');
+    // the gate's buttons a P2 host serves itself, and the two Orbot ones it stubs (LATER on Android)
+    await W.torRetry();
+    assert.equal(await W.orbotRefresh(), 'none');
+    await W.orbotAccess();
+  });
+  assert.ok(s.host.pushes.includes('_privacy'), 'a P2 host pushes _privacy');
+  for (const a of ['privacy', 'hostsKnown', 'mintRequest', 'price', 'captured', 'seedStatus']) {
+    assert.ok(s.host.asked.get(a) > 0, 'the P2 flow asked ' + a);
+  }
+});
+
 test('screens: everything a screen asks native for, through the wallet', async () => {
   await flow({ seed: true, tor: 'up' }, async (s) => {
     const W = s.W, w = s.window;
