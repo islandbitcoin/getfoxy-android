@@ -17,7 +17,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -100,14 +102,24 @@ class PutAwayTest {
         val bridge = bridgeRef.get()
         assertNotNull("the page had a bridge", bridge)
         assertNull("the WebView is gone", host.webView)
-        FieldLog.clear()
+        // every script the guard drops from here on: the page's own late replies (a mint request it made
+        // while up, answered now) may land in the same moment, so only this test's two are counted (ENG-652).
+        // The guard runs on the main thread: watching starts and stops there, with the field log cleared
+        // and read in the same turn, so the log and the list see the same drops
+        val dropped = CopyOnWriteArrayList<String>()
+        val push = "window.FoxyWallet && window.FoxyWallet._resumed(0) /* PutAwayTest late push */"
+        val reply = FoxyBridge.replyScript("late-1", "ok", null)
         // the activity and its WebView are gone; a late answer and a late push must not throw
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            FieldLog.clear()
+            host.droppedScript = { dropped.add(it) }
+        }
         val thrown = AtomicReference<Throwable?>(null)
         instrumentation.runOnMainSync {
             try {
                 bridge!!.resolve("late-1", "ok", null)
-                host.evaluate("window.FoxyWallet && window.FoxyWallet._resumed(0)")
+                host.evaluate(push)
             } catch (t: Throwable) {
                 thrown.set(t)
             }
@@ -117,7 +129,13 @@ class PutAwayTest {
         instrumentation.runOnMainSync {}
         assertNull("nothing threw", thrown.get())
         assertNull(host.webView)
-        val dropped = FieldLog.lines().count { it.text == WebHost.DROPPED_LINE }
-        assertEquals("the late reply and the late push were both dropped by the guard, not sent to a WebView", 2, dropped)
+        val logged = AtomicInteger(-1)
+        instrumentation.runOnMainSync {
+            host.droppedScript = null
+            logged.set(FieldLog.lines().count { it.text == WebHost.DROPPED_LINE })
+        }
+        assertEquals("the late reply and the late push were both dropped by the guard, not sent to a WebView", listOf(reply, push).sorted(), dropped.filter { it == reply || it == push }.sorted())
+        // the guard said so in the field log, once for every script it dropped (any stray of the page's included)
+        assertEquals("one DROPPED_LINE per dropped script", dropped.size, logged.get())
     }
 }

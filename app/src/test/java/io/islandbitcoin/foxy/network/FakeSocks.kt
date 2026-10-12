@@ -33,6 +33,12 @@ class FakeSocks(var forwardTo: Int = 0) : AutoCloseable {
     @Volatile var refuseWith = 4
     /** The next this many connections are closed before any reply, as a listener torn down mid-handshake. */
     @Volatile var dropNext = 0
+    /**
+     * CONNECT requests are read and never answered, as Tor holds a stream
+     * "waiting for circuit" while it will not use the circuits it has (every
+     * primary guard marked unreachable, ENG-652): the client's handshake times out.
+     */
+    @Volatile var holdConnects = false
 
     init {
         thread(isDaemon = true, name = "fake-socks") {
@@ -81,6 +87,12 @@ class FakeSocks(var forwardTo: Int = 0) : AutoCloseable {
             }
             val port = input.readUnsignedShort()
             handshakes.add(Handshake(atyp, host, port, user, pass))
+            if (holdConnects) {
+                // until the client gives up and closes
+                while (input.read() >= 0) {
+                }
+                return s.close()
+            }
             if (refuseNext > 0) {
                 refuseNext--
                 out.write(byteArrayOf(5, refuseWith.toByte(), 0, 1, 0, 0, 0, 0, 0, 0))

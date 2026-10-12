@@ -104,9 +104,17 @@ class WebHost(
         main.post(action)
     }
 
+    /**
+     * Told each script the guard below drops, for an instrumented test to
+     * count only the drops it caused (ENG-652: a late reply to the page's own
+     * request can land in the same moment). Null in the app.
+     */
+    @Volatile internal var droppedScript: ((String) -> Unit)? = null
+
     override fun evaluate(js: String) {
         if (destroyed) {
             Log.line(DROPPED_LINE)
+            droppedScript?.invoke(js)
             return
         }
         webView?.evaluateJavascript(js, null)

@@ -518,4 +518,176 @@ class TorMachineTest {
         machine(release = true).start()
         assertTrue(daemon.torrcs.single().contains("Log err stderr\n"))
     }
+
+    // MARK: Set-ups that overlap (ENG-652)
+
+    private fun networkOffs() = control.setConfs.count { s -> s.any { it == ("DisableNetwork" to "1") } }
+
+    /**
+     * The instrumented suite's stack: a return, the next activity's start
+     * ("retrying") and a restart inside about a second. Each set-up switches the
+     * network off under the circuits the one before was building, and Tor
+     * blamed their guards for it; a retry or a restart this soon joins the
+     * set-up that is running instead.
+     */
+    @Test
+    fun aRetryAndARestartJoinASetUpThatJustBegan() {
+        val m = connected()
+        circuit(m)
+        m.backgrounded { }
+        sched.drain()
+        m.resumed(0)
+        sched.drain()
+        val offs = networkOffs()
+        val forgottenBefore = forgotten
+        val port = m.socksPort
+        sched.advance(90)
+        m.start()
+        sched.drain()
+        sched.advance(1_060)
+        m.restart("the test asked")
+        sched.drain()
+        assertEquals("neither switched the network off again", offs, networkOffs())
+        assertEquals("nor forgot the port the return's set-up read", forgottenBefore, forgotten)
+        assertEquals(port, m.socksPort)
+        circuit(m)
+        assertTrue("the set-up they joined comes up", m.isRunning)
+    }
+
+    @Test
+    fun aRetryOrRestartAfterTheJoinWindowIsANewSetUp() {
+        val m = connected()
+        m.start() // a set-up, not ready
+        sched.drain()
+        val offs = networkOffs()
+        sched.advance(TorMachine.SET_UP_JOIN_MS)
+        m.start()
+        sched.drain()
+        assertEquals("a set-up 4 s old that has not come up: RETRY sets up again", offs + 1, networkOffs())
+        sched.advance(TorMachine.SET_UP_JOIN_MS)
+        m.restart("the person asked")
+        sched.drain()
+        assertEquals(offs + 2, networkOffs())
+    }
+
+    @Test
+    fun aRestartAfterAFailedSetUpIsANewSetUpHoweverSoon() {
+        val m = connected()
+        control.answerSetConf = false
+        m.start()
+        sched.advance(TorMachine.CONTROL_WAIT_MS)
+        assertEquals("failed", m.state)
+        control.answerSetConf = true
+        val offs = networkOffs()
+        m.restart("the person asked")
+        sched.drain()
+        assertEquals(offs + 1, networkOffs())
+    }
+
+    @Test
+    fun aRetryAfterAFailedSetUpIsANewSetUpHoweverSoon() {
+        val m = connected()
+        control.answerSetConf = false
+        m.start()
+        sched.advance(TorMachine.CONTROL_WAIT_MS)
+        assertEquals("failed", m.state)
+        control.answerSetConf = true
+        val offs = networkOffs()
+        m.start()
+        sched.drain()
+        assertEquals("RETRY within 4 s of a failed set-up does not join it", offs + 1, networkOffs())
+    }
+
+    @Test
+    fun aReturnFromBeingPutAwayIsAlwaysASetUp() {
+        val m = connected()
+        m.start()
+        sched.drain()
+        m.backgrounded { }
+        sched.drain()
+        val offs = networkOffs()
+        m.resumed(0)
+        sched.drain()
+        assertEquals("parked Tor is off the network: the return turns it on, however soon", "0", control.last("DisableNetwork"))
+        assertEquals(offs + 1, networkOffs())
+    }
+
+    /**
+     * Nothing a superseded set-up does reaches Tor: its settings answered after
+     * Foxy was put away must not switch the network back on (S21).
+     */
+    @Test
+    fun aSupersededSetUpNeverSwitchesTheNetworkBackOn() {
+        val link = HeldControl(sched)
+        val m = machine()
+        m.start()
+        m.controlReady(link)
+        sched.drain()
+        m.resumed(60) // a set-up: DisableNetwork 1 waits for Tor's reply
+        link.release() // its network is off: the settings go out
+        assertEquals(listOf("1"), link.network())
+        m.backgrounded { } // put away while the settings are unanswered
+        link.releaseAll()
+        assertEquals("the network went off and stayed off", listOf("1", "1"), link.network())
+        assertTrue(m.parked)
+        assertFalse(m.isRunning)
+    }
+
+    @Test
+    fun aSupersededTransportSwitchReadsNoPortAndAsksForNoCircuit() {
+        val link = HeldControl(sched)
+        val m = machine()
+        m.start()
+        m.controlReady(link)
+        link.releaseAll()
+        sched.drain()
+        // direct out of time three times, then obfs4: its settings wait for Tor
+        sched.advance(TorTransport.DIRECT.patienceMs)
+        link.releaseAll()
+        sched.advance(TorTransport.DIRECT.patienceMs)
+        link.releaseAll()
+        sched.advance(TorTransport.DIRECT.patienceMs)
+        assertEquals(TorTransport.OBFS4, m.transport)
+        assertTrue("obfs4's settings are out, unanswered", link.waiting > 0)
+        m.backgrounded { }
+        val asked = link.circuitsAsked
+        link.releaseAll()
+        sched.advance(10_000)
+        assertEquals("no circuit asked for while away", asked, link.circuitsAsked)
+        assertEquals(0, m.socksPort)
+        assertEquals("1", link.network().last())
+    }
+
+    /**
+     * Tor writes an event before its reply to a later command: a
+     * CIRCUIT_ESTABLISHED heard after a set-up began, before its
+     * `DisableNetwork 1` was answered, is about a circuit that switch closed.
+     */
+    @Test
+    fun aCircuitFromBeforeASetUpSwitchedTheNetworkOffIsNotReady() {
+        val m = connected()
+        sched.advance(TorMachine.SET_UP_JOIN_MS)
+        m.start() // RETRY: DisableNetwork 1 is out
+        m.statusEvent("NOTICE CIRCUIT_ESTABLISHED") // the old network's circuit, heard before the reply
+        sched.drain() // the reply, the settings, the network on, the port
+        assertTrue(m.socksPort != 0)
+        assertFalse("a circuit the set-up closed is not ready", m.isRunning)
+        assertTrue("a circuit is asked for", control.circuitsAsked > 0)
+        circuit(m)
+        assertTrue("the set-up's own circuit is", m.isRunning)
+    }
+
+    @Test
+    fun aCircuitHeardWhileParkedDoesNotMakeTheReturnReady() {
+        val m = connected()
+        circuit(m)
+        m.backgrounded { }
+        m.statusEvent("NOTICE CIRCUIT_ESTABLISHED")
+        sched.drain()
+        m.resumed(60)
+        sched.drain()
+        assertFalse("the return waits for a circuit of its own", m.isRunning)
+        circuit(m)
+        assertTrue(m.isRunning)
+    }
 }
