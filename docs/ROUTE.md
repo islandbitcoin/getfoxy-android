@@ -275,12 +275,14 @@ As built in P2 (ENG-648). Kotlin paths are under
   answered in 1 s counts as not tidying (a WebView whose JS is throttled may
   never call back). That timeout is a main-looper post like the looks
   themselves, so a look is decided every 1.25 s at the latest whatever the
-  page does, and the first past 20 s leaves: Tor is parked by about 20.15 s.
+  page does, and the first past 20 s leaves: Tor is parked by 21.25 s at the
+  latest (20.15 s for a page that never answers).
   There is no separate watchdog; the read timeout is what keeps the ceiling
   (`PutAwayLeavingTest`). Android gives no fixed background allowance, so Tor
   is not held on the network past that. Back finishing the activity (API 28-30) removes the
   observer before `onStop` arrives, so `MainActivity.onDestroy` shuts the door
-  and parks Tor itself; the next activity sets Tor up again. A park that
+  and parks Tor itself; the next activity sets Tor up again. A Tor whose
+  thread has ended is not parked: the next activity launches it again. A park that
   comes while Tor is still starting, before its control link is up, is held:
   iOS skips that case (`TorService.swift` `backgrounded`) because it suspends
   the process and a late bootstrap never runs, but Android keeps the process

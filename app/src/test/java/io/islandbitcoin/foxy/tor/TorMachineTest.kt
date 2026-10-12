@@ -347,6 +347,50 @@ class TorMachineTest {
         assertEquals("connecting", m.state)
     }
 
+    /** A Tor whose thread ended is not parked by going to the background; coming back launches it again. */
+    private fun stoppedThenPutAway(): TorMachine {
+        val m = connected()
+        daemon.ended = true
+        m.daemonFinished("tor-android said STOPPING")
+        assertEquals("stopped", m.state)
+        var done = 0
+        m.backgrounded { done++ }
+        assertEquals("backgrounded answers at once", 1, done)
+        assertFalse("a stopped Tor is not parked", m.parked)
+        return m
+    }
+
+    @Test
+    fun aStoppedTorPutAwayIsLaunchedAgainWhenFoxyComesBack() {
+        val m = stoppedThenPutAway()
+        m.resumed(0)
+        assertEquals("launched again on resume", 2, daemon.torrcs.size)
+        assertEquals("connecting", m.state)
+    }
+
+    @Test
+    fun aStoppedTorPutAwayIsLaunchedAgainByStart() {
+        val m = stoppedThenPutAway()
+        m.start()
+        assertEquals("launched again on start", 2, daemon.torrcs.size)
+        assertEquals("connecting", m.state)
+    }
+
+    @Test
+    fun aTorThatStopsWhileParkedIsLaunchedAgainWhenFoxyComesBack() {
+        val m = connected()
+        circuit(m)
+        m.backgrounded { }
+        sched.drain()
+        assertTrue(m.parked)
+        daemon.ended = true
+        m.daemonFinished("tor-android said STOPPING")
+        m.resumed(0)
+        assertEquals("launched again on resume", 2, daemon.torrcs.size)
+        assertFalse("the new Tor is not parked", m.parked)
+        assertEquals("connecting", m.state)
+    }
+
     @Test
     fun noControlLinkIsStuckAfterTenSecondsAndAFailureAfterThat() {
         val m = machine()
