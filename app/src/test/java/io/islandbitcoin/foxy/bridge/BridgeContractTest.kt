@@ -17,12 +17,12 @@ import java.util.concurrent.Executor
  * S15: the bridge serves exactly the P3 contract. Every name in the table is in
  * conformance/contract.json; the 18 P1 actions, the 7 P2 actions, the 21 P3
  * actions (`bluetoothAsk` P3 since ENG-656) and the `p1` stubs of the LATER
- * actions are all there, and no P3
- * action is answered by its stub (four have one: the real handler wins); each
- * LATER stub answers the contract's text or error byte for byte; every P3
- * answer is one the contract lists; with no Tor, each P2 action answers as its
- * stub said P1 would; a LATER action with no stub is "Unknown action: <name>";
- * `{username}`, `{}`, a non-object and `{haptic}` get no reply.
+ * actions are all there, and no P3 action is answered by its stub (four have
+ * one: the real handler wins); each LATER stub answers the contract's text or
+ * error byte for byte; every P3 answer is one the contract lists; with no Tor,
+ * each P2 action answers as its stub said P1 would; a LATER action with no stub
+ * is "Unknown action: <name>"; `{username}`, `{}`, a non-object and `{haptic}`
+ * get no reply.
  */
 class BridgeContractTest {
     private val host = FakeHost()
