@@ -223,9 +223,9 @@ As built in P2 (ENG-648). Kotlin paths are under
   60 s; Android shares the first try's time so the request stays inside the
   page's 65 s wait): a mint request is answered within 60 s of being sent
   however it went, and a retry with under 5 s left is not sent. The 60 s
-  start when the request is sent, after any host-approval alert; the page's 65 s wait
-  (`foxy-wallet.js` `bridgeAsk('mintRequest', ..., 65000)`) starts when it
-  asked, so an alert left open for more than 5 s can outlast the page's wait,
+  start when the request is sent, after any host-approval alert; the page's
+  65 s wait (`foxy-wallet.js` `bridgeAsk('mintRequest', ..., 65000)`) starts
+  when it asked, so an alert left open for more than 5 s can outlast the page's wait,
   as on iOS, whose request timeout also starts after the alert. The handshake
   waits for Tor's answer to its CONNECT as long as the request may, at most
   60 s, iOS's request timeout (`TorService.swift:1831-1832`): a new label is a
