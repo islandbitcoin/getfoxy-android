@@ -58,6 +58,9 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         private set
     internal val coverUp: Boolean get() = cover?.isUp == true
 
+    /** Whether onCreate made a splash cover at all, up or down (SplashCoverViewTest). */
+    internal val coverMade: Boolean get() = cover != null
+
     private val cameraAsked = ArrayList<(Boolean) -> Unit>()
     private val cameraLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val waiting = cameraAsked.toList()

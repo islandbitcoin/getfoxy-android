@@ -27,7 +27,8 @@ import java.util.concurrent.atomic.AtomicReference
  * `covered` takes it down, and it is out of the view tree once the 350 ms
  * fade is over. SplashCoverTest has the latch on the JVM.
  *
- * Skipped, saying why, when the page said `covered` before the test could
+ * Fails when MainActivity made no cover at all. Skipped, saying why, only
+ * when the cover was made and the page said `covered` before the test could
  * look (the cover is already down then, and there is nothing to see).
  */
 @RunWith(AndroidJUnit4::class)
@@ -41,6 +42,8 @@ class SplashCoverViewTest {
             val container = AtomicReference<FrameLayout?>()
             var up = false
             s.onActivity { a ->
+                // fails, not skips, when onCreate made no cover: coverUp alone cannot tell that from "already down"
+                assertTrue("MainActivity made a splash cover", a.coverMade)
                 up = a.coverUp
                 image.set(a.coverView)
                 container.set(a.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as FrameLayout)
