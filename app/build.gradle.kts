@@ -88,7 +88,9 @@ val generateContractStubs = tasks.register<GenerateContractStubs>("generateContr
 
 android {
     namespace = "io.islandbitcoin.foxy"
-    compileSdk = 36
+    compileSdk {
+        version = release(37) { minorApiLevel = 1 }
+    }
 
     defaultConfig {
         applicationId = "io.islandbitcoin.foxy"
@@ -178,9 +180,16 @@ dependencies {
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.secp256k1.jni.android)
+    // Tor in this process (Guardian Project), its control library, the obfs4 and
+    // Snowflake transports, and the one HTTP client (network/, docs/ROUTE.md §5)
+    implementation(libs.tor.android)
+    implementation(libs.jtorctl)
+    implementation(libs.iptproxy)
+    implementation(libs.okhttp)
 
     testImplementation(libs.junit)
     testImplementation(libs.secp256k1.jni.jvm)
+    testImplementation(libs.okhttp.mockwebserver)
 
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.runner)

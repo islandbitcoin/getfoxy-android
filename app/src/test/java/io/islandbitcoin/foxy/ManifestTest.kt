@@ -10,8 +10,10 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * S1 on the merged manifest the debug APK ships: no backup, no device transfer,
- * every domain excluded from both, no INTERNET permission in P1, Safe Browsing
- * and WebView metrics off, the one activity portrait.
+ * every domain excluded from both, INTERNET and ACCESS_NETWORK_STATE and no
+ * other permission, tor-android's service bound and never exported or in the
+ * foreground (audit finding 4), Safe Browsing and WebView metrics off, the one
+ * activity portrait.
  */
 class ManifestTest {
     private val android = "http://schemas.android.com/apk/res/android"
@@ -52,11 +54,35 @@ class ManifestTest {
     }
 
     @Test
-    fun noInternetPermissionInP1() {
-        val permissions = elements(merged, "uses-permission").map { it.getAttributeNS(android, "name") }
-        assertFalse("P1 has no INTERNET permission: $permissions", permissions.contains("android.permission.INTERNET"))
-        assertFalse(permissions.contains("android.permission.ACCESS_NETWORK_STATE"))
-        for (p in permissions) assertTrue("an unexpected permission: $p", p == "io.islandbitcoin.foxy.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
+    fun internetAndNetworkStateAndNoOtherPermission() {
+        val permissions = elements(merged, "uses-permission").map { it.getAttributeNS(android, "name") }.toSet()
+        assertEquals(
+            "P2 asks INTERNET (Tor and Route) and ACCESS_NETWORK_STATE (NetworkKind), and nothing else: $permissions",
+            setOf(
+                "android.permission.INTERNET",
+                "android.permission.ACCESS_NETWORK_STATE",
+                "io.islandbitcoin.foxy.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            ),
+            permissions,
+        )
+        assertFalse("never a foreground service", permissions.any { it.contains("FOREGROUND_SERVICE") })
+        assertTrue("no permission of its own is declared beyond the receiver one", elements(merged, "permission").all {
+            it.getAttributeNS(android, "name") == "io.islandbitcoin.foxy.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        })
+    }
+
+    @Test
+    fun torsServiceIsBoundOnlyNeverExportedOrInTheForeground() {
+        val services = elements(merged, "service")
+        val tor = services.single { it.getAttributeNS(android, "name") == "org.torproject.jni.TorService" }
+        assertFalse("exported", tor.getAttributeNS(android, "exported") == "true")
+        assertEquals("no intent filter: nothing outside Foxy can reach it", 0, tor.getElementsByTagName("intent-filter").length)
+        assertEquals("not a foreground service", "", tor.getAttributeNS(android, "foregroundServiceType"))
+        for (s in services) {
+            assertFalse("${s.getAttributeNS(android, "name")} is exported", s.getAttributeNS(android, "exported") == "true")
+        }
+        assertEquals("no receiver, provider or job of the app's own", 0,
+            elements(merged, "receiver").count { it.getAttributeNS(android, "name").startsWith("io.islandbitcoin") })
     }
 
     @Test
