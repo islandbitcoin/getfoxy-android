@@ -3,8 +3,9 @@
 #
 # Plants each kind of network call in a scratch tree and expects
 # tools/check-no-network.sh to fail on it; then a clean tree, and the allowed
-# exceptions (OkHttp in network/Route.kt, the net-block test's listener, a
-# page script's `new WebSocket(`), must pass.
+# exceptions (OkHttp in network/, the SOCKS factory's socket and placeholder
+# address, the network/ JVM tests' loopback servers, the net-block test's
+# listener, a page script's `new WebSocket(`), must pass.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -73,6 +74,40 @@ plant 'androidTest/java/io/islandbitcoin/foxy/ListenerService.java' 'ServerSocke
 expect pass "the net-block test's listener"
 plant 'androidTest/java/io/islandbitcoin/foxy/NetBlockTest.kt' '"try { ws = new WebSocket(host); } catch (e) {}"'
 expect pass "a page script's WebSocket"
+
+# P2: OkHttp in network/ only; a socket and an InetAddress in the SOCKS factory only; no lookup anywhere
+net='main/java/io/islandbitcoin/foxy/network'
+socks="$net/Socks5SocketFactory.kt"
+plant "$net/RouteHttp.kt" 'import okhttp3.OkHttpClient'
+expect pass "OkHttp in network/RouteHttp.kt"
+plant "$net/RouteHttp.kt" 'fun factoryFor(label: String): Socks5SocketFactory = make(label)'
+expect pass "naming Foxy's SOCKS factory in network/"
+plant 'main/java/io/islandbitcoin/foxy/bridge/X.kt' 'import okhttp3.HttpUrl'
+expect fail "OkHttp in bridge/"
+plant 'main/java/io/islandbitcoin/foxy/tor/X.kt' 'val c = OkHttpClient()'
+expect fail "OkHttp in tor/"
+plant "$socks" 'class S : Socket() { fun f() = InetAddress.getByAddress(h, b) }'
+expect pass "the SOCKS factory's socket and placeholder address"
+plant "$socks" 'val a = InetAddress.getByName(host)'
+expect fail "a lookup in the SOCKS factory"
+plant "$net/Route.kt" 'val a = InetAddress.getAllByName(host)'
+expect fail "a lookup in Route.kt"
+plant "$net/Other.kt" 'val s = Socket("127.0.0.1", 9050)'
+expect fail "a socket elsewhere in network/"
+plant "$net/Other.kt" 'val a = InetAddress.getLoopbackAddress()'
+expect fail "an InetAddress elsewhere in network/"
+plant 'main/java/io/islandbitcoin/foxy/x/X.kt' '// main/java/io/islandbitcoin/foxy/network/Socks5SocketFactory.kt: val s = Socket(h, 1)'
+expect fail "a line that only names the factory's path is not excused"
+plant 'main/java/io/islandbitcoin/foxy/x/X.kt' 'val f = javax.net.SocketFactory.getDefault()'
+expect fail "the platform SocketFactory"
+plant 'test/java/io/islandbitcoin/foxy/network/FakeSocks.kt' 'val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())'
+expect pass "a network/ JVM test's loopback server"
+plant 'test/java/io/islandbitcoin/foxy/network/RouteClientTest.kt' 'import okhttp3.mockwebserver.MockWebServer'
+expect pass "MockWebServer in a network/ JVM test"
+plant 'test/java/io/islandbitcoin/foxy/bridge/X.kt' 'val server = ServerSocket(0)'
+expect fail "a server in a JVM test outside network/"
+plant 'test/java/io/islandbitcoin/foxy/network/X.kt' 'val a = InetAddress.getByName("example.com")'
+expect fail "a lookup in a network/ JVM test"
 
 if [ "$failures" -ne 0 ]; then
   echo "check-no-network.test: $failures case(s) wrong" >&2
