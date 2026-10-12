@@ -177,6 +177,16 @@ class FoxyBridge(
         seeds.closeScreens()
     }
 
+    /**
+     * The page went (its process ended, or it is loading again): what [letGo]
+     * lets go, and the tap receiver it held (FoxyBridge.swift `pageGone` →
+     * `stopTap`). Putting Foxy away is [letGo] alone, as on iOS. Main thread.
+     */
+    fun pageGone() {
+        platform.pageGone()
+        seeds.closeScreens()
+    }
+
     /** The saved seed was written or deleted: no seed screen shows words from before (L4). Main thread. */
     fun seedChanged() = seeds.closeScreens()
 

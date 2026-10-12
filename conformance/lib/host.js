@@ -24,6 +24,7 @@
  */
 const crypto = require('crypto');
 const { check } = require('./schema');
+const TapRules = require('./tap-rules');
 const CONTRACT = require('../contract.json');
 
 const BY_NAME = new Map(CONTRACT.map((e) => [e.name, e]));
@@ -239,9 +240,13 @@ function makeHost(o) {
     nostrSend: () => NO('The payment could not be sent over Nostr.'),
     /* As an iPhone without Bluetooth answers, which is Android until BLE tap to pay
      * (ENG-650, ENG-656; FoxyBridge+Tap.swift `handleTapReceiveStart`, TapLink.swift
-     * `cbState`): "ok", and the receiver this makes says `unsupported` after the
-     * reply; a receiver already held says nothing more. */
-    tapReceiveStart: () => {
+     * `cbState`): a non-empty payload TapRules.kt (TapProtocol.isPayload) would
+     * refuse is refused with its words, making no receiver; otherwise "ok", and
+     * the receiver this makes says `unsupported` after the reply; a receiver
+     * already held says nothing more. */
+    tapReceiveStart: (m) => {
+      const payload = typeof m.payload === 'string' ? m.payload : '';
+      if (payload !== '' && !TapRules.isPayload(payload)) return NO(TapRules.NOT_PAYABLE);
       if (!state.receiverHeld) {
         state.receiverHeld = true;
         host.afterReply(() => host.pushAs('_tap', { side: 'receive', stage: 'unsupported' }));

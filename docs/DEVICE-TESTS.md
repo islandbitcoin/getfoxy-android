@@ -131,8 +131,9 @@ Grant the camera when asked (or `adb shell pm grant io.islandbitcoin.foxy androi
    colour (not greyed). On a debug build,
    `adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy)` shows
    `[tap] receive: no tap to pay on Android yet; telling the page unsupported`
-   once as the receive screen arms itself (again after leaving it, or after
-   putting Foxy away), and never the page's `tap: not advertising` warning.
+   once as the receive screen arms itself (again after leaving it, but not
+   after putting Foxy away and coming back, which keeps the receiver as iOS
+   does), and never the page's `tap: not advertising` warning.
    Nothing asks for a Bluetooth permission. The conformance flow *P3: the
    receive screen's TAP …* and `TapReceiveTest` cover the same in jsdom and the
    JVM; this is the check on the real WebView.

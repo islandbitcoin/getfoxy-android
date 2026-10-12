@@ -474,8 +474,8 @@ class WebHost(
      * inside its 700 ms hold never does).
      */
     fun destroy() {
-        // no camera pane, paste button or seed screen of the page's is left over what comes next (I7)
-        bridge?.letGo()
+        // no camera pane, paste button, seed screen or tap receiver of the page's is left over what comes next (I7)
+        bridge?.pageGone()
         live?.destroy()
         live = null
         paste?.remove()

@@ -18,6 +18,7 @@ const { spawnSync } = require('child_process');
 const { boot, wait } = require('../lib/session');
 const { check, validateSchema } = require('../lib/schema');
 const { replyProblems, CONTRACT } = require('../lib/host');
+const TapRules = require('../lib/tap-rules');
 
 const ROOT = path.join(__dirname, '..', '..');
 const kinds = (vs) => vs.map((v) => v.kind).sort();
@@ -220,6 +221,35 @@ test('host.global: a contract global, called on a later turn after nothing else,
   }
 });
 
+test('tap-rules: the fake host refuses what TapRules.kt refuses (FoxyTests/TapProtocolTests.swift:41-80 vectors)', () => {
+  const invoice = 'lnbc10n1pn9xyzpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9qrsgq';
+  const req = 'creqApGF0gaNhdGVub3N0cmFheDQ3YWJjZGVmMTIzNDU2Nzg5MGFiY2RlZjEyMzQ1Njc4OTBhYmNk';
+  assert.ok(TapRules.isPayload(`{"v":2,"inv":"${invoice}"}`));
+  assert.ok(TapRules.isPayload(`{"v":2,"req":"${req}"}`));
+  assert.ok(TapRules.isPayload(`{"v":2,"inv":"${invoice}","req":"${req}"}`));
+  assert.ok(!TapRules.isPayload('{"v":2}'));
+  assert.ok(TapRules.isPayload(`{"v":2,"req":"${req}="}`), 'padded, as cashu-ts writes it');
+  assert.ok(TapRules.isPayload(`{"v":2,"req":"${req}=="}`));
+  assert.ok(TapRules.isRequest(req + '='));
+  assert.ok(!TapRules.isPayload('{"v":2,"inv":"bc1qxy2kgdygjrsqtzq2n0"}'));
+  assert.ok(!TapRules.isPayload('{"v":2,"req":"cashuBo2F0gaJhaUgA"}'));
+  assert.ok(!TapRules.isPayload(`{"v":3,"inv":"${invoice}"}`));
+  assert.ok(!TapRules.isPayload(invoice));
+  assert.ok(!TapRules.isPayload('{'));
+  assert.ok(!TapRules.isPayload('{"v":2,"inv":"lnbc10n1' + 'q'.repeat(5000) + '"}'));
+  assert.ok(!TapRules.isPayload(`{"v":true,"inv":"${invoice}"}`), 'true is not the number two');
+  assert.ok(TapRules.isPayload(`{"v":2.0,"inv":"${invoice}"}`));
+  assert.ok(TapRules.isPayload(JSON.stringify({ v: 2, inv: 5, req })), 'a half that is not a string counts as missing');
+  assert.ok(!TapRules.isPayload('[' + JSON.stringify({ v: 2, inv: invoice }) + ']'));
+  assert.ok(TapRules.isInvoice(invoice));
+  assert.ok(TapRules.isInvoice(invoice.toUpperCase()));
+  assert.ok(!TapRules.isInvoice('cashuBo2F0gaJhaUgA'));
+  assert.ok(!TapRules.isInvoice('bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh'));
+  assert.ok(!TapRules.isInvoice('lnbc10n1' + 'q'.repeat(3000)));
+  assert.ok(!TapRules.isInvoice('lnbc10n1pn9<script>'));
+  assert.ok(!TapRules.isInvoice('lnbc10n1pN9xyz' + 'q'.repeat(40)));
+});
+
 test('host.pushAs and o.unknown: a push after its reply, refused from too early a phase or off-shape; unknown only for an unserved, unstubbed action', async () => {
   const s = await boot({ seed: true, tor: 'up', phase: 'P3' });
   try {
@@ -244,6 +274,20 @@ test('host.pushAs and o.unknown: a push after its reply, refused from too early 
     w.FoxyWallet._scanResult = realReply;
     w.FoxyWallet._tap = realTap;
     assert.deepEqual(order, ['reply tr-1 ok', 'push receive unsupported', 'reply tr-2 ok', 'reply tr-3 ok', 'reply tr-4 ok', 'push receive unsupported']);
+    assert.deepEqual(s.host.violations, []);
+    // a payload Android (TapRules.kt) refuses: the page's own no-invoice, no-request advert (26d-tap.js), refused
+    // with TapRules' words, no push and no receiver made; the next good start is still the first receiver
+    order.length = 0;
+    w.FoxyWallet._scanResult = function (id, text, error) { if (/^tr-/.test(id)) order.push('reply ' + id + ' ' + (error || text)); return realReply.apply(this, arguments); };
+    w.FoxyWallet._tap = function (ev) { order.push('push ' + ev.side + ' ' + ev.stage); return realTap.apply(this, arguments); };
+    post({ action: 'tapReceiveStop', id: 'tr-5' });
+    post({ action: 'tapReceiveStart', id: 'tr-6', payload: JSON.stringify({ v: 2, up: true, ask: 1 }), early: false });
+    await wait(50);
+    post({ action: 'tapReceiveStart', id: 'tr-7', payload: '', early: true });
+    await wait(50);
+    w.FoxyWallet._scanResult = realReply;
+    w.FoxyWallet._tap = realTap;
+    assert.deepEqual(order, ['reply tr-5 ok', 'reply tr-6 Not something a payer could pay.', 'reply tr-7 ok', 'push receive unsupported']);
     assert.deepEqual(s.host.violations, []);
     // a name that is not a push of the contract, and a _tap the contract's schema does not allow
     s.host.pushAs('__foxyBluetoothAnswer', 'x');

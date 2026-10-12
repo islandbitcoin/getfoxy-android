@@ -52,9 +52,12 @@ class PlatformBridge(
 
     /**
      * Whether the page holds a receiver: set by a `tapReceiveStart` that was not
-     * refused, cleared by `tapReceiveStop` and when the page goes. iOS's
-     * `tapReceiver` (FoxyBridge+Tap.swift), which on a phone without Bluetooth
-     * says `unsupported` once, when it is made. Main thread only.
+     * refused, cleared by `tapReceiveStop` and when the page goes ([pageGone]),
+     * not when Foxy is put away. iOS's `tapReceiver` (FoxyBridge+Tap.swift),
+     * which on a phone without Bluetooth says `unsupported` once, when it is
+     * made, and which only `tapReceiveStop` and `pageGone` → `stopTap`
+     * (FoxyBridge.swift:1087-1096) let go; going to the background leaves it.
+     * Main thread only.
      */
     private var receiverHeld = false
 
@@ -73,7 +76,16 @@ class PlatformBridge(
     fun letGo() {
         host.previewStop()
         host.pasteStop()
-        // and no receiver held for a page that is not there (FoxyBridge.swift `pageGone` → `stopTap`)
+    }
+
+    /**
+     * The page went (its process ended, or it is loading again): what [letGo]
+     * lets go, and the receiver too, as iOS's `pageGone` → `stopTap`
+     * (FoxyBridge.swift:1087-1096). Putting Foxy away is [letGo] alone: iOS
+     * keeps `tapReceiver` across the background. Main thread.
+     */
+    fun pageGone() {
+        letGo()
         receiverHeld = false
     }
 
