@@ -1,4 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- English only, as the iOS app is (no locale files). The seed screens' words
+     are SeedScreens.swift's, "iPhone" made "phone" and Face ID made the
+     phone's own biometric or screen lock. -->
 <resources>
     <string name="app_name">Foxy</string>
+
+    <!-- notifications (ForegroundNotifications.swift) -->
+    <string name="notify_channel">Payments</string>
+    <string name="notify_channel_description">A payment sent or received while Foxy is open. No amount is ever shown.</string>
+
+    <!-- the scanner (QRScannerViewController.swift, LiveScanner.swift) -->
+    <string name="scan_point_at_code">Point at the code</string>
+    <string name="scan_cancel">Cancel</string>
+    <string name="scan_progress">SCANNING %1$d%%\nKeep the camera on the code</string>
+    <string name="scan_animated_unread">That animated code could not be read. Hold the camera on it to try again.</string>
+    <string name="scan_live_progress">SCANNING\nKeep the camera on the code</string>
+    <string name="scan_live_unread">That code could not be read.\nHold the camera on it to try again.</string>
+
+    <!-- the paste button over the page's PASTE -->
+    <string name="paste">Paste</string>
+
+    <!-- the seed screens (SeedScreens.swift) -->
+    <string name="seed_native_bar">On this phone · not the web page</string>
+    <string name="seed_back">Back</string>
+    <string name="seed_your_phrase">YOUR SEED PHRASE</string>
+    <string name="seed_your_phrase_body">These twelve words recover everything, on any Cashu wallet. Anyone who has them has your money. Write these down on paper, never take a photo of them or save them on a computer.</string>
+    <string name="seed_no_screen_lock">This phone has no screen lock, so anyone who picks it up can open this screen. Setting one in Settings makes Foxy ask for it first.</string>
+    <string name="seed_verify_words">VERIFY WORDS</string>
+    <string name="seed_hold_to_delete">HOLD TO DELETE ALL DATA</string>
+    <string name="seed_hold_to_delete_hint">Touch and hold to erase this wallet from the phone</string>
+    <string name="seed_tap_to_reveal">TAP TO REVEAL</string>
+    <string name="seed_tap_to_reveal_label">Tap to reveal</string>
+    <string name="seed_verify">VERIFY</string>
+    <string name="seed_verify_body">Tap the twelve words back in order.</string>
+    <string name="seed_wrong_word">That is not word %1$d. Start again.</string>
+    <string name="seed_backed_up">BACKED UP</string>
+    <string name="seed_backed_up_body">Keep those twelve words somewhere safe. They are the only way back.</string>
+    <string name="seed_done">DONE</string>
+    <string name="seed_restore">RESTORE A WALLET</string>
+    <string name="seed_look_for_balances">LOOK FOR BALANCES</string>
+    <string name="seed_word_label">Word %1$d</string>
 </resources>

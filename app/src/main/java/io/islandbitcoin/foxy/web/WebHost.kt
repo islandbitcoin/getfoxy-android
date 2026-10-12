@@ -1,12 +1,14 @@
 package io.islandbitcoin.foxy.web
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.text.format.DateFormat
-import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.GeolocationPermissions
@@ -28,7 +30,13 @@ import io.islandbitcoin.foxy.BuildConfig
 import io.islandbitcoin.foxy.FoxyServices
 import io.islandbitcoin.foxy.bridge.FoxyBridge
 import io.islandbitcoin.foxy.bridge.PageHost
+import io.islandbitcoin.foxy.bridge.PlatformRules
+import io.islandbitcoin.foxy.bridge.Prompt
 import io.islandbitcoin.foxy.debug.Log
+import io.islandbitcoin.foxy.notify.Notifier
+import io.islandbitcoin.foxy.scanner.LivePreview
+import io.islandbitcoin.foxy.scanner.ScannerActivity
+import io.islandbitcoin.foxy.seed.SeedScreenHost
 import io.islandbitcoin.foxy.tor.Tor
 import java.io.ByteArrayInputStream
 
@@ -55,7 +63,27 @@ class WebHost(
     private val services: FoxyServices,
     private val container: ViewGroup,
     private val onCovered: () -> Unit,
+    private val permissions: Permissions = Permissions.NONE,
 ) : PageHost, PutAway.Page {
+    /**
+     * The runtime permissions the doors ask, through MainActivity's launchers
+     * (registered in onCreate: a launcher cannot be registered after STARTED).
+     */
+    interface Permissions {
+        /** CAMERA, asked if not granted; `done(granted)`. */
+        fun camera(done: (Boolean) -> Unit)
+
+        /** POST_NOTIFICATIONS (API 33+), asked if not granted; `done(granted)`. */
+        fun notifications(done: (Boolean) -> Unit)
+
+        companion object {
+            val NONE = object : Permissions {
+                override fun camera(done: (Boolean) -> Unit) = done(false)
+                override fun notifications(done: (Boolean) -> Unit) = done(false)
+            }
+        }
+    }
+
     companion object {
         const val DOMAIN = "appassets.androidplatform.net"
         const val PAGE_URL = "https://$DOMAIN/assets/web/index.html"
@@ -97,6 +125,19 @@ class WebHost(
     /** Whether the proxy wall is up: the page is not loaded until it is. */
     private var proxyReady = false
     private var pageLoaded = false
+    private var pageFinished = false
+
+    /** The camera pane and the paste button over the page (P3); made with the WebView. */
+    var live: LivePreview? = null
+        private set
+    var paste: PasteButton? = null
+        private set
+
+    /** The share sheet is up: a second share is refused until Foxy is in front again. */
+    private var sharing = false
+
+    /** DEBUG builds only: a deep link's hash, waiting for a loaded page. */
+    private var pendingDeepLink: String? = null
 
     // MARK: PageHost
 
@@ -138,21 +179,186 @@ class WebHost(
 
     override fun haptic(kind: String) {
         val view = webView ?: return
-        val modern = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R
-        val effect = when (kind) {
-            "success" -> if (modern) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.VIRTUAL_KEY
-            "error" -> if (modern) HapticFeedbackConstants.REJECT else HapticFeedbackConstants.LONG_PRESS
-            "warning", "heavy", "long" -> HapticFeedbackConstants.LONG_PRESS
-            "pulse" -> HapticFeedbackConstants.CLOCK_TICK
-            "triple" -> {
-                for (knock in 0 until 3) {
-                    main.postDelayed({ webView?.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK) }, 150L * knock)
-                }
-                return
+        when (val effect = Haptics.effect(kind, android.os.Build.VERSION.SDK_INT)) {
+            is Haptics.Effect.Once -> view.performHapticFeedback(effect.constant)
+            is Haptics.Effect.Thrice -> for (knock in 0 until 3) {
+                main.postDelayed({ webView?.performHapticFeedback(effect.constant) }, Haptics.TRIPLE_GAP_MS * knock)
             }
-            else -> HapticFeedbackConstants.KEYBOARD_TAP
         }
-        view.performHapticFeedback(effect)
+    }
+
+    // MARK: PageHost, the platform's doors (P3)
+
+    override fun later(ms: Long, action: Runnable) {
+        main.postDelayed(action, ms)
+    }
+
+    private val density: Float get() = activity.resources.displayMetrics.density
+
+    override fun pageSize(): Pair<Double, Double>? {
+        val view = webView ?: return null
+        if (destroyed || view.width == 0 || view.height == 0) return null
+        return view.width / density.toDouble() to view.height / density.toDouble()
+    }
+
+    /** A page rectangle (CSS px) in the container's pixels: left, top, width, height. */
+    private fun pixels(rect: PlatformRules.Rect): IntArray {
+        val view = webView
+        val left = (view?.left ?: 0) + Math.round(rect.x * density).toInt()
+        val top = (view?.top ?: 0) + Math.round(rect.y * density).toInt()
+        return intArrayOf(left, top, Math.round(rect.w * density).toInt(), Math.round(rect.h * density).toInt())
+    }
+
+    private fun usable(): Boolean = !destroyed && !activity.isFinishing && !activity.isDestroyed
+
+    override fun scan(prompt: String, done: (String?, String?) -> Unit) {
+        if (!usable()) return done(null, PlatformRules.NO_SCANNER_VIEW)
+        permissions.camera { granted ->
+            when {
+                !granted -> done(null, PlatformRules.CAMERA_DENIED)
+                !usable() -> done(null, PlatformRules.NO_SCANNER_VIEW)
+                !ScannerActivity.start(activity, prompt, done) -> done(null, PlatformRules.NO_SCANNER_VIEW)
+            }
+        }
+    }
+
+    override fun previewShow(rect: PlatformRules.Rect, onCode: (String) -> Unit): Boolean {
+        val pane = live ?: return false
+        if (!usable()) return false
+        val px = pixels(rect)
+        pane.show(px[0], px[1], px[2], px[3], onCode)
+        if (activity.checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            permissions.camera { granted -> if (granted) live?.permissionGranted() }
+        }
+        return true
+    }
+
+    override fun previewStop() {
+        live?.stop()
+    }
+
+    override fun pasteShow(rect: PlatformRules.Rect, onPaste: (String) -> Unit): Boolean {
+        val button = paste ?: return false
+        if (!usable()) return false
+        val px = pixels(rect)
+        button.show(px[0], px[1], px[2], px[3], onPaste)
+        return true
+    }
+
+    override fun pasteStop() {
+        paste?.remove()
+    }
+
+    override fun clipboardText(): String = services.clipboard.read()
+
+    override fun copy(text: String, sensitive: Boolean) = services.clipboard.copy(text, sensitive)
+
+    /**
+     * The share sheet, plain text only (FoxyBridge.swift `presentShare`): no
+     * URL item and no preview for the chooser to fetch. Its own Copy has no
+     * callback on Android, so a token copied there is not marked or cleared
+     * (S23, ENG-649 decision 3).
+     */
+    override fun share(text: String): String? {
+        if (!usable()) return PlatformRules.NOTHING_TO_SHARE
+        if (sharing || SeedScreenHost.shown != null || ScannerActivity.waiting) return PlatformRules.ALREADY_OPEN
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        sharing = true
+        return try {
+            activity.startActivity(Intent.createChooser(send, null))
+            Log.line("[foxy] presenting share sheet, ${text.length} characters")
+            null
+        } catch (e: RuntimeException) {
+            sharing = false
+            PlatformRules.ALREADY_OPEN
+        }
+    }
+
+    /** Foxy is in front again: whatever the share sheet did, it is gone. */
+    fun resumed() {
+        sharing = false
+    }
+
+    override fun notify(title: String, text: String) {
+        if (Notifier.allowed(activity)) return Notifier.post(activity, title, text)
+        // asked on the first notification; refused, nothing is shown and the page was already told ok
+        permissions.notifications { granted -> if (granted) Notifier.post(activity, title, text) }
+    }
+
+    override fun biometric(reason: String, passcode: Boolean, done: (String) -> Unit) = services.auth.biometric(reason, passcode, done)
+
+    /** This app's own page in Settings, and nothing else (a camera or notification permission refused once). */
+    override fun openSettings(): String? {
+        if (!usable()) return PlatformRules.NO_SETTINGS
+        return try {
+            activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", activity.packageName, null)))
+            null
+        } catch (e: ActivityNotFoundException) {
+            PlatformRules.SETTINGS_WOULD_NOT_OPEN
+        }
+    }
+
+    /** One of the four company sites, in the phone's browser, outside Foxy and outside Tor; never a URL from the page. */
+    override fun openUrl(url: String): String? {
+        if (url !in PlatformRules.COMPANY_SITES.values) return PlatformRules.NOT_A_COMPANY
+        if (!usable()) return PlatformRules.BROWSER_WOULD_NOT_OPEN
+        return try {
+            activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
+            null
+        } catch (e: ActivityNotFoundException) {
+            PlatformRules.BROWSER_WOULD_NOT_OPEN
+        }
+    }
+
+    override fun ask(prompt: Prompt, done: (Boolean) -> Unit): () -> Unit {
+        val ticket = services.prompts.ask(prompt, done)
+        return { ticket.cancel() }
+    }
+
+    override fun alertShowing(): Boolean = services.prompts.isShowing
+
+    override fun deviceOwnerApproves(reason: String): Boolean = services.auth.ownerApproves(reason)
+
+    override fun showWords(words: List<String>, verify: Boolean, done: (Boolean, Boolean, Boolean) -> Unit): Boolean {
+        if (!usable()) return false
+        return SeedScreenHost.showWords(activity, SeedScreenHost.Show(words, verify, services.auth.passcodeSet, done))
+    }
+
+    override fun enterWords(wordlist: List<String>, done: (String?) -> Unit): Boolean {
+        if (!usable()) return false
+        return SeedScreenHost.enterWords(activity, SeedScreenHost.Enter(wordlist, done))
+    }
+
+    override fun closeSeedScreen() = SeedScreenHost.closeAll()
+
+    /** PutAway: no camera, paste button or seed screen is left for a page put away (FoxyWebView.swift:973-1104). */
+    override fun letGo() {
+        bridge?.letGo()
+    }
+
+    /** The activity stopped: the camera is let go now, whatever PutAway does later. */
+    fun stopCamera() {
+        live?.stop()
+    }
+
+    // MARK: Deep links (debug builds only)
+
+    /** A debug deep link's hash ([DeepLink.hash]), handed to the page once it has loaded. */
+    fun deepLink(hash: String) {
+        if (!BuildConfig.DEBUG) return
+        pendingDeepLink = hash
+        flushDeepLink()
+    }
+
+    private fun flushDeepLink() {
+        val hash = pendingDeepLink ?: return
+        if (!pageFinished || destroyed) return
+        pendingDeepLink = null
+        Log.line("[deeplink] #$hash")
+        evaluate(DeepLink.script(hash))
     }
 
     // MARK: Building it
@@ -180,12 +386,16 @@ class WebHost(
         view.isHapticFeedbackEnabled = true
         container.addView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         configure(view)
+        live = LivePreview(activity, container, view)
+        paste = PasteButton(activity, container, view, services.clipboard)
 
         val b = FoxyBridge(this, services::environment, services.seedExecutor, BuildConfig.DEBUG,
             services.net { ms, r -> main.postDelayed(r, ms) })
         bridge = b
         // every change of Tor's or of the network is pushed to the page (_privacy)
         Tor.onChange = { bridge?.pushPrivacy() }
+        // a seed written or deleted closes every seed screen, so none shows words from before (L4)
+        services.vault.onChanged = { main.post { bridge?.seedChanged() } }
         WebViewCompat.addWebMessageListener(view, Scripts.NATIVE_OBJECT, ALLOWED_ORIGINS) { _, message, sourceOrigin, isMainFrame, _ ->
             b.onMessage(message.data, isMainFrame, sourceOrigin.toString().trimEnd('/'))
         }
@@ -264,8 +474,15 @@ class WebHost(
      * inside its 700 ms hold never does).
      */
     fun destroy() {
+        // no camera pane, paste button or seed screen of the page's is left over what comes next (I7)
+        bridge?.letGo()
+        live?.destroy()
+        live = null
+        paste?.remove()
+        paste = null
         destroyed = true
         Tor.onChange = null
+        services.vault.onChanged = {}
         services.vault.forgetNativeSeed()
         webView?.let {
             container.removeView(it)
@@ -274,6 +491,7 @@ class WebHost(
         webView = null
         bridge = null
         pageLoaded = false
+        pageFinished = false
     }
 
     /** The page's process ended: drop what native held for it, and load it again in a new WebView. */
@@ -298,6 +516,8 @@ class WebHost(
 
         override fun onPageFinished(view: WebView, url: String) {
             pushUptime()
+            pageFinished = true
+            flushDeepLink()
         }
 
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {

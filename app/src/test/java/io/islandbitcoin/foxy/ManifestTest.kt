@@ -10,10 +10,11 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * S1 on the merged manifest the debug APK ships: no backup, no device transfer,
- * every domain excluded from both, INTERNET and ACCESS_NETWORK_STATE and no
- * other permission, tor-android's service bound and never exported or in the
- * foreground (audit finding 4), Safe Browsing and WebView metrics off, the one
- * activity portrait.
+ * every domain excluded from both, the permissions P3 needs and no other,
+ * tor-android's service bound and never exported or in the foreground (audit
+ * finding 4), Safe Browsing and WebView metrics off, every activity portrait
+ * and only the page's reachable from outside; and the release manifest
+ * registers no deep-link scheme at all (BRIDGE.md `deepLink`).
  */
 class ManifestTest {
     private val android = "http://schemas.android.com/apk/res/android"
@@ -21,10 +22,13 @@ class ManifestTest {
     private fun parse(file: File) = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
         .newDocumentBuilder().parse(file).documentElement
 
-    private val merged: Element by lazy {
-        val file = File(System.getProperty("foxy.mergedManifest") ?: error("the merged manifest path is not set"))
+    private val merged: Element by lazy { manifest("foxy.mergedManifest") }
+    private val release: Element by lazy { manifest("foxy.releaseManifest") }
+
+    private fun manifest(property: String): Element {
+        val file = File(System.getProperty(property) ?: error("the $property path is not set"))
         assertTrue("the merged manifest is built before the unit tests ($file)", file.exists())
-        parse(file)
+        return parse(file)
     }
 
     private fun elements(root: Element, name: String): List<Element> {
@@ -54,13 +58,19 @@ class ManifestTest {
     }
 
     @Test
-    fun internetAndNetworkStateAndNoOtherPermission() {
+    fun thePermissionsP3NeedsAndNoOther() {
         val permissions = elements(merged, "uses-permission").map { it.getAttributeNS(android, "name") }.toSet()
         assertEquals(
-            "P2 asks INTERNET (Tor and Route) and ACCESS_NETWORK_STATE (NetworkKind), and nothing else: $permissions",
+            "INTERNET (Tor and Route), ACCESS_NETWORK_STATE (NetworkKind), and P3's CAMERA (the scanner), " +
+                "POST_NOTIFICATIONS (payments), USE_BIOMETRIC (the PIN lock, the seed's device protection) and " +
+                "DETECT_SCREEN_CAPTURE (_screenshot), and nothing else: $permissions",
             setOf(
                 "android.permission.INTERNET",
                 "android.permission.ACCESS_NETWORK_STATE",
+                "android.permission.CAMERA",
+                "android.permission.POST_NOTIFICATIONS",
+                "android.permission.USE_BIOMETRIC",
+                "android.permission.DETECT_SCREEN_CAPTURE",
                 "io.islandbitcoin.foxy.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
             ),
             permissions,
@@ -69,6 +79,8 @@ class ManifestTest {
         assertTrue("no permission of its own is declared beyond the receiver one", elements(merged, "permission").all {
             it.getAttributeNS(android, "name") == "io.islandbitcoin.foxy.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
         })
+        val camera = elements(merged, "uses-feature").filter { it.getAttributeNS(android, "name").startsWith("android.hardware.camera") }
+        assertTrue("a camera is used where there is one, never required", camera.isNotEmpty() && camera.all { it.getAttributeNS(android, "required") == "false" })
     }
 
     @Test
@@ -102,10 +114,40 @@ class ManifestTest {
     }
 
     @Test
-    fun oneActivityPortrait() {
+    fun everyActivityIsPortraitAndOnlyThePagesIsReachable() {
         val activities = elements(merged, "activity").filter { it.getAttributeNS(android, "name").startsWith("io.islandbitcoin.foxy") }
-        assertEquals(1, activities.size)
-        assertEquals("portrait", activities[0].getAttributeNS(android, "screenOrientation"))
-        assertEquals("adjustResize", activities[0].getAttributeNS(android, "windowSoftInputMode"))
+        assertEquals(
+            setOf(
+                "io.islandbitcoin.foxy.MainActivity",
+                "io.islandbitcoin.foxy.scanner.ScannerActivity",
+                "io.islandbitcoin.foxy.seed.ShowWordsActivity",
+                "io.islandbitcoin.foxy.seed.EnterWordsActivity",
+            ),
+            activities.map { it.getAttributeNS(android, "name") }.toSet(),
+        )
+        for (a in activities) assertEquals(a.getAttributeNS(android, "name"), "portrait", a.getAttributeNS(android, "screenOrientation"))
+        val page = activities.single { it.getAttributeNS(android, "name") == "io.islandbitcoin.foxy.MainActivity" }
+        assertEquals("adjustResize", page.getAttributeNS(android, "windowSoftInputMode"))
+        for (a in activities - page) {
+            assertEquals("${a.getAttributeNS(android, "name")} is Foxy's own, never another app's to open", "false", a.getAttributeNS(android, "exported"))
+            assertEquals(0, a.getElementsByTagName("intent-filter").length)
+        }
+    }
+
+    private fun schemes(root: Element): List<String> = elements(root, "data").map { it.getAttributeNS(android, "scheme") }.filter { it.isNotEmpty() }
+
+    @Test
+    fun theReleaseBuildRegistersNoScheme() {
+        assertEquals("a release Foxy has no deep link to be reached through", emptyList<String>(), schemes(release))
+        val page = elements(release, "activity").single { it.getAttributeNS(android, "name") == "io.islandbitcoin.foxy.MainActivity" }
+        assertEquals("the launcher only", listOf("android.intent.action.MAIN"),
+            elements(page, "action").map { it.getAttributeNS(android, "name") })
+    }
+
+    @Test
+    fun theDebugBuildRegistersFoxyOnly() {
+        assertEquals(listOf("foxy"), schemes(merged))
+        val page = elements(merged, "activity").single { it.getAttributeNS(android, "name") == "io.islandbitcoin.foxy.MainActivity" }
+        assertEquals("a link reaches the page that is up, not a second one", "singleTop", page.getAttributeNS(android, "launchMode"))
     }
 }

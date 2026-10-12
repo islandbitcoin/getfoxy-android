@@ -57,6 +57,9 @@ class PutAway(
         /** Swaps, melts, mints and restores the mint has not answered (FoxyBridge.moneyInFlight). */
         val moneyInFlight: Int
         fun pushUptime()
+
+        /** No camera pane, paste button or seed screen is left up for a page put away (P3). */
+        fun letGo() {}
     }
 
     companion object {
@@ -107,6 +110,7 @@ class PutAway(
         vault.putAway()
         FieldLog.saveForNextRun()
         host()?.keepAwake(false)
+        host()?.letGo()
         parkRun += 1
         val run = parkRun
         val began = sched.now()

@@ -140,6 +140,10 @@ android {
             assets.srcDirs("../core", "src/main/assets", torSeedAssets)
             kotlin.srcDir(generatedStubs)
         }
+        // the instrumented QR test reads the iOS animated-QR fixture the JVM tests read (fixtures/README.md)
+        getByName("androidTest") {
+            assets.srcDirs("src/test/resources/fixtures")
+        }
     }
 
     androidResources {
@@ -159,6 +163,9 @@ android {
             it.systemProperty("foxy.core", coreDir.absolutePath)
             it.systemProperty("foxy.mergedManifest",
                 layout.buildDirectory.file("intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml")
+                    .get().asFile.absolutePath)
+            it.systemProperty("foxy.releaseManifest",
+                layout.buildDirectory.file("intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml")
                     .get().asFile.absolutePath)
             it.systemProperty("foxy.res", file("src/main/res").absolutePath)
             it.systemProperty("foxy.torSeed", torSeedAssets.get().asFile.resolve("tor/cached-microdescs").absolutePath)
@@ -187,8 +194,9 @@ kotlin {
 
 tasks.named("preBuild") { dependsOn(generateContractStubs, "unpackTorSeed") }
 afterEvaluate {
-    // ManifestTest reads the merged manifest, so the debug manifest is merged before the debug unit tests.
-    tasks.named("testDebugUnitTest") { dependsOn("processDebugMainManifest") }
+    // ManifestTest reads the merged manifests, so the debug and release manifests are merged before the debug
+    // unit tests: the release one must register no deep-link scheme (BRIDGE.md `deepLink`).
+    tasks.named("testDebugUnitTest") { dependsOn("processDebugMainManifest", "processReleaseMainManifest") }
 }
 
 dependencies {
@@ -204,6 +212,12 @@ dependencies {
     implementation(libs.jtorctl)
     implementation(libs.iptproxy)
     implementation(libs.okhttp)
+    // the scanner (P3): CameraX and zxing-cpp, the one QR decoder (docs/ANDROID-MAPPING.md)
+    implementation(libs.camera.core)
+    implementation(libs.camera.camera2)
+    implementation(libs.camera.lifecycle)
+    implementation(libs.camera.view)
+    implementation(libs.zxing.cpp)
 
     testImplementation(libs.junit)
     testImplementation(libs.secp256k1.jni.jvm)
@@ -213,4 +227,6 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(libs.androidx.test.ext.junit)
+    // draws the QR codes the instrumented decode test hands zxing-cpp; never in the app
+    androidTestImplementation(libs.zxing.core)
 }

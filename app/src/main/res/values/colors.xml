@@ -4,4 +4,6 @@
     <color name="splash">#FF000000</color>
     <color name="page">#FF0B0B0C</color>
     <color name="fox_orange">#FFF28C28</color>
+    <!-- the seed screens' near-black (SeedScreens.swift SeedStyle.background) -->
+    <color name="seed_background">#FF0A0A0A</color>
 </resources>
