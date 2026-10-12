@@ -291,9 +291,8 @@ log or `adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy)` for the
    (the line says "Hold one card to the back of the phone" if the card is not
    one that speaks commands, or the page refuses it as NOT A FOXY CARD), and no
    other app or browser opens. (f) With the sheet down and Foxy in front, hold
-   the Flashcard to the phone: note what Android does (opening Foxy from a card
-   is ENG-668; until then the system may offer the card's address
-   `https://getfoxy.io/card` to a browser).
+   the Flashcard to the phone: Foxy opens its Flashcard screen and the card
+   sheet (ENG-668; the full checks are in "A card held to the phone" below).
 3. **ADD FUNDS (real money: the person's go, 100 sats or less).** With the
    card on the FLASHCARD screen: ADD FUNDS, an amount of 100 or less, the PIN
    if the card has one, TAP CARD, hold the card until the tick. **Pass:** the
@@ -328,6 +327,109 @@ log or `adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy)` for the
 
 Report each step's pass or fail, the read and signing times, the phone, the
 card's software (`01 14` is 1.20) and the build's commit.
+
+## A card held to the phone (ENG-668)
+
+**Pending: the person's on-device check; no phone and no card were used for
+this change, and nothing here moves money.** What runs without them:
+`CardAddressTest` and `CardTapDeliveryTest` (iOS's `CardAddressTests` and
+`CardTapDeliveryTests`, case for case), `CardTapIntakeTest` (the two intent
+actions, a replayed intent, no tap while a card is being read),
+`PutAwayCardTapTest` (`_resumed` before the delivery hears of the return),
+`ManifestTest` (the two filters, exactly `https://getfoxy.io/card`), and the
+conformance flows *the card tap (`_cardTapped`, P3) …* (the page's answer and
+`cardTapRule`). What only a phone, a card and a hand can show is below.
+
+Needs the debug build on the Pixel 8 Pro (`./gradlew assembleDebug`, `adb
+install -r app/build/outputs/apk/debug/app-debug.apk`), NFC on, the person's
+provisioned Flashcard of software 1.19 or later with its tag switched on (the
+default; FLASHCARD → the owner's settings if it was switched off), a wallet
+already set up on the Pixel, and the field log or `adb logcat
+--pid=$(adb shell pidof io.islandbitcoin.foxy)` open for the `[foxy] card tap:`
+lines (`a card's address arrived`, `told the page`, `given up …`, `… not a
+tap`; the address itself is never logged). Hold the card flat to the back of
+the phone near the middle, for about a second, and lift it, unless a step
+says to leave it. Read the page's own `[foxy] card tap:` console lines (the
+page's `cardTapRule`) in the field log too.
+
+1. **Foxy closed (cold start).** Force-stop Foxy (Settings → Apps → Foxy →
+   Force stop), the screen on and unlocked on the home screen. Hold the card.
+   **Pass:** Foxy starts by itself (no browser, no chooser; if Android shows a
+   chooser, another installed app also claims the address: note which), the
+   splash and the PIN lock if one is set, and once unlocked the FLASHCARD
+   screen opens with the card sheet up, as MENU → FLASHCARD → TAP CARD would.
+   The log has `a card's address arrived` then `told the page` once.
+2. **Foxy in the background.** Open Foxy, go Home, wait ten seconds, hold the
+   card. **Pass:** Foxy comes to the front (the same activity: no second
+   splash), the PIN lock comes up first if one is set (the page heard
+   `_resumed` before the tap), then the Flashcard screen and the sheet. One
+   `told the page` line.
+3. **Foxy open on HOME.** Hold the card with Foxy in front on HOME. **Pass:**
+   the Flashcard screen and the sheet at once; the card on the phone is then
+   read by the sheet (lift and hold again if it is not), and the screen shows
+   the card.
+4. **Foxy open on a send or a payment in progress (ignored).** Start a SEND
+   (or RECEIVE with an amount) and hold the card at the confirmation. **Pass:**
+   nothing moves on screen; the page logs that it ignored the tap; the send
+   goes on as before.
+5. **A card being read never re-opens the screen.** MENU → FLASHCARD → TAP
+   CARD, hold the card until the tick and **leave it on the phone** for ten
+   seconds after the sheet goes. **Pass:** the sheet does not come back and
+   the Flashcard screen stays as it is; the log may show `… not a tap` (the
+   card found again as reader mode went off). Lift the card, wait five
+   seconds, hold it again: a tap again (the screen acts as in step 3).
+6. **Locked.** Lock the phone (screen off), wake it to the lock screen
+   without unlocking, hold the card. Note what Android does: with "Require
+   device unlock for NFC" on (the default on Android 12+), nothing until
+   unlock. Then unlock within a minute and hold it again. **Pass:** nothing
+   opens on the lock screen, and the tap after unlocking opens Foxy as in
+   step 1 or 2. Separately: hold the card while unlocked, then lock the phone
+   at once before Foxy is up, and unlock within a minute: the kept tap opens
+   the Flashcard screen; after more than a minute it does not (`given up`).
+7. **Twice quickly.** On HOME, hold the card, lift, hold again within a
+   second. **Pass:** one Flashcard screen and one sheet (the page treats the
+   second as the same tap or as a card for the sheet already up).
+8. **Recents does not replay it.** After step 1, Back out of Foxy (the
+   activity finishes), then open Foxy from Recents. **Pass:** Foxy opens on
+   HOME, not the Flashcard screen; no `a card's address arrived` line.
+9. **The address in a browser.** On the Pixel, open
+   `https://getfoxy.io/card` in Chrome from a note or a message. Note what
+   happens: with no verified App Link Chrome stays on the page (expected
+   today); Settings → Apps → Foxy → Open by default → add `getfoxy.io` and
+   try again: Foxy opens as in step 3.
+10. **foxy://card (debug only).** `adb shell am start -a
+   android.intent.action.VIEW -d foxy://card` with Foxy on HOME. **Pass:** as
+   step 3, and the log has `[deeplink] a card tap`.
+
+Report each step's pass or fail, the phone, the Android version, the card's
+software and the build's commit.
+
+**Follow-up: the App Link (getfoxy.io, Mike Greff).** The link filter is
+`autoVerify="false"` today: Android verifies an App Link against
+`https://getfoxy.io/.well-known/assetlinks.json`, which must list the package
+`io.islandbitcoin.foxy` with the SHA-256 fingerprint of the **release** signing
+certificate, and there is no release key yet (debug builds only). Once a
+release key is decided: send Mike Greff (getfoxy/iOS developer, who controls
+getfoxy.io and already serves its apple-app-site-association) the fingerprint
+(`keytool -list -v -keystore <release keystore>`) and this file:
+
+```json
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "io.islandbitcoin.foxy",
+    "sha256_cert_fingerprints": ["<RELEASE SHA-256, AA:BB:…>"]
+  }
+}]
+```
+
+then set `android:autoVerify="true"` on the link filter in
+`app/src/main/AndroidManifest.xml` and change `ManifestTest`'s expectation with
+it, and check with `adb shell pm verify-app-links --re-verify
+io.islandbitcoin.foxy` and `adb shell pm get-app-links io.islandbitcoin.foxy`
+(`getfoxy.io: verified`). The NDEF filter does not depend on it: the tag
+dispatch opens Foxy without any verification.
 
 ## The native design checks (ENG-665)
 

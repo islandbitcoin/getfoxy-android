@@ -644,12 +644,13 @@ test('tap to pay and the card: their doors, with no radio', async () => {
   });
 });
 
-/* A card held to the phone (getfoxy/iOS 9832f7d): native says so with `_cardTapped`, a LATER
- * push Android does not send until card-tap delivery is built (ENG-668). Until then the page
- * hears nothing of it, and must boot, connect and run as it did before the push existed. */
+/* A card held to the phone (getfoxy/iOS 9832f7d): native says so with `_cardTapped`, a P3
+ * push since ENG-668 (flashcard/CardTapDelivery.kt). Only when a card is held up: a page never
+ * told must boot, connect and run as it did before the push existed, and a host of an earlier
+ * phase may not send it. */
 const cardTapLines = (s) => s.page.logs.map((l) => l.join(' ')).filter((l) => l.includes('[foxy] card tap:'));
 
-test('the card tap (_cardTapped, LATER): a page never told boots and runs, puts the call on its wallet, and opens no card', async () => {
+test('the card tap (_cardTapped, P3): a page never told boots and runs, puts the call on its wallet, and opens no card', async () => {
   await flow({ seed: true, tor: 'up' }, async (s) => {
     const W = s.W, app = s.logic();
     await s.until(() => W.connected === true, 30000, 'the page to connect with no _cardTapped push');
@@ -664,7 +665,7 @@ test('the card tap (_cardTapped, LATER): a page never told boots and runs, puts 
   });
 });
 
-test('the card tap (_cardTapped, LATER): answered true, kept while the gate is up, acted on at home once it goes; a P3 host may not send it', async () => {
+test('the card tap (_cardTapped, P3): answered true, kept while the gate is up, acted on at home once it goes; a P2 host may not send it', async () => {
   // the intro film never ends in jsdom, and the custody notice would sit over home: both as already seen
   const storage = { 'foxy.intro.seen': '2026-10-12', 'foxy.custody.told': JSON.stringify({ Minibits: true }) };
   await flow({ seed: true, tor: 'up', storage }, async (s) => {
@@ -686,15 +687,35 @@ test('the card tap (_cardTapped, LATER): answered true, kept while the gate is u
     assert.ok(lines.some((l) => /ignored, one is already waiting/.test(l)), 'the second tap was the same one');
     assert.ok(lines.some((l) => /opening the card screen from home, after \d+ s kept/.test(l)), 'acted on from home: ' + lines.join(' | '));
   });
-  // no Android phase built today sends it: it is LATER
-  const p3 = await boot({ seed: true, tor: 'up', phase: 'P3' });
+  // P3 sends it (ENG-668); a host of an earlier phase may not
+  const p2 = await boot({ seed: true, tor: 'up', phase: 'P2' });
   try {
-    await p3.settle(300);
-    p3.host.violations.length = 0;
-    p3.host.pushAs('_cardTapped');
-    assert.deepEqual(p3.host.violations.map((v) => v.kind), ['unserved'], 'a P3 host refuses to push the LATER _cardTapped');
+    await p2.settle(300);
+    p2.host.violations.length = 0;
+    p2.host.pushAs('_cardTapped');
+    assert.deepEqual(p2.host.violations.map((v) => v.kind), ['unserved'], 'a P2 host refuses to push the P3 _cardTapped');
   } finally {
-    p3.close();
+    p2.close();
+  }
+});
+
+/* What Android's CardTapDelivery leans on (ENG-668): the page's answer to CardAddress.PAGE_CALL is
+ * its only sign. Before the app has put `_cardTapped` on the wallet the call answers nothing that
+ * is true (native asks again in 0.3 s); once it has, the answer is true, and a P3 host sends it
+ * with no violation of the contract. */
+test('the card tap (_cardTapped, P3): the page call answers not-true until the wallet has it, then true, from a P3 host', async () => {
+  const s = await boot({ seed: true, tor: 'up', phase: 'P3' });
+  try {
+    const call = 'window.FoxyWallet && window.FoxyWallet._cardTapped && window.FoxyWallet._cardTapped()';
+    const early = s.window.eval(call);
+    if (typeof s.W._cardTapped !== 'function') assert.notEqual(early, true, 'no wallet member yet: not true, so native asks again');
+    await s.until(() => typeof s.W._cardTapped === 'function', 30000, 'the app to put _cardTapped on the wallet');
+    s.host.violations.length = 0;
+    assert.equal(s.host.pushAs('_cardTapped'), true, 'a P3 host pushes it and the page answers true');
+    assert.equal(s.window.eval(call), true, 'the very string native evaluates answers true');
+    assert.deepEqual(s.host.violations, [], 'no contract violation from a P3 host');
+  } finally {
+    s.close();
   }
 });
 
