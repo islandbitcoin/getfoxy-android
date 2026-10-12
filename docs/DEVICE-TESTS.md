@@ -41,6 +41,7 @@ adb shell am instrument -w -r io.islandbitcoin.foxy.test/androidx.test.runner.An
 | `SeedProtectTest` | the `device` key needs the person for every use (API 30+; on API 28-29 it refuses at `Cipher.init` outside the 10 s after a confirmation) and survives a new fingerprint; a move to `device` the person does not approve leaves the `none` seed readable and the protection unchanged. Needs a screen lock | S3, S5 |
 | `OwnPromptTest` | API 28-29 only, with `-e foxyPin <pin>` (skipped otherwise; it types the PIN with `input`): Settings' screen-lock confirmation stops MainActivity, and that stop is not a put-away. The vault's epoch does not move, the seed read under it is kept, the door stays open, and PutAway logs that it put nothing away; taking the guard off within 10 s of that yes still asks (`fresh`); Back on the confirmation after 2.5 s is not a yes, so the skipped put-away runs (the epoch moves) and PutAway logs a return. With a WebView that loads the page, a `seedShow` of a `device` seed opens SHOW WORDS once the PIN is given (skipped on an image whose WebView cannot load the page) | S3, S20, S21 |
 | `BluetoothApproveTest` | what the first-install Bluetooth screen's APPROVE posts (`bluetoothAsk`) comes back through the real shim twice, in iOS's order: `window.__foxyBluetoothAnswer("unsupported")`, which closes the screen, then the reply `unsupported` on its id; and the gate's own screen, launched with `FOXY_SHOW_WARNING` (debug builds) and raised through the banner's `leaveOffline` on a phone with a wallet, closes after PROCEED then APPROVE with `foxy.bt.asked` = `approved, iOS said unsupported` (the two keys are put back). ENG-656; no Bluetooth permission is asked. Passed on a Pixel 8 Pro (Android 17) 2026-10-12, and fails there with the push taken out; by hand on the same day, a fresh install on an API 35 emulator closed the screen on APPROVE | ENG-656 |
+| `TextZoomTest` | with the system font scale set to 1.3 through the shell (the phone's value put back afterwards), a WebView the activity makes and leaves alone starts at `textZoom` 130 (the control), and Foxy's is `WebHost.PAGE_TEXT_ZOOM`, 100: the page is laid out as WKWebView lays it out on iOS, whatever the font size. Skipped, saying why, when the scale cannot be set or a plain WebView does not follow it. ENG-661; compiled, not yet run on a phone | ENG-661 |
 
 P2 starts Tor with the page, so `PageBootTest`, `PutAwayTest` and
 `NetBlockTest` wait for the page to boot in whatever state Tor is in
@@ -94,6 +95,10 @@ The agent cannot point the camera, touch the fingerprint sensor or read the
 screen lock; these are the person's, on the debug build, phone unlocked.
 Grant the camera when asked (or `adb shell pm grant io.islandbitcoin.foxy android.permission.CAMERA`).
 
+**Use the test mint.** The page's default mint, mint.minibits.cash, is a
+real-money mint: a mint or a melt there moves real sats. Add
+testnut.cashu.space (fake money) and use it for every check here.
+
 1. **Scan a cashu token, a lightning invoice and an animated token.** On the
    Mac: `node tools/fake-invoice.js 8` for an invoice; a token from a test
    wallet on testnut.cashu.space; an animated token from cashu.me (Receive →
@@ -103,8 +108,12 @@ Grant the camera when asked (or `adb shell pm grant io.islandbitcoin.foxy androi
    pane, and the full-screen scanner (Receive → paste/scan a token). Each fills
    the page; the animated one shows `SCANNING n%` and then the token. A hand's
    width from the screen is the close-focus case.
-2. **The deep link (debug only).** `adb shell am start -a android.intent.action.VIEW -d 'foxy://receive?amt=50&unit=sat'`:
+2. **The deep link (debug only).** `adb shell "am start -a android.intent.action.VIEW -d 'foxy://receive?amt=50&unit=sat'"`:
    Foxy opens on RECEIVE with 50 sat. A release build does not answer the link.
+   The command goes to the phone's shell as one string, so the inner quotes
+   reach it: without the outer double quotes the phone's shell sees a bare
+   `&`, runs the link without `&unit=sat` and Foxy opens on 50 in another unit
+   (USD 50.00 in the 2026-10-12 check).
 3. **Share a token.** SEND → a token → SHARE: Android's share sheet with the
    token as plain text, no link preview. A second SHARE while the sheet is up
    does nothing.
@@ -114,9 +123,11 @@ Grant the camera when asked (or `adb shell pm grant io.islandbitcoin.foxy androi
    a receive shows a notification titled Foxy saying "Payment received", and on
    the lock screen only "Foxy".
 6. **The seed's protection.** SECURE FOXY → turn the screen lock on: Android
-   asks for the fingerprint or the screen lock once; `adb shell ls
-   /data/data/io.islandbitcoin.foxy/no_backup` (debug, `run-as`) shows
-   `foxy-seed.device.v1.bin` and no `foxy-seed.v1.bin`. Force-stop and open:
+   asks for the fingerprint or the screen lock once; `adb shell run-as
+   io.islandbitcoin.foxy ls -l no_backup` (debug builds only; a plain
+   `adb shell ls /data/data/io.islandbitcoin.foxy/no_backup` is
+   `Permission denied`) shows `foxy-seed.device.v1.bin` and no
+   `foxy-seed.v1.bin`. Force-stop and open:
    the wallet asks for the finger before it opens. Turn it off again: asked
    once more, and the files are back the other way.
 7. **SHOW WORDS and RESTORE.** BACKUP → SHOW WORDS: the native screen ("On this
@@ -137,6 +148,14 @@ Grant the camera when asked (or `adb shell pm grant io.islandbitcoin.foxy androi
    Nothing asks for a Bluetooth permission. The conformance flow *P3: the
    receive screen's TAP …* and `TapReceiveTest` cover the same in jsdom and the
    JVM; this is the check on the real WebView.
+9. **Large text (ENG-661). Pending: the architect's on-device check; no phone
+   was used for this change.** With the phone's font size raised (Settings →
+   Display → Font size; the Pixel 8 Pro of the report ran font_scale 1.3 with
+   display size at 544 dpi) and display size raised too: BACKUP's sheet that
+   rises from the bottom, the receive screen and the send screen show every
+   button's text inside its button, as on iOS. Foxy's text does not grow with
+   the font size (`WebHost.PAGE_TEXT_ZOOM`, ANDROID-MAPPING decision 7);
+   native screens (SHOW WORDS, the dialogs) still do.
 
 ## The P2 device exit (ENG-648)
 
