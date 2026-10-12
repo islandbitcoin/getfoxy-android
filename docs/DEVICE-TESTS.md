@@ -26,12 +26,18 @@ real sats, so these rules hold for every leg, by hand or scripted:
 3. **The person pays the mint quotes from their own wallet.** The leg prints
    the mint's invoice (in `am instrument`'s output and logcat tag `foxy-exit`,
    or on the leak test's stderr), waits for it to be paid (`payTimeoutSeconds`,
-   default 600) and stops cleanly, melting nothing, if it is not.
+   default 600) and stops, melting nothing, if it is not. On a phone the
+   quote stays in Foxy; on the leak test's emulator, which is wiped on every
+   start, the run leaves the emulator running instead (see "Leftover sats"
+   under the leak test).
 4. **Melts pay only an invoice the person supplies** from their own wallet
    (`-e invoice <bolt11>`, `INVOICE=<bolt11>`). It is read before anything
    starts: a mainnet BOLT11 with an amount, a whole number of sats, at most the
-   cap and below the amount minted (the mint keeps a fee reserve), or the leg is
-   refused.
+   cap, and leaving room under the amount minted for the mint's Lightning fee
+   reserve (Foxy's melt owes the amount and the reserve): the invoice plus 2
+   sats, or plus 1% of the amount minted rounded up when that is more, is at
+   most the amount minted. 64 sats minted pays an invoice of at most 62.
+   Anything else is refused.
 5. **No fake invoices on real mints.** `tools/fake-invoice.js` makes an invoice
    that pays no one: it is for the scanner check below (scanned, never paid)
    and the tools' own tests, never a melt.
@@ -221,14 +227,14 @@ adb shell am start -n io.islandbitcoin.foxy/.MainActivity --es FoxyForceTranspor
 adb forward tcp:9333 localabstract:webview_devtools_remote_$(adb shell pidof io.islandbitcoin.foxy)
 node tools/cdp-eval.js 9333 'for (var i = 0; i < 1200; i++) { if (FoxyWallet.privacy().tor === "up") return FoxyWallet.privacy(); await new Promise(function (r) { setTimeout(r, 500); }); }'
 # the leg's invoice, checked against the cap before anything moves (refused: exit 3)
-REAL_MONEY=yes MAX_SATS=64 INVOICE=<the person's invoice, under 64 sats> node tools/real-money.js leg
+REAL_MONEY=yes MAX_SATS=64 INVOICE=<the person's invoice, at most 62 sats> node tools/real-money.js leg
 node tools/cdp-eval.js 9333 'await FoxyWallet.connect("https://mint.minibits.cash/Bitcoin");
   var a = await FoxyWallet.invoice(64, "exit"); return a'          # the person pays a.bolt11 from their own wallet
 node tools/cdp-eval.js 9333 'return await FoxyWallet.claim("<a.hash>")'   # again until it is claimed
 node tools/cdp-eval.js 9333 'return await FoxyWallet.pay("<the invoice, as checked>")'
 # the opt-out: the dialog is pressed by instrumentation, then a mint and a melt without Tor
 adb shell am instrument -w -e class io.islandbitcoin.foxy.DeviceExitTest -e foxyExit true \
-  -e realMoney yes -e maxSats 64 -e invoice <the person's invoice, under 64 sats> \
+  -e realMoney yes -e maxSats 64 -e invoice <the person's invoice, at most 62 sats> \
   io.islandbitcoin.foxy.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
@@ -257,8 +263,20 @@ avdmanager create avd -n foxy_leak -k "system-images;android-35;google_apis;arm6
 for m in direct obfs4 snowflake; do tools/leak-test.sh $m out/; done
 tools/leak-test.sh unprotected out/ out/direct.consensus
 # with the person's go, a mint and a melt in the capture too (one invoice of the person's per run):
-REAL_MONEY=yes MAX_SATS=64 INVOICE=<the person's invoice, under 64 sats> tools/leak-test.sh direct out/
+REAL_MONEY=yes MAX_SATS=64 INVOICE=<the person's invoice, at most 62 sats> tools/leak-test.sh direct out/
 ```
+
+Leftover sats: the AVD is wiped on every start, so ecash left in it would be
+lost on the next run. Once the mint's quote is printed, `tools/leak-test.sh`
+never stops the emulator holding money. After a melt that paid, it exports
+what is left (the change, less the mint's fee on the send) as a cashu token,
+prints it on stderr and writes it to `<out>/<mode>.leftover.token` for the
+person to receive in their own wallet (the file is ecash: not committed),
+then stops the emulator. If the quote is not paid in time, the melt fails,
+the export fails, or anything else stops the run after the quote was printed,
+it exits non-zero and leaves the emulator running, printing the mint, the
+quote id and the commands to claim and drain it by hand; a quote paid later
+is claimed only there, before the next run.
 
 `tools/leak-test.sh` starts the AVD wiped and headless with `-tcpdump`, turns
 private DNS and the virtual Wi-Fi off (the capture sees the emulated cellular

@@ -30,15 +30,16 @@ import org.junit.runner.RunWith
  * before anything is launched: the person's explicit go (`-e realMoney yes`), a
  * cap (`-e maxSats`, 100 or less unless the person adds `-e overDefaultCap yes`),
  * and the person's own invoice to melt (`-e invoice`), read and refused above
- * `maxSats`. The mint (`-e mint`, default https://mint.minibits.cash/Bitcoin)
- * makes an invoice for `mintSats` (default `maxSats`), printed in the
+ * `maxSats` or without room under `mintSats` for the mint's fee reserve
+ * (RealMoney.feeMarginSats: 64 minted pays an invoice of at most 62). The
+ * mint (`-e mint`, default https://mint.minibits.cash/Bitcoin) makes an invoice for `mintSats` (default `maxSats`), printed in the
  * instrumentation output and in logcat (tag `foxy-exit`) for the person to pay
  * from their own wallet; the test waits `payTimeoutSeconds` (default 600) for
  * it and fails cleanly, having melted nothing, if it is not paid. No agent runs
  * this leg: the person and the architect do.
  *
  *   adb shell am instrument -w -e class io.islandbitcoin.foxy.DeviceExitTest -e foxyExit true \
- *     -e realMoney yes -e maxSats 64 -e invoice <an invoice of under 64 sats from the person's own wallet> \
+ *     -e realMoney yes -e maxSats 64 -e invoice <an invoice of at most 62 sats from the person's own wallet> \
  *     io.islandbitcoin.foxy.test/androidx.test.runner.AndroidJUnitRunner
  */
 @RunWith(AndroidJUnit4::class)
@@ -77,14 +78,14 @@ class DeviceExitTest {
             assertTrue("the dialog came up", waitFor(10_000) { PromptQueue.showing?.isShowing == true })
             instrumentation.runOnMainSync { PromptQueue.showing!!.getButton(DialogInterface.BUTTON_POSITIVE).performClick() }
             assertTrue("continuing without Tor", waitFor(10_000) { Route.unprotected })
-            try {
-                mintAndMelt(s, leg)
-            } finally {
-                // off again, and Tor back, whatever happened to the money
-                Page.eval(s, "FoxyWallet.setUnprotected(false); 0")
-                assertTrue(waitFor(10_000) { !Route.unprotected })
-                instrumentation.runOnMainSync { Tor.resumed(0) }
-            }
+            // off again, and Tor back, whatever happened to the money; a failed
+            // step here never hides why the money leg stopped (Always, AlwaysTest)
+            Always.run(
+                { mintAndMelt(s, leg) },
+                { Page.eval(s, "FoxyWallet.setUnprotected(false); 0") },
+                { assertTrue("unprotected mode off again", waitFor(10_000) { !Route.unprotected }) },
+                { instrumentation.runOnMainSync { Tor.resumed(0) } },
+            )
         }
     }
 

@@ -12,18 +12,28 @@
  *     person pays it from their own wallet;
  *   - the melt pays only INVOICE, an invoice the person made in their own
  *     wallet: a mainnet BOLT11 with an amount, a whole number of sats, at most
- *     MAX_SATS and below MINT_SATS (the mint keeps a fee reserve). No fake
- *     invoice is ever paid on a real mint;
+ *     MAX_SATS, and leaving room under MINT_SATS for the mint's Lightning fee
+ *     reserve: INVOICE + max(2, 1% of MINT_SATS, rounded up) <= MINT_SATS. No
+ *     fake invoice is ever paid on a real mint;
  *   - the mint is MINT (default https://mint.minibits.cash/Bitcoin), over https;
  *   - PAY_TIMEOUT_SECONDS (default 600, 30 to 3600) to wait for the quote's payment.
  *
  *   node tools/real-money.js leg     the leg as JSON, or "refused: …" and exit 3
+ *   node tools/real-money.js leg-if-asked
+ *                                    nothing when no money variable is given at
+ *                                    all; otherwise the same as `leg`, so asking
+ *                                    for any part of a money leg without the go
+ *                                    is refused, never quietly skipped
  *   node tools/real-money.js mint    the mint (MINT or the default), checked
  */
 
 const DEFAULT_MINT = 'https://mint.minibits.cash/Bitcoin';
 const DEFAULT_CAP_SATS = 100;
 const DEFAULT_PAY_TIMEOUT_SECONDS = 600;
+/* Room the melt leaves under the amount minted for the mint's Lightning fee
+ * reserve (NUT-05's fee_reserve; Foxy's pay owes amount + fee_reserve): 2 sats,
+ * or 1% of the amount minted rounded up, whichever is more. */
+const feeMarginSats = (mintSats) => Math.max(2, Math.ceil(mintSats / 100));
 const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
 const WHOLE = /^[1-9][0-9]{0,8}$/;
@@ -113,8 +123,9 @@ function leg(get) {
   const invoice = normalised(given);
   const sats = invoiceSats(invoice);
   if (sats > maxSats) refuse(`the invoice is for ${sats} sats, above maxSats ${maxSats}: nothing was sent`);
-  if (sats >= mintSats) {
-    refuse(`the invoice is for ${sats} sats and the leg mints ${mintSats}: mint more than the invoice (the mint keeps a fee reserve), or ask for a smaller invoice`);
+  const margin = feeMarginSats(mintSats);
+  if (sats + margin > mintSats) {
+    refuse(`the invoice is for ${sats} sats and the leg mints ${mintSats}: mint more than the invoice and the mint's fee reserve (at least ${margin} sats over it: an invoice of at most ${mintSats - margin} sats), or ask for a smaller invoice`);
   }
   const timeout = number(get('payTimeoutSeconds'), 'payTimeoutSeconds') ?? DEFAULT_PAY_TIMEOUT_SECONDS;
   if (timeout < 30 || timeout > 3600) refuse(`payTimeoutSeconds: 30 to 3600 (got ${timeout})`);
@@ -126,15 +137,21 @@ const ENV = {
   mint: 'MINT', invoice: 'INVOICE', payTimeoutSeconds: 'PAY_TIMEOUT_SECONDS',
 };
 const fromEnv = (env) => (name) => env[ENV[name]];
+/* Was any part of a money leg asked for? Every money variable but MINT (a
+ * connect moves nothing), given at all, even empty. */
+const asked = (get) => Object.keys(ENV).some((name) => name !== 'mint' && get(name) !== undefined);
 
-module.exports = { leg, invoiceSats, mintOf, fromEnv, Refused, DEFAULT_MINT, DEFAULT_CAP_SATS, DEFAULT_PAY_TIMEOUT_SECONDS };
+module.exports = { leg, asked, feeMarginSats, invoiceSats, mintOf, fromEnv, ENV, Refused, DEFAULT_MINT, DEFAULT_CAP_SATS, DEFAULT_PAY_TIMEOUT_SECONDS };
 
 if (require.main === module) {
   const what = process.argv[2];
   try {
     if (what === 'leg') process.stdout.write(JSON.stringify(leg(fromEnv(process.env))) + '\n');
+    else if (what === 'leg-if-asked') {
+      if (asked(fromEnv(process.env))) process.stdout.write(JSON.stringify(leg(fromEnv(process.env))) + '\n');
+    }
     else if (what === 'mint') process.stdout.write(mintOf(fromEnv(process.env)) + '\n');
-    else { process.stderr.write('usage: real-money.js leg|mint (reads REAL_MONEY, MAX_SATS, … from the environment)\n'); process.exit(2); }
+    else { process.stderr.write('usage: real-money.js leg|leg-if-asked|mint (reads REAL_MONEY, MAX_SATS, … from the environment)\n'); process.exit(2); }
   } catch (e) {
     if (!(e instanceof Refused)) throw e;
     process.stderr.write('refused: ' + e.message + '\n');

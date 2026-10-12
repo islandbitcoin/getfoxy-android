@@ -29,6 +29,12 @@ class RealMoneyTest {
         "lnbc80p" to "kehlpn", // 8 msat
         "lnbc85p" to "xshwv5", // a pico amount BOLT11 does not allow
         "lnbc1001n" to "um7cdn", // 100.1 sats
+        "lnbc620n" to "ejuyh6", // 62 sats
+        "lnbc630n" to "06tg20", // 63 sats
+        "lnbc980n" to "86r82q", // 98 sats
+        "lnbc990n" to "3j5th4", // 99 sats
+        "lnbc4950n" to "sf8vq5", // 495 sats
+        "lnbc4960n" to "r3hcwz", // 496 sats
     )
     private fun inv(hrp: String) = hrp + "1" + body + checksums.getValue(hrp)
 
@@ -79,6 +85,26 @@ class RealMoneyTest {
         // and one that leaves no room for the mint's fee reserve
         assertTrue(refused("realMoney" to "yes", "maxSats" to "8", "invoice" to inv("lnbc80n")).contains("mint more than the invoice"))
         assertTrue(refused("realMoney" to "yes", "maxSats" to "64", "mintSats" to "100", "invoice" to inv("lnbc80n")).contains("mintSats 100 is above maxSats 64"))
+    }
+
+    @Test
+    fun theMeltLeavesRoomForTheMintsFeeReserve() {
+        assertEquals(2L, RealMoney.feeMarginSats(64))
+        assertEquals(2L, RealMoney.feeMarginSats(100))
+        assertEquals(3L, RealMoney.feeMarginSats(201))
+        assertEquals(5L, RealMoney.feeMarginSats(500))
+        val goodButInvoice = good.filter { it.first != "invoice" }.toTypedArray()
+        // the documented example: 64 minted, an invoice of 62 at most (63 cannot pay a 2-sat reserve)
+        assertEquals(62L, RealMoney.leg(args(*goodButInvoice, "invoice" to inv("lnbc620n"))).invoiceSats)
+        assertTrue(refused(*goodButInvoice, "invoice" to inv("lnbc630n")).contains("at least 2 sats over it: an invoice of at most 62 sats"))
+        assertTrue(refused(*good, "mintSats" to "9").contains("at most 7 sats"))
+        assertEquals(8L, RealMoney.leg(args(*good, "mintSats" to "10")).invoiceSats)
+        assertEquals(98L, RealMoney.leg(args("realMoney" to "yes", "maxSats" to "100", "invoice" to inv("lnbc980n"))).invoiceSats)
+        assertTrue(refused("realMoney" to "yes", "maxSats" to "100", "invoice" to inv("lnbc990n")).contains("at most 98 sats"))
+        // above 200 minted the 1% is the larger
+        val over = arrayOf("realMoney" to "yes", "maxSats" to "500", "overDefaultCap" to "yes")
+        assertEquals(495L, RealMoney.leg(args(*over, "invoice" to inv("lnbc4950n"))).invoiceSats)
+        assertTrue(refused(*over, "invoice" to inv("lnbc4960n")).contains("at least 5 sats over it"))
     }
 
     @Test

@@ -143,7 +143,7 @@ android {
         // the instrumented QR test reads the iOS animated-QR fixture the JVM tests read (fixtures/README.md)
         getByName("androidTest") {
             assets.srcDirs("src/test/resources/fixtures")
-            // RealMoney, the real-money rules DeviceExitTest applies; the JVM tests test them (RealMoneyTest)
+            // RealMoney, the real-money rules DeviceExitTest applies, and Always, its clean-up; the JVM tests test them (RealMoneyTest, AlwaysTest)
             kotlin.srcDir("src/sharedTest/java")
         }
         getByName("test") {

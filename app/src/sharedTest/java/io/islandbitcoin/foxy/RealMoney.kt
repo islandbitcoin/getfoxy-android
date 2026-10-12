@@ -15,8 +15,10 @@ import java.math.BigInteger
  *   person pays it from their own wallet;
  * - the melt pays only `invoice`, an invoice the person made in their own
  *   wallet: a mainnet BOLT11 with an amount, a whole number of sats, at most
- *   `maxSats`, and below `mintSats` (the mint keeps a fee reserve). No fake
- *   invoice is ever paid on a real mint;
+ *   `maxSats`, and leaving room under `mintSats` for the mint's Lightning fee
+ *   reserve: `invoice + feeMarginSats(mintSats) <= mintSats` (2 sats, or 1% of
+ *   `mintSats` rounded up, whichever is more; so 64 minted pays an invoice of
+ *   at most 62). No fake invoice is ever paid on a real mint;
  * - the mint is `mint` (default [DEFAULT_MINT], the page's own default), over https.
  *
  * Pure Kotlin with no Android in it, in a source folder both the JVM tests and
@@ -27,6 +29,13 @@ object RealMoney {
     const val DEFAULT_MINT = "https://mint.minibits.cash/Bitcoin"
     const val DEFAULT_CAP_SATS = 100L
     const val DEFAULT_PAY_TIMEOUT_SECONDS = 600L
+
+    /**
+     * The room a melt leaves under the amount minted for the mint's Lightning
+     * fee reserve (NUT-05's `fee_reserve`; Foxy's pay owes the amount and the
+     * reserve): 2 sats, or 1% of [mintSats] rounded up, whichever is more.
+     */
+    fun feeMarginSats(mintSats: Long): Long = maxOf(2L, (mintSats + 99L) / 100L)
 
     /** Why a leg does not run. Nothing has been launched or sent when this is thrown. */
     class Refused(message: String) : IllegalArgumentException(message)
@@ -63,8 +72,12 @@ object RealMoney {
         val invoice = normalised(given)
         val invoiceSats = invoiceSats(invoice)
         if (invoiceSats > maxSats) throw Refused("the invoice is for $invoiceSats sats, above maxSats $maxSats: nothing was sent")
-        if (invoiceSats >= mintSats) {
-            throw Refused("the invoice is for $invoiceSats sats and the leg mints $mintSats: mint more than the invoice (the mint keeps a fee reserve), or ask for a smaller invoice")
+        val margin = feeMarginSats(mintSats)
+        if (invoiceSats + margin > mintSats) {
+            throw Refused(
+                "the invoice is for $invoiceSats sats and the leg mints $mintSats: mint more than the invoice and the mint's fee reserve " +
+                    "(at least $margin sats over it: an invoice of at most ${mintSats - margin} sats), or ask for a smaller invoice",
+            )
         }
         val timeout = number(arg("payTimeoutSeconds"), "payTimeoutSeconds") ?: DEFAULT_PAY_TIMEOUT_SECONDS
         if (timeout !in 30L..3600L) throw Refused("payTimeoutSeconds: 30 to 3600 (got $timeout)")

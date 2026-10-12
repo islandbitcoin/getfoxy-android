@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const { execFileSync, spawnSync } = require('node:child_process');
 const path = require('node:path');
 const { fakeInvoice, polymod, hrpExpand, CHARSET } = require('./fake-invoice');
-const { leg, invoiceSats, mintOf, Refused, DEFAULT_MINT } = require('./real-money');
+const { leg, asked, feeMarginSats, invoiceSats, mintOf, fromEnv, Refused, DEFAULT_MINT } = require('./real-money');
 
 /* one fakeInvoice(8, 1_790_000_000_000), kept (its keys are random each time it is made): RealMoneyTest uses the same */
 const base = 'lnbc80n1p4tzwuqpp58q55ukf4eqqvmvgkn8v8mm46a6zjrzys2cn9nnemw6wvhz5d8y5ssp5xc50fqf9tzys007ymgq0zmvum7u3p2zfqywet7e9whask4ry6f4sdqhvehhs7fqw3jhxapqd4jkcaqxqrrsscqpj9qrsgqp7s3yl8umdm2z6q7ud5tqz5f9lhp5aq3s65ryllmp2cyagp7lpz9j6u78qg52afgm02sxfv6acnxpzlc9hz78smasm2y5pvnde4jksqqhl7tff';
@@ -52,6 +52,24 @@ test('an invoice above MAX_SATS is refused, and one that leaves no fee reserve',
   refused({ ...good, mintSats: '100' }, /mintSats 100 is above maxSats 64/);
 });
 
+test('the melt leaves room for the mint\'s fee reserve: 2 sats, or 1% of the amount minted', () => {
+  assert.equal(feeMarginSats(64), 2);
+  assert.equal(feeMarginSats(100), 2);
+  assert.equal(feeMarginSats(201), 3);
+  assert.equal(feeMarginSats(500), 5);
+  // the documented example: 64 minted, an invoice of 62 at most (63 cannot pay a 2-sat reserve)
+  assert.equal(leg(args({ ...good, invoice: inv('lnbc620n') })).invoiceSats, 62);
+  refused({ ...good, invoice: inv('lnbc630n') }, /at least 2 sats over it: an invoice of at most 62 sats/);
+  refused({ ...good, mintSats: '9' }, /at most 7 sats/);
+  assert.equal(leg(args({ ...good, mintSats: '10' })).invoiceSats, 8);
+  assert.equal(leg(args({ ...good, maxSats: '100', invoice: inv('lnbc980n') })).invoiceSats, 98);
+  refused({ ...good, maxSats: '100', invoice: inv('lnbc990n') }, /at most 98 sats/);
+  // above 200 minted the 1% is the larger
+  const over = { ...good, maxSats: '500', overDefaultCap: 'yes' };
+  assert.equal(leg(args({ ...over, invoice: inv('lnbc4950n') })).invoiceSats, 495);
+  refused({ ...over, invoice: inv('lnbc4960n') }, /at least 5 sats over it/);
+});
+
 test('the melt pays only an invoice the person gave: mainnet, with an amount', () => {
   refused({ ...good, invoice: undefined }, /INVOICE=/);
   refused({ ...good, invoice: inv('lnbc') }, /no amount/);
@@ -75,7 +93,8 @@ test('the invoice is read, not trusted', () => {
   for (const junk of ['', 'lnbc', 'lnbc80n1', 'hello', 'lightning:' + base, base + "'"]) r(junk, /./);
   // RealMoneyTest's checksums are this invoice's, computed here by fake-invoice.js
   const kotlin = { lnbc80n: 'hl7tff', lnbc100n: 'mlwuz9', lnbc1u: 've8n0w', lnbc1010n: '8ff3rh', lnbc1m: '9x5r4m', lnbc: 'fxax96',
-    lntb80n: 'u3jfkf', lnbcrt80n: '0xexnm', lnbc80p: 'kehlpn', lnbc85p: 'xshwv5', lnbc1001n: 'um7cdn' };
+    lntb80n: 'u3jfkf', lnbcrt80n: '0xexnm', lnbc80p: 'kehlpn', lnbc85p: 'xshwv5', lnbc1001n: 'um7cdn',
+    lnbc620n: 'ejuyh6', lnbc630n: '06tg20', lnbc980n: '86r82q', lnbc990n: '3j5th4', lnbc4950n: 'sf8vq5', lnbc4960n: 'r3hcwz' };
   for (const [hrp, cs] of Object.entries(kotlin)) assert.equal(inv(hrp).slice(-6), cs, hrp);
   // and a fresh fake invoice reads as what it was made for
   assert.equal(invoiceSats(fakeInvoice(42)), 42);
@@ -101,4 +120,27 @@ test('the command line refuses with exit 3 and reads the environment', () => {
   const ok = JSON.parse(execFileSync(process.execPath, [tool, 'leg'], { env: { ...clean, REAL_MONEY: 'yes', MAX_SATS: '64', INVOICE: inv('lnbc80n') }, encoding: 'utf8' }));
   assert.equal(ok.invoiceSats, 8);
   assert.equal(execFileSync(process.execPath, [tool, 'mint'], { env: clean, encoding: 'utf8' }).trim(), DEFAULT_MINT);
+});
+
+test('asking for any part of a money leg without the go is refused, not skipped (leak-test.sh: leg-if-asked)', () => {
+  const tool = path.join(__dirname, 'real-money.js');
+  const clean = { PATH: process.env.PATH };
+  // nothing asked: no leg, and no refusal (a connect to MINT moves nothing)
+  assert.equal(asked(fromEnv({})), false);
+  assert.equal(asked(fromEnv({ MINT: DEFAULT_MINT })), false);
+  const none = spawnSync(process.execPath, [tool, 'leg-if-asked'], { env: { ...clean, MINT: DEFAULT_MINT }, encoding: 'utf8' });
+  assert.equal(none.status, 0);
+  assert.equal(none.stdout, '');
+  // every money variable on its own, even empty, is a request: refused with exit 3
+  for (const name of ['REAL_MONEY', 'MAX_SATS', 'OVER_DEFAULT_CAP', 'MINT_SATS', 'INVOICE', 'PAY_TIMEOUT_SECONDS']) {
+    for (const value of ['yes', '120', '']) {
+      assert.equal(asked(fromEnv({ [name]: value })), true, name);
+      const r = spawnSync(process.execPath, [tool, 'leg-if-asked'], { env: { ...clean, [name]: value }, encoding: 'utf8' });
+      assert.equal(r.status, 3, `${name}=${value}`);
+      assert.match(r.stderr, /refused: /);
+    }
+  }
+  // and a full go is the leg
+  const ok = JSON.parse(execFileSync(process.execPath, [tool, 'leg-if-asked'], { env: { ...clean, REAL_MONEY: 'yes', MAX_SATS: '64', INVOICE: inv('lnbc80n') }, encoding: 'utf8' }));
+  assert.equal(ok.invoiceSats, 8);
 });

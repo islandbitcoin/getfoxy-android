@@ -17,25 +17,32 @@
 # opt-in, under the money rules (docs/DEVICE-TESTS.md "Real money",
 # tools/real-money.js), checked before the emulator starts:
 #
-#   REAL_MONEY=yes MAX_SATS=64 INVOICE=<the person's own invoice, under 64 sats> \
+#   REAL_MONEY=yes MAX_SATS=64 INVOICE=<the person's own invoice, at most 62 sats> \
 #     tools/leak-test.sh direct out/
 #
 # only with the person's explicit go for this run; MAX_SATS at most 100 unless
 # OVER_DEFAULT_CAP=yes; MINT_SATS (default MAX_SATS) is the mint quote, printed
 # here for the person to pay from their own wallet within PAY_TIMEOUT_SECONDS
-# (default 600; the run stops cleanly, melting nothing, if it is not paid); the
-# melt pays only INVOICE, refused above MAX_SATS. No fake invoice is paid.
+# (default 600); the melt pays only INVOICE, refused above MAX_SATS or without
+# room under MINT_SATS for the mint's fee reserve. No fake invoice is paid.
+#
+# Leftover sats. The emulator is wiped on every start, so ecash left in it is
+# lost on the next run. Once the quote is printed, the emulator is never killed
+# holding money: after a melt that paid, what is left (the change) is exported
+# as a cashu token, printed on stderr and written to <out>/<mode>.leftover.token
+# for the person to receive in their own wallet, and only then is the emulator
+# stopped. If the quote is not paid in time, the melt fails, the export fails,
+# or anything else stops the run after the quote was printed, the emulator is
+# LEFT RUNNING and the script says how to claim and drain it by hand.
 set -euo pipefail
 mode="$1"
 out="$(cd "$2" && pwd)"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 # the money rules first: a refusal here has started nothing
 mint="$(node "$root/tools/real-money.js" mint)"
-leg=""
-# asking for any part of a money leg without the go is refused, not quietly skipped
-if [ -n "${REAL_MONEY:-}${MAX_SATS:-}${MINT_SATS:-}${INVOICE:-}" ]; then
-  leg="$(node "$root/tools/real-money.js" leg)"
-fi
+# asking for any part of a money leg (any money variable, even empty) without the
+# go is refused (exit 3), not quietly skipped: real-money.js leg-if-asked
+leg="$(node "$root/tools/real-money.js" leg-if-asked)"
 sdk="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 avd="${AVD:-foxy_leak}"
 port=5580
@@ -47,8 +54,28 @@ log() { echo "leak-test $mode: $*" >&2; }
 "$sdk/emulator/emulator" -avd "$avd" -port "$port" -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data \
   -gpu swiftshader_indirect -tcpdump "$out/$mode.pcap" > "$out/$mode.emulator.log" 2>&1 &
 emu=$!
+# set once the mint quote is printed, cleared once no ecash can be left in the emulator
+money_held=""
+# the page script that empties the wallet into one cashu token (less the mint's fee on the send)
+drain_js='var b = await FoxyWallet.balanceSats(); if (!(b > 0)) return { left: 0 };
+  var amt = b; while (amt > 0) { var sf = FoxyWallet.sendShortfall(amt); if (sf && !sf.short) break; amt--; }
+  if (!(amt > 0)) return { left: b, err: "the balance does not cover the fee of a send" };
+  var t = await FoxyWallet.sendToken(amt, { unit: "sat" }); return { left: b, sats: t.sats, token: t.token };'
+held() {
+  echo "leak-test $mode: real ecash may be in this emulator ($1)." >&2
+  echo "leak-test $mode: it is LEFT RUNNING ($ANDROID_SERIAL, AVD $avd); the next leak-test.sh run wipes it, and what it holds with it." >&2
+  echo "leak-test $mode: drain it by hand into your own wallet, then stop it:" >&2
+  echo "  adb -s $ANDROID_SERIAL forward tcp:9444 localabstract:webview_devtools_remote_\$(adb -s $ANDROID_SERIAL shell pidof $pkg)" >&2
+  echo "  node $root/tools/cdp-eval.js 9444 '$drain_js' 120000   # receive the token it returns" >&2
+  echo "  adb -s $ANDROID_SERIAL emu kill" >&2
+}
 cleanup() {
   [ -n "${sampler:-}" ] && kill "$sampler" 2>/dev/null || true
+  if [ -n "$money_held" ]; then
+    held "the run stopped after the mint quote was printed"
+    disown "$emu" 2>/dev/null || true
+    return
+  fi
   adb emu kill > /dev/null 2>&1 || true
   wait "$emu" 2>/dev/null || true
 }
@@ -121,6 +148,8 @@ if [ -n "$leg" ]; then
   # the mint's own invoice is read too: the person is never shown more than MINT_SATS to pay
   quoted="$(node -e 'process.stdout.write(String(require(process.argv[1]).invoiceSats(process.argv[2])))' "$root/tools/real-money.js" "$bolt11")"
   [ "$quoted" = "$mint_sats" ] || { echo "the mint's invoice is for $quoted sats, not $mint_sats: not paying it" >&2; exit 1; }
+  # from here until the change is exported, the emulator is never killed (cleanup, held)
+  money_held=1
   echo "leak-test $mode: PAY THIS from your own wallet: $mint_sats sats to $mint, within $timeout s:" >&2
   echo "$bolt11" >&2
   deadline=$(( $(date +%s) + timeout ))
@@ -131,13 +160,34 @@ if [ -n "$leg" ]; then
     sleep 3
   done
   if [ -z "$claimed" ]; then
-    echo "leak-test $mode: not paid within $timeout s; nothing was melted (a quote paid later is claimed by Foxy's sweep on its next connect)" >&2
+    echo "leak-test $mode: not paid within $timeout s; nothing was melted. Mint $mint, quote id $hash." >&2
+    echo "leak-test $mode: this quote's ecash can only be claimed in this emulator (its seed is wiped on the next run): if you paid it, or pay it now, claim it there first (after the forward below), then drain it:" >&2
+    echo "  node $root/tools/cdp-eval.js 9444 'await FoxyWallet.claim(\"$hash\"); return await FoxyWallet.balanceSats()'" >&2
     exit 1
   fi
   log "claimed $mint_sats sats; melting $invoice_sats to the person's invoice"
   cdp 'var paid = null, perr = null;
        try { paid = await FoxyWallet.pay("'"$invoice"'"); } catch (e) { perr = String(e.message || e); }
        return { privacy: FoxyWallet.privacy(), mint: FoxyWallet.mintUrl, claimed: true, paid: !!paid, payErr: perr }' 600000 | tee "$out/$mode.drive.json"
+  pay_err="$(node -e 'var d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(d.payErr ? String(d.payErr) : (d.paid ? "" : "the melt paid nothing"))' "$out/$mode.drive.json")"
+  if [ -n "$pay_err" ]; then
+    echo "leak-test $mode: the melt failed: $pay_err" >&2
+    exit 1
+  fi
+  # the change, out of the emulator before it is stopped (and wiped on the next run)
+  drained="$(cdp "$drain_js" 120000)"
+  left="$(node -e 'var d = JSON.parse(process.argv[1]); process.stdout.write(d.err ? "err " + d.err : d.token ? "token" : "none")' "$drained")"
+  case "$left" in
+    none) log "nothing left in the emulator's wallet" ;;
+    token)
+      (umask 077; node -e 'process.stdout.write(JSON.parse(process.argv[1]).token + "\n")' "$drained" > "$out/$mode.leftover.token")
+      sats="$(node -e 'process.stdout.write(String(JSON.parse(process.argv[1]).sats))' "$drained")"
+      echo "leak-test $mode: LEFTOVER: $sats sats of ecash, as a token; receive it in your own wallet (also in $out/$mode.leftover.token):" >&2
+      cat "$out/$mode.leftover.token" >&2
+      ;;
+    *) echo "leak-test $mode: the leftover could not be exported: ${left#err }" >&2; exit 1 ;;
+  esac
+  money_held=""
 else
   log "no money moved: REAL_MONEY not given (docs/DEVICE-TESTS.md \"Real money\")"
 fi
