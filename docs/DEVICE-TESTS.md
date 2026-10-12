@@ -7,6 +7,49 @@ where every packet can be captured). CI builds the debug APK and the test APK
 but has no phone, so none of this runs there; each pull request says which of
 these it ran, on which phone, and what each answered.
 
+## Real money
+
+Android is tested on **real mints with real ecash** (the person's decision,
+2026-10-12, ENG-662). testnut.cashu.space (fake money) is no longer the test
+mint. The default is the page's own default mint,
+`https://mint.minibits.cash/Bitcoin`. Every mint or melt in this document moves
+real sats, so these rules hold for every leg, by hand or scripted:
+
+1. **The person's explicit go, every run.** No real-money leg runs without the
+   person saying go for that run. `DeviceExitTest` refuses without
+   `-e realMoney yes`, and `tools/leak-test.sh` without `REAL_MONEY=yes`. No
+   agent runs a real-money leg: the person and the architect do.
+2. **Small amounts: 100 sats or less a leg by default.** A leg names its cap
+   (`-e maxSats <n>`, `MAX_SATS=<n>`) and anything above it is refused. A cap
+   above 100 needs the person to raise it by name for that run
+   (`-e overDefaultCap yes`, `OVER_DEFAULT_CAP=yes`).
+3. **The person pays the mint quotes from their own wallet.** The leg prints
+   the mint's invoice (in `am instrument`'s output and logcat tag `foxy-exit`,
+   or on the leak test's stderr), waits for it to be paid (`payTimeoutSeconds`,
+   default 600) and stops, melting nothing, if it is not. On a phone the
+   quote stays in Foxy; on the leak test's emulator, which is wiped on every
+   start, the run leaves the emulator running instead (see "Leftover sats"
+   under the leak test).
+4. **Melts pay only an invoice the person supplies** from their own wallet
+   (`-e invoice <bolt11>`, `INVOICE=<bolt11>`). It is read before anything
+   starts: a mainnet BOLT11 with an amount, a whole number of sats, at most the
+   cap, and leaving room under the amount minted for the mint's Lightning fee
+   reserve (Foxy's melt owes the amount and the reserve): the invoice plus 2
+   sats, or plus 1% of the amount minted rounded up when that is more, is at
+   most the amount minted. 64 sats minted pays an invoice of at most 62.
+   Anything else is refused.
+5. **No fake invoices on real mints.** `tools/fake-invoice.js` makes an invoice
+   that pays no one: it is for the scanner check below (scanned, never paid)
+   and the tools' own tests, never a melt.
+
+The rules are code as well as words: `RealMoney`
+(`app/src/sharedTest/java/io/islandbitcoin/foxy/RealMoney.kt`, tested on the
+JVM by `RealMoneyTest`, applied by `DeviceExitTest`) and `tools/real-money.js`
+(tested by `tools/real-money.test.js`, applied by `tools/leak-test.sh`).
+
+The rest of the instrumented suite moves no money: `TorRouteTest` reads the
+real mint's `GET /v1/info` (its description) over Tor, nothing else.
+
 ## Instrumented (`app/src/androidTest`)
 
 Install both APKs and run them on an unlocked phone with nothing else of Foxy's
@@ -33,7 +76,8 @@ adb shell am instrument -w -r io.islandbitcoin.foxy.test/androidx.test.runner.An
 | `PutAwayTest` | putting Foxy away shuts the door; coming back opens it and pushes `__foxyUptime`; a reply and a push after the WebView is gone are dropped by `WebHost.evaluate`'s guard (the test's own two scripts, counted by the guard's test hook so a late reply of the page's own can land meanwhile, ENG-652; one `DROPPED_LINE` in the field log for every script dropped) and nothing throws; finishing the activity (Back on API 28-30, where PutAway's stop never comes) parks Tor and takes it off the network (needs the phone online, skips saying so otherwise) | S21 |
 | `SeedForgottenTest` | a seed kept for the visit is gone the moment the activity is finished (Back), inside ProcessLifecycleOwner's 700 ms hold, when `PutAway` never runs; it stays gone after the hold. Needs no Keystore, so it runs on a locked phone too | S20 |
 | `TorRouteTest` | CONTINUE WITHOUT TOR is the native dialog's: Stay protected answers `unprotected: false`, Continue sets it, off clears it; a `mintRequest` to a host Foxy has not used shows the Allow dialog and Don't Allow answers "You did not allow Foxy to contact …" with nothing sent; the approvals are sealed in `noBackupFilesDir`; a request answered over Tor, then Tor taken off the network mid-request fails it and the next is refused. The last needs the phone online (it is skipped, saying so, when Tor does not connect in 3 minutes) | S9, S11, S13 |
-| `DeviceExitTest` | the opt-out leg of the device exit, below: runs only with `-e foxyExit true` | S11 |
+| `DeviceExitTest` | the opt-out leg of the device exit, below, on a real mint: runs only with `-e foxyExit true`, and then only under the money rules above (refused, before anything is launched, without `-e realMoney yes` or with an invoice above `-e maxSats`) | S11 |
+| `DeviceExitRefusalTest` | `DeviceExitTest`'s money rules read from instrumentation arguments: no money without `realMoney yes`, no invoice above `maxSats`. Launches nothing, contacts nothing; `RealMoneyTest` has the rules in full on the JVM. ENG-662; compiled, not yet run on a phone | ENG-662 |
 | `QrDecodeTest` | the scanner's decode path without the camera: a cashu token and a lightning invoice drawn as QR codes (straight, at an angle in a larger frame, upside down) read back through zxing-cpp, the APK's own native decoder; every frame of the iOS animated-QR fixture read back and gathered into its token | P3 |
 | `ClipboardSensitiveTest` | a sensitive copy carries `IS_SENSITIVE` and Foxy's label and is cleared once its 120 s are up (an injected clock), a plain one is not; the paste button reads the clipboard only in its tap | S23 |
 | `SeedScreenStopTest` | SHOW WORDS is `FLAG_SECURE`; HOME with it open finishes it, answered as closed; a screen closed before it opened is answered and shows nothing | S19, S20 |
@@ -48,7 +92,9 @@ P2 starts Tor with the page, so `PageBootTest`, `PutAwayTest` and
 (`Page.STARTED`) rather than on P1's CANNOT CONNECT TO TOR; what they assert is
 unchanged, and `NetBlockTest` now also asserts the app holds INTERNET: the
 walls hold with the permission granted. Every instrumented run with the phone
-online contacts testnut.cashu.space (a fake-money test mint) over Tor.
+online contacts mint.minibits.cash (the page's default, a real-money mint) over
+Tor: the page's own connect, and `TorRouteTest`'s `GET /v1/info`. Neither
+moves money.
 
 **A phone where the network is a permission** (GrapheneOS: the Network toggle):
 an app updated from a build without INTERNET (P1) to one with it (P2) keeps the
@@ -95,13 +141,16 @@ The agent cannot point the camera, touch the fingerprint sensor or read the
 screen lock; these are the person's, on the debug build, phone unlocked.
 Grant the camera when asked (or `adb shell pm grant io.islandbitcoin.foxy android.permission.CAMERA`).
 
-**Use the test mint.** The page's default mint, mint.minibits.cash, is a
-real-money mint: a mint or a melt there moves real sats. Add
-testnut.cashu.space (fake money) and use it for every check here.
+**Real money.** These checks run on the page's default mint,
+mint.minibits.cash, with real sats, under the rules in "Real money" above: the
+person's go, 100 sats or less a leg, quotes and invoices from the person's own
+wallet. (This replaces ENG-661's advice to use testnut.cashu.space.)
 
 1. **Scan a cashu token, a lightning invoice and an animated token.** On the
-   Mac: `node tools/fake-invoice.js 8` for an invoice; a token from a test
-   wallet on testnut.cashu.space; an animated token from cashu.me (Receive →
+   Mac: `node tools/fake-invoice.js 8` for an invoice (scan it only: it pays
+   no one and is never paid on a real mint), or an invoice of a few sats from
+   the person's own wallet; a token of a few sats from the person's own wallet
+   on mint.minibits.cash; an animated token from cashu.me (Receive →
    a long token shows as a loop) or the frames of a case in
    `app/src/test/resources/fixtures/animated-qr.json` shown one after another.
    Display each as a QR code on the Mac's screen. In Foxy: SEND → the camera
@@ -164,10 +213,12 @@ testnut.cashu.space (fake money) and use it for every check here.
 
 ## The P2 device exit (ENG-648)
 
-On the phone, debug build, unlocked, online. The page is driven over WebView
-debugging (`tools/cdp-eval.js`); the mint is testnut.cashu.space (fake money),
-and a melt pays an invoice `tools/fake-invoice.js` makes (testnut marks its own
-invoices paid as it makes them, so a melt needs one from elsewhere).
+On the phone, debug build, unlocked, online, with the person's go for the run
+(see "Real money": these legs move real sats). The page is driven over WebView
+debugging (`tools/cdp-eval.js`); the mint is the page's default,
+`https://mint.minibits.cash/Bitcoin`. Each leg mints a few sats (the person pays
+the mint's invoice from their own wallet) and melts to an invoice the person
+made in their own wallet, for less than the mint and at most the leg's cap.
 
 ```sh
 export ANDROID_SERIAL=<the phone>
@@ -175,14 +226,27 @@ adb shell pm clear io.islandbitcoin.foxy
 adb shell am start -n io.islandbitcoin.foxy/.MainActivity --es FoxyForceTransport direct   # then obfs4, then snowflake (force-stop between)
 adb forward tcp:9333 localabstract:webview_devtools_remote_$(adb shell pidof io.islandbitcoin.foxy)
 node tools/cdp-eval.js 9333 'for (var i = 0; i < 1200; i++) { if (FoxyWallet.privacy().tor === "up") return FoxyWallet.privacy(); await new Promise(function (r) { setTimeout(r, 500); }); }'
-node tools/cdp-eval.js 9333 'await FoxyWallet.connect("https://testnut.cashu.space");
-  var a = await FoxyWallet.invoice(64, "exit");
-  for (var i = 0; i < 20; i++) { try { await FoxyWallet.claim(a.hash); break; } catch (e) { await new Promise(function (r) { setTimeout(r, 1500); }); } }
-  return await FoxyWallet.pay("<an 8-sat invoice from node tools/fake-invoice.js 8>")'
+# the leg's invoice, checked against the cap before anything moves (refused: exit 3)
+REAL_MONEY=yes MAX_SATS=64 INVOICE=<the person's invoice, at most 62 sats> node tools/real-money.js leg
+node tools/cdp-eval.js 9333 'await FoxyWallet.connect("https://mint.minibits.cash/Bitcoin");
+  var a = await FoxyWallet.invoice(64, "exit"); return a'          # the person pays a.bolt11 from their own wallet
+node tools/cdp-eval.js 9333 'return await FoxyWallet.claim("<a.hash>")'   # again until it is claimed
+node tools/cdp-eval.js 9333 'return await FoxyWallet.pay("<the invoice, as checked>")'
 # the opt-out: the dialog is pressed by instrumentation, then a mint and a melt without Tor
 adb shell am instrument -w -e class io.islandbitcoin.foxy.DeviceExitTest -e foxyExit true \
-  -e invoice "$(node tools/fake-invoice.js 8)" io.islandbitcoin.foxy.test/androidx.test.runner.AndroidJUnitRunner
+  -e realMoney yes -e maxSats 64 -e invoice <the person's invoice, at most 62 sats> \
+  io.islandbitcoin.foxy.test/androidx.test.runner.AndroidJUnitRunner
 ```
+
+`DeviceExitTest` takes `-e mint <url>` (default minibits), `-e mintSats <n>`
+(default `maxSats`) and `-e payTimeoutSeconds <n>` (default 600); it prints the
+mint's invoice as `foxy-exit: PAY THIS …` and waits for the person to pay it.
+Unpaid in time, it fails saying so, having melted nothing; a quote paid later
+is claimed by Foxy's sweep on its next connect to that mint. Sats minted and
+not melted stay in the phone's Foxy wallet. A melt the mint answers PENDING
+(or with no state) fails the test, saying the melt is still pending: Foxy
+holds its ecash until it settles, so it is not recorded as a melt that went
+through.
 
 Then the instrumented suite, with nothing skipped but
 `KeystoreTest.onALockedPhone…`.
@@ -201,15 +265,49 @@ avdmanager create avd -n foxy_leak -k "system-images;android-35;google_apis;arm6
 ./gradlew assembleDebug
 for m in direct obfs4 snowflake; do tools/leak-test.sh $m out/; done
 tools/leak-test.sh unprotected out/ out/direct.consensus
+# with the person's go, a mint and a melt in the capture too (one invoice of the person's per run):
+REAL_MONEY=yes MAX_SATS=64 INVOICE=<the person's invoice, at most 62 sats> tools/leak-test.sh direct out/
 ```
+
+Leftover sats: the AVD is wiped on every start, so ecash left in it would be
+lost on the next run. Once the mint's quote is printed, `tools/leak-test.sh`
+never stops the emulator holding money. After a melt that paid, it exports
+what is left (the change, less the mint's fee on the send) as a cashu token,
+prints it on stderr and writes it to `<out>/<mode>.leftover.token` for the
+person to receive in their own wallet (the file is ecash: `.gitignore` keeps
+`*.leftover.token` out of git), then stops the emulator. A melt the mint
+answers PENDING, or answers with no state, has not gone through: `FoxyWallet.pay`
+resolves with `pending: true` and its ecash stays held in the emulator until
+the mint settles it (the fee reserve's change if it pays, all of it if it
+fails), so the script counts it as a failed melt. If the quote is not paid in
+time, the melt fails or is still pending, the export fails, or anything else
+stops the run after the quote was printed, it exits non-zero and leaves the
+emulator running, printing the mint, the quote id and the commands to claim
+and drain it by hand; a quote paid later is claimed only there. While an
+emulator is up on the script's serial (`emulator-5580`), the next run refuses
+to start (exit 4) instead of wiping it, or driving and stopping it undrained:
+drain it and stop it first.
+Before it prints the quote, it also writes a held-money marker next to the AVD
+(`~/.android/avd/<AVD>.avd/foxy-money-held`, under `ANDROID_AVD_HOME` when set:
+the mint, the quote id and the time) and deletes it only once the change is
+out. While the marker exists the next run refuses too (exit 4), even with no
+emulator up (it died, the terminal closed, the Mac rebooted): the ecash is in the
+AVD's userdata and `-wipe-data` would destroy it. If the emulator is still up
+(the usual case: the run left it running), claim and drain it by hand as above,
+stop it, then delete the marker. If it is not, start the AVD again without
+`-wipe-data` first; the refusal prints which of the two applies.
 
 `tools/leak-test.sh` starts the AVD wiped and headless with `-tcpdump`, turns
 private DNS and the virtual Wi-Fi off (the capture sees the emulated cellular
 path; Wi-Fi bypasses it), installs the debug APK, samples the app's sockets by
 uid from `/proc/net` every 0.2 s (as root, which a google_apis image allows),
 launches Foxy on the transport (`FoxyForceTransport`) or without Tor
-(`FoxyNoTor`, debug builds only), waits for Tor, mints and melts on testnut,
-and then runs `tools/leak-check.js` on the capture, the sockets and the
+(`FoxyNoTor`, debug builds only), waits for Tor, connects to the mint (`MINT`,
+default `https://mint.minibits.cash/Bitcoin`: its keys and info, no money), and
+only with `REAL_MONEY=yes` and the rest of the money rules above (checked by
+`tools/real-money.js` before the emulator starts) mints `MINT_SATS` (printed
+for the person to pay from their own wallet) and melts to the person's
+`INVOICE`; then it runs `tools/leak-check.js` on the capture, the sockets and the
 consensus Tor downloaded. A socket's local port is Foxy's only on the outside
 address it held (a loopback port reused by another process is that process's).
 The emulator stamps the capture with a clock of its own, so the opt-out's moment
@@ -223,7 +321,10 @@ snowflake mode for it.
 
 ## Runs
 
-Each run: the commit, the phone, and what each test answered. A skipped test
+Each run: the commit, the phone, and what each test answered. The rows are
+history: they record what ran then, and runs before 2026-10-12 minted and
+melted on testnut.cashu.space (fake money), with `tools/fake-invoice.js`
+invoices. A skipped test
 is not a pass; the device exit needs a run with nothing skipped but
 `KeystoreTest.onALockedPhone…` (which runs only on a locked phone), plus check 7.
 

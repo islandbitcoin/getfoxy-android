@@ -1,5 +1,5 @@
 'use strict';
-/* fake-invoice.test.js — the test melts' invoice is a well-formed BOLT11 one. */
+/* fake-invoice.test.js — the scanner check's invoice (never paid on a real mint) is a well-formed BOLT11 one. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { fakeInvoice, polymod, hrpExpand, CHARSET, to8 } = require('./fake-invoice');

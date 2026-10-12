@@ -39,3 +39,5 @@ node_modules/
 
 # leak-test captures (tools/leak-test): analysed, never committed
 *.pcap
+# leak-test leftover change (tools/leak-test.sh): bearer ecash, never committed
+*.leftover.token

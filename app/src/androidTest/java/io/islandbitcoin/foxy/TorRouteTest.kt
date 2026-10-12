@@ -151,17 +151,18 @@ class TorRouteTest {
             assertTrue(Page.until(s, Page.STARTED, 90_000))
             instrumentation.runOnMainSync { Tor.restart("the test asked") }
             assumeTrue("Tor did not connect in 3 minutes: is the phone online?", waitFor(180_000) { Tor.isRunning })
-            // the route works: a request over Tor is answered by the mint
-            post(s, "t0", """{ action: 'mintRequest', id: 't0', url: 'https://testnut.cashu.space/v1/info', method: 'GET' }""")
+            // the route works: a request over Tor is answered by the mint (the page's default, a real-money mint:
+            // GET /v1/info only, which reads its description and moves nothing)
+            post(s, "t0", """{ action: 'mintRequest', id: 't0', url: 'https://mint.minibits.cash/Bitcoin/v1/info', method: 'GET' }""")
             val ok = answer(s, "t0", 120_000)
             assertTrue("answered over Tor: ${ok[1]}", ok[0]?.startsWith("200\n") == true)
             val before = Route.out
-            post(s, "t1", """{ action: 'mintRequest', id: 't1', url: 'https://testnut.cashu.space/v1/info', method: 'GET' }""")
+            post(s, "t1", """{ action: 'mintRequest', id: 't1', url: 'https://mint.minibits.cash/Bitcoin/v1/info', method: 'GET' }""")
             assertTrue("the request is out", waitFor(10_000) { Route.out > before })
             instrumentation.runOnMainSync { Tor.park() }
             val first = answer(s, "t1", 90_000)
             assertNotNull("the request in flight failed", first[1])
-            post(s, "t2", """{ action: 'mintRequest', id: 't2', url: 'https://testnut.cashu.space/v1/info', method: 'GET' }""")
+            post(s, "t2", """{ action: 'mintRequest', id: 't2', url: 'https://mint.minibits.cash/Bitcoin/v1/info', method: 'GET' }""")
             assertEquals(listOf(null, "Foxy is not connected to Tor."), answer(s, "t2"))
         }
     }
