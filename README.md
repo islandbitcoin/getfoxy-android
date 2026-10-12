@@ -29,6 +29,7 @@ dialog, to continue without Tor for the session.
 | `tools/check-no-network.sh` | fail if anything under `app/src` can reach the network other than through `network/` (with its self-test, `tools/check-no-network.test.sh`) |
 | `tools/leak-test.sh`, `tools/leak-check.js` | the P2 leak test: an emulator capture through each transport, and the analysis that holds every flow of the app's to Tor (with its tests, `tools/leak-check.test.js`) |
 | `tools/cdp-eval.js`, `tools/real-money.js`, `tools/fake-invoice.js` | drive the page of a debug build over WebView debugging; the money rules of a leg on a real mint (the person's go, 100 sats or less, the person's own invoice: docs/DEVICE-TESTS.md "Real money"); an invoice that pays no one, for the scanner check only, never paid |
+| `tools/cardsim-test.sh`, `tools/cardsim.PIN` | the card session end to end: getfoxy/card's applet at the pinned commit, built with that repository's own tooling and run in jCardSim, driven through the bridge and the debug build's simulator link (`CardSimEndToEndTest`) |
 | `docs/DEVICE-TESTS.md` | what is checked on a phone: the instrumented tests and the checks by hand |
 
 ## Checks
@@ -45,6 +46,8 @@ node --test tools/leak-check.test.js tools/fake-invoice.test.js tools/real-money
 # the app (JDK 17, Android SDK platform 37.1: tor-android's AAR asks for it)
 tools/check-no-network.sh && tools/check-no-network.test.sh
 ./gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest
+# the card session against getfoxy/card's applet in jCardSim (JDK 17 and Maven; tools/cardsim.PIN)
+tools/cardsim-test.sh [path/to/getfoxy-card-clone]
 # on a phone (docs/DEVICE-TESTS.md)
 ./gradlew connectedDebugAndroidTest
 ```
@@ -65,5 +68,5 @@ on every push and pull request.
 | **P0** | the contract, the pinned core, the conformance suite |
 | **P1** shell | Kotlin app: WebView at the asset origin with no network, the bridge and shim, lifecycle, seed and counters in the Keystore, the field log; every network action refused |
 | **P2** Tor (this) | tor-android + IPtProxy, `Route` over OkHttp through Tor's SOCKS port, mint/price/chart requests, the Tor gate, host approvals, continue-without-Tor |
-| **P3** platform | scanner (CameraX + zxing-cpp), clipboard and share, notifications, haptics, biometrics, native seed screens: the first build for a phone |
-| **LATER** | onion inbox and post, Nostr, Bluetooth tap to pay, NFC card |
+| **P3** platform | scanner (CameraX + zxing-cpp), clipboard and share, notifications, haptics, biometrics, native seed screens: the first build for a phone; the NFC card's owner key and signed time (ENG-666) and its session over reader mode with Foxy's own card sheet (ENG-667) |
+| **LATER** | onion inbox and post, Nostr, Bluetooth tap to pay, a card held to the phone opening Foxy (ENG-668) |

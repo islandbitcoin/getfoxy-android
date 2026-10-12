@@ -223,6 +223,96 @@ wallet. (This replaces ENG-661's advice to use testnut.cashu.space.)
     same 130 characters. `cardTime` answers the phone's clock and a signature.
     No card is needed and nothing moves; the card itself is A5 (the NFC link).
 
+## The card (ENG-667)
+
+**Pending: the person's and the architect's on-device check; no phone and no
+card were used for this change.** What runs without them: `CardGateTest`,
+`NfcCardLinkTest`, `CardSessionTest`, `CardSheetModelTest` and
+`SimCardLinkTest` (JVM); `tools/cardsim-test.sh`, the bridge and the debug
+build's `SimCardLink` against getfoxy/card's own applet in jCardSim (a card
+set up, loaded, read, paid from, pulled away and found again); and the
+conformance flows *P3 (ENG-667) …*, the page's own card code against iOS's
+model of the card. What only a phone, a radio and a hand can show is below.
+
+Needs the debug build on the Pixel 8 Pro (`./gradlew assembleDebug`, `adb
+install -r app/build/outputs/apk/debug/app-debug.apk`), NFC on (Settings →
+Connected devices → Connection preferences → NFC), the person's provisioned
+Flashcard, and for step 7 the iPhone. **Real money:** ADD FUNDS and a payment
+move real sats on the page's default mint, so the rules of "Real money" above
+hold: the person's go for the run, 100 sats or less a leg, the mint's quote
+paid from the person's own wallet. Steps 1 and 2 move nothing. Read the field
+log or `adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy)` for the
+`[card] sheet:` lines; no command, answer or PIN is ever logged.
+
+0. **The simulator first, on the Pixel, with no card (optional, moves
+   nothing).** On the Mac: `git clone https://github.com/getfoxy/card`,
+   `sh tools/cardsim/run.sh` in it (port 47431), then
+   `adb reverse tcp:47431 tcp:47431` and
+   `adb shell am start -n io.islandbitcoin.foxy/.MainActivity --ez FoxyCardSim true`.
+   The menu → FLASHCARD → TAP CARD. **Pass:** no sheet (the simulator stands in
+   for the radio only, as on iOS's Simulator), the FLASHCARD screen shows a
+   new card with SET UP THIS CARD; the simulator's terminal prints each
+   instruction and status, never data. Force-stop Foxy before step 1, so the
+   next start has no extra.
+1. **The sheet, and a card read.** The menu → FLASHCARD → TAP CARD. **Pass:**
+   Foxy's own sheet rises from the bottom over a dimmed page: "Ready to Scan",
+   the page's line, a phone-and-card mark, Cancel. Hold the Flashcard flat to
+   the back of the phone, near the middle (the Pixel's antenna). The line
+   changes to "Reading the card" as it connects, then the sheet shows a tick
+   and its word and goes by itself after about a second; the FLASHCARD screen
+   shows the card as the iPhone does (its balance, its limits, its owner's
+   buttons if this phone's words are its owner's). Note how long the read took
+   from the card touching the phone to the tick (the iPhone's 23a note to
+   compare with), and whether the phone buzzed or chimed on contact.
+2. **Cancel, Back, the minute, put away (moves nothing).** (a) TAP CARD, then
+   Cancel on the sheet: the sheet goes at once and the page says the card was
+   not tapped. (b) TAP CARD, then the phone's Back: the same. (c) TAP CARD and
+   hold nothing for a minute: the sheet goes and the page says no card was
+   tapped (`[card] sheet: ended, nobody held a card up`). (d) TAP CARD, then
+   Home while the sheet waits, and come back: the sheet is gone and the page
+   is not waiting on it (`Foxy was put away`). (e) Hold a bank card or a
+   transit card to the phone with the sheet up: the sheet does not take it
+   (the line says "Hold one card to the back of the phone" if the card is not
+   one that speaks commands, or the page refuses it as NOT A FOXY CARD), and no
+   other app or browser opens. (f) With the sheet down and Foxy in front, hold
+   the Flashcard to the phone: note what Android does (opening Foxy from a card
+   is ENG-668; until then the system may offer the card's address
+   `https://getfoxy.io/card` to a browser).
+3. **ADD FUNDS (real money: the person's go, 100 sats or less).** With the
+   card on the FLASHCARD screen: ADD FUNDS, an amount of 100 or less, the PIN
+   if the card has one, TAP CARD, hold the card until the tick. **Pass:** the
+   balance in the pill counts up by the amount; the phone's balance is down by
+   it and the mint's fee; HISTORY has one To card entry. A card of software
+   1.20 says `Verified At <time>` afterwards (the mint's proof kept with each
+   piece, iOS 23f).
+4. **A payment from the card (real money).** On the iPhone at the same mint
+   (or on the Pixel itself, RECEIVE → an amount of 50 or less → CARD): the
+   card's PIN if asked, TAP CARD, hold the card to the Pixel. **Pass:** the
+   sheet says what the page says as it signs, the tick, and the payment lands;
+   the card's balance is down by what left it. Note the time from contact to
+   the tick (the signing on the card).
+5. **The card pulled away part way.** Start a WITHDRAW or a payment and lift
+   the card while the sheet counts. **Pass:** the sheet stays up and asks for
+   the card again (TAP THE CARD AGAIN on the page behind it); hold it back:
+   the session goes on and finishes; nothing is on the card twice and nothing
+   is lost (the page's own accounting, as on iOS 23b step 6). Then lift it
+   again and leave it away a minute: the sheet goes, and the page says what is
+   left to finish on the next tap.
+6. **A system dialog over a tap.** With the sheet up waiting for a card, pull
+   the notification shade down and push it back up. **Pass:** the sheet is
+   still there and still finds the card (reader mode comes back on with Foxy
+   in front: `ReaderModeRadio.resumed`).
+7. **A card set up on the iPhone, operated from the Pixel.** With the Pixel
+   restored from the iPhone's twelve words (ENG-666): TAP CARD on the Pixel.
+   **Pass:** the Pixel shows the card as its owner's (the owner's buttons), and
+   LIMITS → a change with the owner's proof goes through on the Pixel's tap.
+   Read it on the iPhone afterwards: the same card, the same limits.
+8. **NFC off.** Settings → NFC off, then TAP CARD. **Pass:** no sheet; the
+   page says this phone cannot read a card (NO CARD READER). Turn NFC back on.
+
+Report each step's pass or fail, the read and signing times, the phone, the
+card's software (`01 14` is 1.20) and the build's commit.
+
 ## The P2 device exit (ENG-648)
 
 On the phone, debug build, unlocked, online, with the person's go for the run
