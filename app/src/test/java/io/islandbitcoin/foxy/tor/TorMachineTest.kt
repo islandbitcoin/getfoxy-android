@@ -385,6 +385,7 @@ class TorMachineTest {
         val m = stoppedThenPutAway()
         m.resumed(0)
         assertEquals("launched again on resume", 2, daemon.torrcs.size)
+        assertFalse("launched on the network", daemon.torrcs.last().contains("DisableNetwork 1"))
         assertFalse("the new Tor is not parked", m.parked)
         assertEquals("connecting", m.state)
         val link = FakeControl(sched)
@@ -401,6 +402,7 @@ class TorMachineTest {
         val m = stoppedThenPutAway()
         if (m.parked) m.resumed(0) else m.start()
         assertEquals("launched again", 2, daemon.torrcs.size)
+        assertFalse("launched on the network", daemon.torrcs.last().contains("DisableNetwork 1"))
         assertFalse("the new Tor is not parked", m.parked)
         assertEquals("connecting", m.state)
     }
@@ -411,6 +413,7 @@ class TorMachineTest {
         val m = stoppedThenPutAway()
         m.restart("network")
         assertEquals("launched again", 2, daemon.torrcs.size)
+        assertTrue("launched off the network", daemon.torrcs.last().contains("\nDisableNetwork 1\n"))
         assertTrue("the new Tor is still away", m.parked)
         assertHeldOffTheNetwork(m, FakeControl(sched))
         // back: a fresh set-up turns the network on
@@ -426,6 +429,7 @@ class TorMachineTest {
         val m = stoppedThenPutAway()
         m.start()
         assertEquals("launched again on start", 2, daemon.torrcs.size)
+        assertTrue("launched off the network", daemon.torrcs.last().contains("\nDisableNetwork 1\n"))
         assertTrue("the new Tor is still away", m.parked)
         assertHeldOffTheNetwork(m, FakeControl(sched))
     }
@@ -442,6 +446,7 @@ class TorMachineTest {
         m.daemonFinished("tor-android said STOPPING")
         m.restart("network")
         assertEquals("launched again", 2, daemon.torrcs.size)
+        assertTrue("launched off the network", daemon.torrcs.last().contains("\nDisableNetwork 1\n"))
         assertTrue("the new Tor is still away", m.parked)
         assertHeldOffTheNetwork(m, FakeControl(sched))
     }
@@ -457,6 +462,7 @@ class TorMachineTest {
         m.daemonFinished("tor-android said STOPPING")
         m.resumed(0)
         assertEquals("launched again on resume", 2, daemon.torrcs.size)
+        assertFalse("launched on the network", daemon.torrcs.last().contains("DisableNetwork 1"))
         assertFalse("the new Tor is not parked", m.parked)
         assertEquals("connecting", m.state)
     }

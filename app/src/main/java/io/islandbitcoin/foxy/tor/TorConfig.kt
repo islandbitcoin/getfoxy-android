@@ -33,9 +33,15 @@ package io.islandbitcoin.foxy.tor
  *
  * The transport's settings (the bridge lines and the transport's local port)
  * come last, as iOS passes them on the command line at launch.
+ *
+ * `offline`: `DisableNetwork 1`, for a Tor launched while Foxy is away (a
+ * RETRY or start in the background, docs/ROUTE.md §"Putting the app away",
+ * S21). Tor boots off the network and makes no connection at all; the set-up
+ * on the return turns the network on (`DisableNetwork 0`). iOS has no such
+ * launch: its TorThread is never started again while the app is suspended.
  */
 object TorConfig {
-    fun torrc(release: Boolean, transport: List<Pair<String, String>>): String = buildString {
+    fun torrc(release: Boolean, transport: List<Pair<String, String>>, offline: Boolean = false): String = buildString {
         appendLine("SocksPort auto IsolateDestAddr ExtendedErrors")
         appendLine("HTTPTunnelPort 0")
         appendLine("ConfluxEnabled 0")
@@ -47,5 +53,6 @@ object TorConfig {
             require(k.all { it.isLetterOrDigit() } && '\n' !in v && '\r' !in v) { "not a torrc line" }
             appendLine("$k $v")
         }
+        if (offline) appendLine("DisableNetwork 1")
     }
 }

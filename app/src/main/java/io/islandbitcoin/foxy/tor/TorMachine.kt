@@ -217,8 +217,9 @@ class TorMachine(
     /**
      * A new daemon for one whose thread ended. `parked` is left as it is: a
      * RETRY while Foxy is away (the page's `torRetry` keeps running in the
-     * background) launches Tor off the network, and `controlReady` sends
-     * `DisableNetwork 1` the moment its link is up; the return sets it up.
+     * background) launches Tor off the network (`DisableNetwork 1` in its
+     * torrc, so it never connects; `controlReady` sends it again the moment
+     * its link is up); the return sets it up.
      */
     private fun relaunch(reason: String) {
         Log.line(if (parked) "[foxy] tor: $reason; starting Tor again, off the network until Foxy comes back" else "[foxy] tor: $reason; starting Tor again")
@@ -256,8 +257,9 @@ class TorMachine(
             lifeTicking = true
             lifeTick()
         }
-        Log.line("[foxy] tor starting; it chooses its SOCKS port")
-        daemon.launch(TorConfig.torrc(release, settings))
+        Log.line(if (parked) "[foxy] tor starting off the network; it chooses its SOCKS port" else "[foxy] tor starting; it chooses its SOCKS port")
+        // away: Tor boots with its network off, so a control link that never comes leaves it offline
+        daemon.launch(TorConfig.torrc(release, settings, offline = parked))
     }
 
     /** tor-android's control link is up. */

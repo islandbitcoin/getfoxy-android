@@ -34,6 +34,16 @@ class TorConfigTest {
     }
 
     @Test
+    fun aTorLaunchedWhileAwayBootsOffTheNetwork() {
+        val on = TorConfig.torrc(release = true, transport = emptyList())
+        assertFalse(on.contains("DisableNetwork"))
+        assertEquals(on, TorConfig.torrc(release = true, transport = emptyList(), offline = false))
+        val off = TorConfig.torrc(release = true, transport = Bridges.settings(TorTransport.OBFS4, 41001), offline = true)
+        assertEquals("the last line, after the transport's", "DisableNetwork 1", off.lines().last { it.isNotEmpty() })
+        assertEquals(1, off.lines().count { it.startsWith("DisableNetwork") })
+    }
+
+    @Test
     fun aTransportsSettingsGoInAsLines() {
         val t = TorConfig.torrc(false, Bridges.settings(TorTransport.OBFS4, 41001))
         assertTrue(t.contains("\nUseBridges 1\nClientTransportPlugin obfs4 socks5 127.0.0.1:41001\n"))

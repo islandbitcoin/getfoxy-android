@@ -286,7 +286,9 @@ As built in P2 (ENG-648). Kotlin paths are under
   daemon to send it to). Coming back (the return, or the next activity)
   launches it again. A RETRY while away (the page's `torRetry` keeps running
   in the background and fires on a network change) launches it off the
-  network until Foxy comes back. A park that
+  network until Foxy comes back: its torrc carries `DisableNetwork 1`, so it
+  boots with no connection at all (even if its control link never comes), and
+  `DisableNetwork 1` is sent again when the link is up. A park that
   comes while Tor is still starting, before its control link is up, is held:
   iOS skips that case (`TorService.swift` `backgrounded`) because it suspends
   the process and a late bootstrap never runs, but Android keeps the process
