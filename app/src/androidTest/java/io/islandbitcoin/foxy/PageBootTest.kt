@@ -28,6 +28,7 @@ class PageBootTest {
 
     @Test
     fun theUnmodifiedPageBootsToTheTorGateAndAsksNothingUnknown() {
+        val began = System.currentTimeMillis()
         ActivityScenario.launch(MainActivity::class.java).use { s ->
             assertTrue("the page boots to the Tor gate or past it", Page.until(s, Page.STARTED, 90_000))
 
@@ -50,8 +51,10 @@ class PageBootTest {
                 " var d = window[window.length - 1].document; var g = d.createElement('iframe'); d.body.appendChild(g);" +
                 " var b = typeof window[window.length - 1][0].RTCPeerConnection; f.remove(); return a + ' ' + b; })()"))
 
-            // nothing the page asked on boot was an unknown action (the P1 and P2 tables and the later stubs cover the boot)
-            val unknown = FieldLog.lines().filter { it.text.contains("Unknown action") }
+            // nothing the page asked on this boot was an unknown action (the P1 and P2 tables and the later
+            // stubs cover the boot); the field log also holds an earlier run's lines ("last run · …") and
+            // earlier tests' in this process, which are not this boot's
+            val unknown = FieldLog.lines().filter { it.at >= began && !it.text.startsWith("last run") && it.text.contains("Unknown action") }
             assertTrue("unknown actions on boot: ${unknown.map { it.text }}", unknown.isEmpty())
 
             // S16: navigation and new windows go nowhere

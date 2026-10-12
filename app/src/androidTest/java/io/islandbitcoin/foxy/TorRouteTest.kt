@@ -99,8 +99,10 @@ class TorRouteTest {
             assertEquals(null, error)
             assertEquals(false, (Json.parse(text!!) as Map<*, *>)["unprotected"])
             assertFalse(Route.unprotected)
-            // and its yes, which only the dialog can give
+            // and its yes, which only the dialog can give; the door shut meanwhile, so that the page's own
+            // requests do not leave the phone outside Tor in the second it is on
             post(s, "u2", """{ action: 'unprotected', id: 'u2', on: true }""")
+            Route.shutDoor()
             press(DialogInterface.BUTTON_POSITIVE, "Continue without Tor?")
             assertEquals(true, (Json.parse(answer(s, "u2")[0]!!) as Map<*, *>)["unprotected"])
             assertTrue(Route.unprotected)
@@ -115,14 +117,14 @@ class TorRouteTest {
     fun aHostFoxyHasNotUsedIsAskedAboutAndDontAllowSendsNothing() {
         ActivityScenario.launch(MainActivity::class.java).use { s ->
             assertTrue(Page.until(s, Page.STARTED, 90_000))
-            parked(s)
-            // a route, so that the request reaches the approval: the person's yes, set here
-            Route.unprotected = true
-            val out = Route.out
+            // a route, so that the request reaches the approval: Tor (never the open connection, which would
+            // send the page's own requests outside Tor from the phone)
+            instrumentation.runOnMainSync { Tor.restart("the test asked") }
+            assumeTrue("Tor did not connect in 3 minutes: is the phone online?", waitFor(180_000) { Tor.isRunning })
             post(s, "h1", """{ action: 'mintRequest', id: 'h1', url: 'https://mint.not-approved.example/v1/info', method: 'GET' }""")
             press(DialogInterface.BUTTON_NEGATIVE, "Allow Foxy to contact mint.not-approved.example?")
+            // nothing was sent: the refusal is the approval's, never a network failure's (NetBridgeTest checks the send)
             assertEquals(listOf(null, "You did not allow Foxy to contact mint.not-approved.example."), answer(s, "h1"))
-            assertEquals("nothing was sent", out, Route.out)
         }
     }
 
