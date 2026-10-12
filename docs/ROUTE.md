@@ -296,6 +296,23 @@ As built in P2 (ENG-648). Kotlin paths are under
   moment the link comes up, with no set-up, until Foxy comes back. A return sets Tor
   up again. No `WorkManager` job, alarm or foreground service
   makes requests while the app is away.
+- **Set-ups that overlap** (ENG-652). Every set-up starts with
+  `DisableNetwork 1`, which kills the circuits the set-up before it was
+  building, and Tor records each as a failure of that circuit's guard. Three
+  stacked inside a second (a return, the next activity's start, a restart)
+  marked every primary guard unreachable on the Pixel: Tor still said
+  `CIRCUIT_ESTABLISHED`, but held every new stream "waiting for circuit" and
+  each SOCKS handshake timed out at 30 s, so the wallet was refused for half a
+  minute. A RETRY or RESTART TOR within 4 s of a set-up that is still going
+  (not failed, not parked, not off for want of a network) therefore joins it
+  instead of starting another. A return from being put away always sets up,
+  however soon: Tor is off the network then. Nothing a superseded set-up asked
+  for acts after it: its settings' reply does not switch the network back on
+  (which would put a parked Tor online, S21), and a `CIRCUIT_ESTABLISHED`
+  heard between a `DisableNetwork 1` and the answer to the `DisableNetwork 0`
+  after it is about a circuit that switch closed, so it does not make Foxy
+  ready. The port Route dials is read per request and every pooled
+  connection is dropped whenever the port is forgotten (`RouteHttp.forgetTorConnections`).
 - **The phone's network.** `network/NetworkKind.kt` watches the default
   network (wifi, cellular, wired, other, none; a VPN with nothing under it is
   none); with none, Tor comes off the network after 1.5 s and the ladder learns
