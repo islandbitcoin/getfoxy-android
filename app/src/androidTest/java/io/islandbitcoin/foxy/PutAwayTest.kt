@@ -20,8 +20,9 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * S21 and the reply path's guard: Foxy put away shuts the door (nothing new may
  * leave), a return opens it and pushes `__foxyUptime` and `_resumed`, and a
- * reply that arrives after the WebView is gone does nothing. (No request can be
- * out in P1: nothing has a route.)
+ * reply that arrives after the WebView is gone does nothing. With Tor running,
+ * putting away also parks Tor (off the network) and coming back sets it up
+ * again; a melt out at that moment is waited for (MoneyInFlightTest).
  */
 @RunWith(AndroidJUnit4::class)
 class PutAwayTest {
@@ -37,7 +38,7 @@ class PutAwayTest {
     @Test
     fun puttingAwayShutsTheDoorAndComingBackOpensIt() {
         ActivityScenario.launch(MainActivity::class.java).use { s ->
-            assertTrue(Page.until(s, Page.BOOTED, 90_000))
+            assertTrue(Page.until(s, Page.STARTED, 90_000))
             Route.openDoor()
             Page.eval(s, "window.__foxyUptime = undefined; 0")
             s.moveToState(Lifecycle.State.CREATED)
@@ -56,7 +57,7 @@ class PutAwayTest {
         val kept = AtomicReference<WebHost?>(null)
         val bridgeRef = AtomicReference<FoxyBridge?>(null)
         ActivityScenario.launch(MainActivity::class.java).use { s ->
-            assertTrue(Page.until(s, Page.BOOTED, 90_000))
+            assertTrue(Page.until(s, Page.STARTED, 90_000))
             // the bridge as it was while the page was up: WebHost.destroy() nulls its own field
             s.onActivity {
                 kept.set(it.host)

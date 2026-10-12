@@ -127,10 +127,21 @@ allowlisted, plus the WebRTC removal in every frame.
   stubs* (`conformance/test/flows.test.js`) boots on exactly that host and is
   the one to run against the Kotlin bridge in P1; an action of a later phase
   with no stub fails it.
+- **P2 answers.** The P2 host (ENG-648) serves the 18 P1 actions and the seven
+  P2 ones (`privacy`, `torRetry`, `unprotected`, `mintRequest`, `price`,
+  `candles`, `hostsKnown`) and answers the `p1` stub of every P3 and LATER
+  action that has one: `captured`, `seedProtection` (stubbed in P2: a host that
+  connects reaches the home screen, which asks it), and `orbotRefresh` and
+  `orbotAccess`, which are LATER on Android (ANDROID-MAPPING decision 3, Orbot
+  is `none`). The Kotlin table emits only those stubs (`ContractStubs`, from
+  this file). The flow *P2: a host serving P1 and P2 actions …*
+  (`conformance/test/flows.test.js`) goes from connecting to up, mints and
+  melts, and fails on any later action with no stub.
 - **Native pushes the route first.** iOS starts Tor before the page loads and
   pushes `_privacy` on every change (`FoxyBridge.swift:89-118`, `startTor`); the
-  page also asks `privacy`. Android: push `_privacy` as soon as the page has
-  loaded and on every Tor, Orbot or network change.
+  page also asks `privacy`. Android: `_privacy` is pushed on every change of
+  Tor's or of the network (`Tor.onChange`, `NetworkKind`), through the bridge's
+  one evaluate path; there is no Orbot to push.
 - **One seed change at a time.** `seedCreate`, `seedMigrate`, `seedAdopt` and
   `seedWipe` are refused while another waits (`FoxyBridge.swift:225-234`), with
   "Another change to the seed is still waiting. Nothing was changed.".
@@ -143,7 +154,8 @@ allowlisted, plus the WebRTC removal in every frame.
   after 0.4 s poll `_tidying` and the requests in flight every 0.25 s; leave
   the network once no money request is out (20 s at most) and other requests
   have had 3 s (`Route.swift:200-206`); shut the door (nothing new leaves); hold
-  Tor while the OS allows, then park it.
+  Tor while the OS allows, then park it. Android has no such allowance: Tor is
+  parked as soon as the waiting ends (`web/PutAway.kt`).
 - **Coming back** (`FoxyWebView.swift:1106-1147`): open the door, drop the
   seed kept for the putting-away, push `__foxyUptime`, tell Tor
   (`torResumed`), then push `_resumed(secondsAway)`. Take the cover off at once
@@ -384,24 +396,24 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Timing:** The page waits up to 600 s for an on=true answer (a person is reading an alert).
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:397`, `Foxy/Bridge/FoxyBridge.swift:878-902`, `Foxy/Bridge/FoxyBridge.swift:252-264`, `Foxy/Network/Route.swift:42-45`
 
-#### `orbotRefresh` — P2
+#### `orbotRefresh` — LATER
 
 - **Shape:** page → native, action: `{ action: "orbotRefresh", id }`
 - **Payload:** —
 - **Called from:** `Web/foxy-wallet.js:14700`
 - **Native:** Poll Orbot now instead of on its 15 s timer; answers OrbotLink.name.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "none" / "needs-access" / "bypass"
-- **In P1:** `none`. No Orbot link until P2.
+- **In P1:** `none`. No Orbot link on Android yet (ANDROID-MAPPING decision 3): Orbot is reported as none.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:393`, `Foxy/Bridge/FoxyBridge.swift:847-851`, `Foxy/Network/OrbotLink.swift:79-85`
 
-#### `orbotAccess` — P2
+#### `orbotAccess` — LATER
 
 - **Shape:** page → native, action: `{ action: "orbotAccess", id }`
 - **Payload:** —
 - **Called from:** `Web/foxy-wallet.js:14704`
 - **Native:** Opens Orbot's own permission flow for a key with bypass.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "opened" / "no"
-- **In P1:** `no`. No Orbot link until P2: nothing is opened.
+- **In P1:** `no`. No Orbot link on Android yet (ANDROID-MAPPING decision 3): nothing is opened.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:392`, `Foxy/Bridge/FoxyBridge.swift:834-838`
 
 #### `_privacy` — P2
@@ -561,6 +573,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Called from:** `Web/foxy-wallet.js:25133`
 - **Native:** Which protection the person chose: "device" (behind biometric/credential) or "none".
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {mode: string, passcode: boolean}
+- **In P1:** `{"mode":"none","passcode":true}`. Before P3 the seed is kept under protection none only (SeedVault, P1); device protection and the passcode question come with BiometricPrompt in P3. Asked as the wallet's home screen opens, so a host that connects (P2) meets it.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:390`, `Foxy/Bridge/NativeSeedBridge.swift:260-262`, `Foxy/Keychain/SeedStore.swift:521-524`
 
 #### `seedProtect` — P3
@@ -1234,8 +1247,8 @@ kind, domain, phase, payloadSchema, reply, iosRef, pageRef, behaviour, timing? }
 | `privacy` | page → native | action | P2 | — | json {tor: string, progress: integer, everUp: boolean, unprotected: boolean, transport: string, orbot: string, firstSetup: boolean, vpn: boolean, orbotKey: boolean, network: string} | Foxy/Bridge/FoxyBridge.swift:394 |
 | `torRetry` | page → native | action | P2 | — | json {tor: string, progress: integer, everUp: boolean, unprotected: boolean, transport: string, orbot: string, firstSetup: boolean, vpn: boolean, orbotKey: boolean, network: string} | Foxy/Bridge/FoxyBridge.swift:396 |
 | `unprotected` | page → native | action | P2 | `on`: boolean | json {tor: string, progress: integer, everUp: boolean, unprotected: boolean, transport: string, orbot: string, firstSetup: boolean, vpn: boolean, orbotKey: boolean, network: string} | Foxy/Bridge/FoxyBridge.swift:397 |
-| `orbotRefresh` | page → native | action | P2 | — | "none" / "needs-access" / "bypass" | Foxy/Bridge/FoxyBridge.swift:393 |
-| `orbotAccess` | page → native | action | P2 | — | "opened" / "no" | Foxy/Bridge/FoxyBridge.swift:392 |
+| `orbotRefresh` | page → native | action | LATER | — | "none" / "needs-access" / "bypass" | Foxy/Bridge/FoxyBridge.swift:393 |
+| `orbotAccess` | page → native | action | LATER | — | "opened" / "no" | Foxy/Bridge/FoxyBridge.swift:392 |
 | `mintRequest` | page → native | action | P2 | `url`: string, `method`: string, `headers`: object\|null, `circuit`: string, `body`: string | "<HTTP status>\n<body>" | Foxy/Bridge/FoxyBridge.swift:398 |
 | `price` | page → native | action | P2 | `agree`: boolean? | text (USD per BTC as a decimal string; "" with an error when none answered) | Foxy/Bridge/FoxyBridge.swift:363 |
 | `candles` | page → native | action | P2 | `g`: integer, `span`: integer | JSON array of array of [unixSeconds, close] number pairs, oldest first | Foxy/Bridge/FoxyBridge.swift:364 |

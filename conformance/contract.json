@@ -365,11 +365,11 @@
     "kind": "action",
     "name": "orbotRefresh",
     "domain": "tor",
-    "phase": "P2",
+    "phase": "LATER",
     "p1": {
       "text": "none",
       "error": null,
-      "why": "No Orbot link until P2."
+      "why": "No Orbot link on Android yet (ANDROID-MAPPING decision 3): Orbot is reported as none."
     },
     "payloadSchema": {
       "fields": {
@@ -402,11 +402,11 @@
     "kind": "action",
     "name": "orbotAccess",
     "domain": "tor",
-    "phase": "P2",
+    "phase": "LATER",
     "p1": {
       "text": "no",
       "error": null,
-      "why": "No Orbot link until P2: nothing is opened."
+      "why": "No Orbot link on Android yet (ANDROID-MAPPING decision 3): nothing is opened."
     },
     "payloadSchema": {
       "fields": {
@@ -1285,6 +1285,11 @@
     "name": "seedProtection",
     "domain": "seed",
     "phase": "P3",
+    "p1": {
+      "text": "{\"mode\":\"none\",\"passcode\":true}",
+      "error": null,
+      "why": "Before P3 the seed is kept under protection none only (SeedVault, P1); device protection and the passcode question come with BiometricPrompt in P3. Asked as the wallet's home screen opens, so a host that connects (P2) meets it."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",

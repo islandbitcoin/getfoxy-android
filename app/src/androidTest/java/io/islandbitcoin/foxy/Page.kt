@@ -44,5 +44,14 @@ object Page {
         return eval(scenario, "window.__foxyTest")
     }
 
+    /** The P1 gate: no Tor, CANNOT CONNECT TO TOR with PROCEED OFFLINE. */
     const val BOOTED = "document.body && document.body.textContent.indexOf('CANNOT CONNECT TO TOR') >= 0 && document.body.textContent.indexOf('PROCEED OFFLINE') >= 0"
+
+    /**
+     * The page has booted, whatever Tor is doing: the gate is on one of its
+     * screens, or the wallet is up. P2 starts Tor with the page, so on a phone
+     * with a network the page is connecting or connected, not on the P1 gate.
+     */
+    const val STARTED = "!!(window.FoxyWallet && document.body && (typeof window.FoxyWallet._putAway === 'function' || window.FoxyWallet.connected === true ||" +
+        " /SECURING YOUR CONNECTION|CANNOT CONNECT TO TOR|PROCEED OFFLINE/.test(document.body.textContent)))"
 }

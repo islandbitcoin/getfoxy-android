@@ -31,6 +31,9 @@ import java.util.concurrent.TimeUnit
  * Worker's fetch, every one aimed at a loopback listener in the test package's
  * own process. The listener must record nothing. It first records a connection
  * of its own, so "nothing" is a count that could have been more.
+ *
+ * P2: the app holds INTERNET and runs Tor beside the page, so this is now the
+ * stronger test ENG-647 asked for: the walls hold with the permission granted.
  */
 @RunWith(AndroidJUnit4::class)
 class NetBlockTest {
@@ -75,6 +78,9 @@ class NetBlockTest {
 
     @Test
     fun nothingThePageTriesReachesTheListener() {
+        val target = InstrumentationRegistry.getInstrumentation().targetContext
+        assertEquals("the app holds INTERNET: the walls are what keep the page off it",
+            android.content.pm.PackageManager.PERMISSION_GRANTED, target.checkSelfPermission(android.Manifest.permission.INTERNET))
         // the control: the listener counts a connection made from its own process
         service!!.send(Message.obtain(null, ListenerService.SELF))
         val end = SystemClock.elapsedRealtime() + 10_000
@@ -87,7 +93,7 @@ class NetBlockTest {
         val host = "127.0.0.1:" + before.getInt(ListenerService.KEY_PORT)
 
         ActivityScenario.launch(MainActivity::class.java).use { s ->
-            assertTrue(Page.until(s, Page.BOOTED, 90_000))
+            assertTrue(Page.until(s, Page.STARTED, 90_000))
             val report = Page.async(s, """
                 const host = '$host';
                 const r = [];

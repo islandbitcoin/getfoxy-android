@@ -70,12 +70,14 @@ abstract class GenerateContractStubs : DefaultTask() {
             }
             return out.append('"').toString()
         }
-        val stubs = entries.filter { it["kind"] == "action" && it["p1"] != null }.sortedBy { it["name"] as String }
+        val served = setOf("P1", "P2")
+        val stubs = entries.filter { it["kind"] == "action" && it["p1"] != null && it["phase"] !in served }
+            .sortedBy { it["name"] as String }
         val text = buildString {
             appendLine("// Generated from conformance/contract.json by :app:generateContractStubs. Do not edit.")
             appendLine("package io.islandbitcoin.foxy.bridge")
             appendLine()
-            appendLine("/** The `p1` answers of conformance/contract.json: what a P1 host says to a later phase's action. */")
+            appendLine("/** The `p1` answers of conformance/contract.json for the phases after P2: what this host says to a later phase's action. */")
             appendLine("internal object ContractStubs {")
             appendLine("    class Stub(val text: String?, val error: String?)")
             appendLine()

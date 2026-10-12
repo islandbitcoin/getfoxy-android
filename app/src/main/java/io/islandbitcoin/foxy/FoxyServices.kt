@@ -1,24 +1,34 @@
 package io.islandbitcoin.foxy
 
+import android.app.Activity
 import android.app.KeyguardManager
 import android.content.Context
+import io.islandbitcoin.foxy.bridge.NetEnvironment
+import io.islandbitcoin.foxy.bridge.PromptQueue
 import io.islandbitcoin.foxy.debug.Log
 import io.islandbitcoin.foxy.keychain.BIP39
 import io.islandbitcoin.foxy.keychain.BIP39.generate
 import io.islandbitcoin.foxy.keychain.CounterStore
 import io.islandbitcoin.foxy.keychain.Flags
 import io.islandbitcoin.foxy.keychain.KeystoreSeedKeys
+import io.islandbitcoin.foxy.keychain.SealedFile
 import io.islandbitcoin.foxy.keychain.SeedCandidates
 import io.islandbitcoin.foxy.keychain.SeedEnvironment
 import io.islandbitcoin.foxy.keychain.SeedMigrationWindow
 import io.islandbitcoin.foxy.keychain.SeedVault
+import io.islandbitcoin.foxy.network.HostApprovals
+import io.islandbitcoin.foxy.network.Route
+import io.islandbitcoin.foxy.tor.Tor
+import io.islandbitcoin.foxy.tor.TorTransport
+import java.lang.ref.WeakReference
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
  * What lives as long as the process: the seed vault, the counter file, the
- * migration window and the one seed executor. Everything that is the wallet's
- * is in `noBackupFilesDir` (S1).
+ * migration window, the one seed executor, the one queue of native questions
+ * and the host approvals. Everything that is the wallet's is in
+ * `noBackupFilesDir` (S1).
  */
 class FoxyServices(context: Context) {
     private val app = context.applicationContext
@@ -50,6 +60,45 @@ class FoxyServices(context: Context) {
 
     private val keyguard = app.getSystemService(KeyguardManager::class.java)
 
+    /** The activity in front, which native dialogs are shown on; none, and every question is a no. */
+    @Volatile private var front: WeakReference<Activity>? = null
+
+    fun inFront(activity: Activity) {
+        front = WeakReference(activity)
+    }
+
+    fun gone(activity: Activity) {
+        if (front?.get() === activity) front = null
+    }
+
+    /** Every native yes-or-no, one at a time (NativePrompts.swift). Main thread. */
+    val prompts = PromptQueue(PromptQueue.dialogs { front?.get() })
+
+    /** Hosts Foxy may contact; approvals sealed with their own Keystore key (S13). Main thread. */
+    val approvals: HostApprovals by lazy {
+        val keys = KeystoreSeedKeys(app, HOSTS_KEY)
+        HostApprovals(
+            SealedFile(directory.resolve("foxy-hosts-allowed.v1.bin"), keys, "foxy.hosts.allowed.v1"),
+            SealedFile(directory.resolve("foxy-hosts-carried.v1.bin"), keys, "foxy.hosts.carried.v1"),
+            prompts,
+        )
+    }
+
+    /** What the P2 actions use: Tor, Route, the approvals and the dialogs. */
+    fun net(after: (Long, () -> Unit) -> Unit): NetEnvironment = NetEnvironment(
+        torRunning = { Tor.isRunning },
+        bridged = { Tor.isRunning && Tor.transport != TorTransport.DIRECT },
+        snapshot = { Tor.snapshot() },
+        restartTor = { Tor.restart(it) },
+        unprotected = { Route.unprotected },
+        setUnprotected = { Route.unprotected = it },
+        available = { Route.available },
+        approvals = approvals,
+        prompts = prompts,
+        send = { request, circuit, done -> Route.start(request, circuit, done)?.let { call -> { call.cancel() } } },
+        after = after,
+    )
+
     fun environment(): SeedEnvironment = SeedEnvironment(
         savedSeed = { vault.seedForSecrets() },
         seedPresent = { vault.isThere() },
@@ -67,5 +116,8 @@ class FoxyServices(context: Context) {
     companion object {
         /** The one seed executor's thread; the vault's disk calls run there and nowhere else. */
         const val SEED_THREAD = "foxy-seed"
+
+        /** The host approvals' Keystore key, apart from the seed's. */
+        const val HOSTS_KEY = "foxy.hosts.v1"
     }
 }
