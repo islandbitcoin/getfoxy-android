@@ -157,6 +157,39 @@ class OwnPromptTest {
         }
     }
 
+    /**
+     * A cancel is not Foxy's own question answered: whoever is at the
+     * confirmation may not be the person who asked (the owner left from it and
+     * someone came back to Foxy from Recents). Back on the confirmation after
+     * more than a second puts away what the stop skipped (the vault's epoch
+     * moves) and is a return (`_resumed`, which PIN-locks the page).
+     */
+    @Test
+    fun aCancelledConfirmationIsAReturnAndPutsAway() {
+        val pin = pinOrSkip()
+        ActivityScenario.launch(MainActivity::class.java).use { _ ->
+            Route.openDoor()
+            try {
+                guardOn(pin)
+                onSeedThread { services.vault.forgetNativeSeed() }.get()
+                val epoch = services.vault.epochNow
+                FieldLog.clear()
+                val read = onSeedThread { services.vault.seedForSecrets() }
+                assertTrue("the screen-lock confirmation came up", waitFor(10_000) { services.auth.confirming })
+                SystemClock.sleep(2_500)
+                shell("input keyevent 4")
+                assertTrue("the confirmation answered", waitFor(10_000) { !services.auth.confirming })
+                assertFalse("no seed for a cancel", read.get() is SeedVault.SecretsSeed.Found)
+                assertTrue("the skipped put-away ran: the epoch moved", waitFor(5_000) { services.vault.epochNow > epoch })
+                assertFalse("the door is open again", Route.shut())
+                assertTrue("PutAway took the cancel as a return",
+                    FieldLog.lines().any { it.text.contains("back from the confirmation, not given") })
+            } finally {
+                guardOffIfOn(pin)
+            }
+        }
+    }
+
     /** SHOW WORDS of a `device` seed opens once the screen lock is given (it used to answer verified:false, no screen). */
     @Test
     fun seedShowUnderTheScreenLockOpensTheWords() {

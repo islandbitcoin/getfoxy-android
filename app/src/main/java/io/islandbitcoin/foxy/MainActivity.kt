@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
     var host: WebHost? = null
         private set
     private var putAway: PutAway? = null
+    private var confirmAnswered: ((Boolean) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
@@ -97,6 +98,10 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         // Settings' screen-lock confirmation (API 28-29) stops this activity: Foxy's own question, not a put-away
         val away = PutAway({ host }, services.vault, ownPrompt = { services.auth.confirming })
         putAway = away
+        // only a yes proves the stop was Foxy's own question; a no or a cancel is a return, and the PIN lock comes back
+        val answered: (Boolean) -> Unit = { away.promptAnswered(it) }
+        confirmAnswered = answered
+        services.auth.confirmAnswered = answered
         ProcessLifecycleOwner.get().lifecycle.addObserver(away)
 
         // native questions are asked on this activity; Tor starts as iOS starts it, with the web view
@@ -201,6 +206,8 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
             confirmed = null
             it(false)
         }
+        if (services.auth.confirmAnswered === confirmAnswered) services.auth.confirmAnswered = null
+        confirmAnswered = null
         putAway?.let {
             it.cancel()
             ProcessLifecycleOwner.get().lifecycle.removeObserver(it)

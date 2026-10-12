@@ -62,6 +62,15 @@ class DeviceAuth(private val app: Context, private val front: () -> Activity?) :
     @Volatile var confirming: Boolean = false
         private set
 
+    /**
+     * Told each screen-lock confirmation's answer (true for a yes), on the main
+     * thread, as [confirming] clears: PutAway (MainActivity). A stop under the
+     * confirmation was let be on the chance it was Foxy's own question; only a
+     * yes proves that, so a no or a cancel is a return like any other and
+     * PutAway puts away what it skipped (the PIN lock comes back).
+     */
+    @Volatile var confirmAnswered: ((Boolean) -> Unit)? = null
+
     // MARK: SeedGate (the seed executor)
 
     override fun open(reason: String, credential: Boolean, fresh: Boolean, cipher: () -> Cipher): SeedGate.Answer {
@@ -234,6 +243,7 @@ class DeviceAuth(private val app: Context, private val front: () -> Activity?) :
                 confirming = true
                 val started = start(intent) { yes ->
                     confirming = false
+                    confirmAnswered?.invoke(yes)
                     done(if (yes) Result.YES else Result.NO)
                 }
                 if (!started) {

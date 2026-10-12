@@ -49,9 +49,13 @@ class PutAway(
     private val sched: TorScheduler = MainLooper,
     /**
      * True while Foxy's own screen-lock confirmation is up (DeviceAuth.confirming,
-     * API 28-29): Settings' activity over Foxy stops it, and that stop is not a
-     * put-away. The seed being read, the seed screen about to open, a candidate
-     * and the door are let be, for [PROMPT_AT_MOST_MS] at most.
+     * API 28-29): Settings' activity over Foxy stops it, and that stop may not be
+     * a put-away. The seed being read, the seed screen about to open, a candidate
+     * and the door are let be until the confirmation answers ([promptAnswered]),
+     * [PROMPT_AT_MOST_MS] at most. Only a yes proves the person at the screen
+     * lock is the one who asked: a no or a cancel (the person may have left from
+     * the prompt and someone else come back to it) puts away what was skipped
+     * and is a return like any other, so the page PIN-locks (`_resumed`).
      */
     private val ownPrompt: () -> Boolean = { false },
 ) : DefaultLifecycleObserver {
@@ -84,6 +88,13 @@ class PutAway(
          * own wait, after which its answer is a no (DeviceAuth.ANSWER_WAIT_MS).
          */
         const val PROMPT_AT_MOST_MS = 120_000L
+
+        /**
+         * Back from a stop under the confirmation with no answer yet (the result
+         * comes after ProcessLifecycleOwner's start): an answer not in by then
+         * counts as a no.
+         */
+        const val ANSWER_AT_MOST_MS = 2_000L
     }
 
     /** The main looper, as [TorScheduler]: every timer cancellable. */
@@ -108,6 +119,15 @@ class PutAway(
     /** The last stop was under Foxy's own confirmation, and nothing was put away for it. */
     private var promptStop = false
 
+    /** When that stop came, for the seconds away of a return the confirmation did not prove. */
+    private var promptStoppedAt = 0L
+
+    /** The confirmation answered while Foxy was still stopped under it (true for a yes). */
+    private var promptAnswer: Boolean? = null
+
+    /** Back from a stop under the confirmation, its answer not in yet: nothing is decided until it is. */
+    private var awaitingAnswer = false
+
     private fun after(ms: Long, r: () -> Unit) {
         timers.add(sched.after(ms, r))
     }
@@ -123,16 +143,26 @@ class PutAway(
 
     /** Foxy is put away (ProcessLifecycleOwner's stop), unless the stop is Foxy's own confirmation. */
     fun away() {
+        if (awaitingAnswer) {
+            // gone again before the confirmation answered: the return proved nothing, so this is a put-away
+            awaitingAnswer = false
+            promptAnswer = null
+            cancelTimers()
+            return awayNow(promptStoppedAt)
+        }
         if (ownPrompt()) {
-            Log.line("[foxy] put away: the screen lock's confirmation is over Foxy; nothing is put away for it")
+            Log.line("[foxy] put away: the screen lock's confirmation is over Foxy; nothing is put away for it until it answers")
             promptStop = true
+            promptStoppedAt = sched.now()
+            promptAnswer = null
             parkRun += 1
             val run = parkRun
             after(PROMPT_AT_MOST_MS) {
                 if (run == parkRun && promptStop) {
                     Log.line("[foxy] put away: still away ${PROMPT_AT_MOST_MS / 1000}s after the confirmation; putting away")
                     promptStop = false
-                    awayNow()
+                    promptAnswer = null
+                    awayNow(promptStoppedAt)
                 }
             }
             return
@@ -140,8 +170,44 @@ class PutAway(
         awayNow()
     }
 
-    private fun awayNow() {
-        backgroundedAt = sched.now()
+    /**
+     * The screen-lock confirmation's answer (DeviceAuth.confirmAnswered), main
+     * thread. Ignored unless a stop was let be for it.
+     */
+    fun promptAnswered(yes: Boolean) {
+        when {
+            awaitingAnswer -> settle(yes)
+            // still stopped: kept for the return, which decides (the 120 s still puts away)
+            promptStop -> promptAnswer = yes
+        }
+    }
+
+    /** Back from a stop under the confirmation, with its answer. */
+    private fun settle(yes: Boolean) {
+        awaitingAnswer = false
+        promptAnswer = null
+        parkRun += 1
+        cancelTimers()
+        if (yes) {
+            // the screen lock was given: the person who asked is the one back, nothing was put away
+            Log.line("[foxy] put away: back from the confirmation, given; nothing was put away")
+            return
+        }
+        // not proved: what the stop skipped is put away now, and the page hears a return (and PIN-locks)
+        val away = maxOf(0L, (sched.now() - promptStoppedAt) / 1000)
+        Log.line("[foxy] put away: back from the confirmation, not given; a return after ${away}s")
+        vault.putAway()
+        vault.endLeaving()
+        host()?.letGo()
+        Route.openDoor()
+        // Tor was never taken off the network for this stop: there is nothing to set up again
+        val h = host() ?: return
+        h.pushUptime()
+        h.evaluate("window.FoxyWallet && window.FoxyWallet._resumed($away)")
+    }
+
+    private fun awayNow(since: Long = sched.now()) {
+        backgroundedAt = since
         vault.putAway()
         FieldLog.saveForNextRun()
         host()?.keepAwake(false)
@@ -211,10 +277,20 @@ class PutAway(
         val first = !startedOnce
         startedOnce = true
         if (promptStop) {
-            // back from Foxy's own confirmation: nothing was put away, so nothing comes back
+            // back from under Foxy's own confirmation: nothing was put away; its answer decides whether anything comes back
             promptStop = false
             parkRun += 1
             cancelTimers()
+            val answer = promptAnswer
+            if (answer != null) return settle(answer)
+            awaitingAnswer = true
+            val run = parkRun
+            after(ANSWER_AT_MOST_MS) {
+                if (run == parkRun && awaitingAnswer) {
+                    Log.line("[foxy] put away: the confirmation did not answer in ${ANSWER_AT_MOST_MS}ms after the return; taken as no")
+                    settle(false)
+                }
+            }
             return
         }
         // back: a putting-away still waiting stops here, and requests may leave again
@@ -234,6 +310,7 @@ class PutAway(
     /** The activity is going: no timer outlives it. */
     fun cancel() {
         parkRun += 1
+        awaitingAnswer = false
         cancelTimers()
     }
 }

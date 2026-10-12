@@ -165,7 +165,13 @@ allowlisted, plus the WebRTC removal in every frame.
   the network once no money request is out (20 s at most) and other requests
   have had 3 s (`Route.swift:200-206`); shut the door (nothing new leaves); hold
   Tor while the OS allows, then park it. Android has no such allowance: Tor is
-  parked as soon as the waiting ends (`web/PutAway.kt`).
+  parked as soon as the waiting ends (`web/PutAway.kt`). Android only, API
+  28-29: the screen-lock confirmation Foxy itself starts is Settings' activity
+  over Foxy and stops it; that stop drops nothing until the confirmation
+  answers (120 s at most). A yes carries on with nothing put away; a no, a
+  cancel, or no answer within 2 s of the return puts away what was skipped
+  and is a return like any other below (`_resumed(secondsAway)`, so the page
+  PIN-locks).
 - **Coming back** (`FoxyWebView.swift:1106-1147`): open the door, drop the
   seed kept for the putting-away, push `__foxyUptime`, tell Tor
   (`torResumed`), then push `_resumed(secondsAway)`. Take the cover off at once
