@@ -53,6 +53,11 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
     private val main = Handler(Looper.getMainLooper())
     private var cover: SplashCover? = null
 
+    /** The cover's view while it is up, and whether it is (SplashCoverViewTest). */
+    internal var coverView: ImageView? = null
+        private set
+    internal val coverUp: Boolean get() = cover?.isUp == true
+
     private val cameraAsked = ArrayList<(Boolean) -> Unit>()
     private val cameraLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val waiting = cameraAsked.toList()
@@ -150,8 +155,12 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
             Log.line("[foxy] splash still not read: ${e.javaClass.simpleName}")
         }
         container.addView(image, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        coverView = image
         return SplashCover { fadeMs ->
-            image.animate().alpha(0f).setDuration(fadeMs).withEndAction { container.removeView(image) }
+            image.animate().alpha(0f).setDuration(fadeMs).withEndAction {
+                container.removeView(image)
+                coverView = null
+            }
         }
     }
 

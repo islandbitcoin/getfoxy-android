@@ -78,12 +78,14 @@ class SeedType(val sizeSp: Float, val weight: Int, val kern: Float = 0f) {
  * spaced capitals for titles and buttons ([SeedType]). Plain Views (ENG-649 decision 4).
  */
 object SeedStyle {
-    val BACKGROUND = Color.rgb(10, 10, 10)
-    val INK = Color.rgb(245, 241, 236)
-    val ACCENT = Color.rgb(242, 128, 46)
-    val RED = Color.rgb(255, 92, 92)
-    val TILE = Color.rgb(23, 23, 26)
-    val PLACED = Color.rgb(42, 42, 46)
+    // opaque ARGB, written out so the JVM tests can read them (SeedColoursTest): BACKGROUND, INK, ACCENT,
+    // RED and TILE are also res/values/colors.xml's seed_background, ink, accent, danger and dialog_background
+    const val BACKGROUND = 0xFF0A0A0A.toInt()
+    const val INK = 0xFFF5F1EC.toInt()
+    const val ACCENT = 0xFFF2802E.toInt()
+    const val RED = 0xFFFF5C5C.toInt()
+    const val TILE = 0xFF17171A.toInt()
+    const val PLACED = 0xFF2A2A2E.toInt()
 
     /** The system font at a CSS weight (API 28). */
     fun face(weight: Int): Typeface = Typeface.create(Typeface.DEFAULT, weight, false)

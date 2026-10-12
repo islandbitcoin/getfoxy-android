@@ -33,11 +33,15 @@ object Notifier {
 
     /**
      * The new channel's importance: high, unless the person had turned the
-     * old one off in Settings (IMPORTANCE_NONE), which carries over: a new id
-     * is not a way round their no.
+     * old one down in Settings. "payments" was made at IMPORTANCE_DEFAULT, so
+     * anything below that (LOW, MIN, or NONE, off) was the person's, and the
+     * lowest of those carries over: a new id is not a way round their no, and
+     * a quieter channel is a no to the sound and the heads-up.
      */
-    fun importanceFor(retiredImportances: Collection<Int>): Int =
-        if (retiredImportances.any { it == NotificationManager.IMPORTANCE_NONE }) NotificationManager.IMPORTANCE_NONE else IMPORTANCE
+    fun importanceFor(retiredImportances: Collection<Int>): Int {
+        val lowered = retiredImportances.filter { it < NotificationManager.IMPORTANCE_DEFAULT }
+        return if (lowered.isEmpty()) IMPORTANCE else lowered.min()
+    }
 
     /** The channel, once per process (Application.onCreate), and the retired ones deleted. */
     fun createChannel(context: Context) {

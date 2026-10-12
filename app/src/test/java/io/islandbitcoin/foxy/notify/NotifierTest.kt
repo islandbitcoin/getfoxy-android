@@ -11,8 +11,8 @@ import org.junit.Test
  * (ForegroundNotifications.swift `[.banner, .sound]`). Android keeps the
  * importance a channel was made with, so an upgraded phone would keep the
  * old default-importance "payments" for ever: the high channel has an id of
- * its own and the old one is deleted, but a channel the person turned off
- * stays off.
+ * its own and the old one is deleted, but a channel the person turned down
+ * (LOW, MIN) or off stays so.
  */
 class NotifierTest {
     @Test
@@ -28,8 +28,19 @@ class NotifierTest {
         assertEquals("nothing before it", NotificationManager.IMPORTANCE_HIGH, Notifier.importanceFor(emptyList()))
         assertEquals("the old channel at its default", NotificationManager.IMPORTANCE_HIGH,
             Notifier.importanceFor(listOf(NotificationManager.IMPORTANCE_DEFAULT)))
-        assertEquals("the person lowered it, but did not turn it off", NotificationManager.IMPORTANCE_HIGH,
+        assertEquals("the person raised it: still heads-up", NotificationManager.IMPORTANCE_HIGH,
+            Notifier.importanceFor(listOf(NotificationManager.IMPORTANCE_HIGH)))
+    }
+
+    @Test
+    fun aChannelThePersonTurnedDownStaysDown() {
+        // "payments" was made at DEFAULT, so anything below it was the person's: no sound, no heads-up after the upgrade
+        assertEquals("silenced (LOW) stays silent", NotificationManager.IMPORTANCE_LOW,
             Notifier.importanceFor(listOf(NotificationManager.IMPORTANCE_LOW)))
+        assertEquals("minimised (MIN) stays minimised", NotificationManager.IMPORTANCE_MIN,
+            Notifier.importanceFor(listOf(NotificationManager.IMPORTANCE_MIN)))
+        assertEquals("the lowest of several carries over", NotificationManager.IMPORTANCE_MIN,
+            Notifier.importanceFor(listOf(NotificationManager.IMPORTANCE_DEFAULT, NotificationManager.IMPORTANCE_LOW, NotificationManager.IMPORTANCE_MIN)))
     }
 
     @Test
