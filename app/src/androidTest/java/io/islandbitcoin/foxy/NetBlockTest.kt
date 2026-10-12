@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * S8: the page has no network. The iOS -FoxyNetBlockTest set
- * (FoxyWebView.swift:529-585) run from the real page in the real WebView: fetch,
+ * (FoxyWebView.swift:553-609) run from the real page in the real WebView: fetch,
  * WebSocket, preconnect, DNS prefetch, prefetch, an image, a beacon and a
  * Worker's fetch, every one aimed at a loopback listener in the test package's
  * own process. The listener must record nothing. It first records a connection

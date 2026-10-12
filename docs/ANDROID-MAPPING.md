@@ -1,6 +1,6 @@
 # ANDROID-MAPPING.md — each iOS component, and what it becomes
 
-The iOS app (getfoxy/iOS `5581c963dd29b28ebec547473ada532873d49a77`) is a
+The iOS app (getfoxy/iOS `8df0bb19992cceda44d04e947bce211e1415975e`) is a
 WKWebView host around the page plus a Swift bridge. The Android app is the same
 shape: a Kotlin host around an Android System WebView running `core/web`
 unchanged, and a Kotlin bridge implementing `docs/BRIDGE.md`. This table takes
@@ -41,7 +41,8 @@ phone), **LATER** (onion inbox, Nostr, Bluetooth tap, NFC card).
 | `Foxy/Debug/FieldLog.swift` | in-memory log for the ERRORS/LOGS screens, redacting tokens, invoices, requests, onion addresses, keys and long hex; a subset saved for the next run | `FieldLog.kt`: same ring and redaction regexes (ported with tests), last-run file in `noBackupFilesDir`, never logcat in release | P1 |
 | `Foxy/Debug/Print.swift` | `print` reaches only FieldLog in release | a `log()` wrapper: logcat in debug, FieldLog only in release; R8 strips `android.util.Log` calls in release | P1 |
 | `Foxy/Debug/DebugLog.swift`, `ResumeDiagnostics.swift`, `KeychainSelfTest.swift` | debug-only diagnostics, a file log, the Tor check | `src/debug` source set only; none in release | P1 (debug) |
-| `Foxy/Flashcard/` (`CardGate`, `CardLink`, `CardTime`) | card APDU gate, NFC link, interim signed time | Kotlin port; `IsoDep` link | LATER |
+| `Foxy/Flashcard/` (`CardGate`, `CardLink`, `CardTime`) | card APDU gate (31 instructions at 8df0bb1, with `0x1A` GET_DLEQ), NFC link, interim signed time | Kotlin port; `IsoDep` link | LATER |
+| `Foxy/Flashcard/CardAddress.swift`, `CardTapDelivery.swift` (since `9832f7d`) | a card held to the phone (its NDEF address `https://getfoxy.io/card`, or `foxy://card` in Debug) opens Foxy; the page is told `_cardTapped()`, kept until it can take it (not under a cover, not before `_resumed`), asked every 0.3 s, given up after 60 s, told once | an `NDEF_DISCOVERED` filter for `https://getfoxy.io/card` and a Kotlin port of the delivery rules with `CardTapDeliveryTests`; `foxy://card` is read today (`web/DeepLink.kt`) and only logged | LATER (ENG-668) |
 | `Foxy/Keychain/SeedStore.swift` | the seed in the keychain, this device only; two protections (`device`: `.userPresence`; `none`); three-way read (found/absent/failed); seed kept in memory for the visit; the putting-away window | `SeedVault.kt`: the words encrypted with an AES-256-GCM Keystore key (`setUnlockedDeviceRequired(true)`, StrongBox when `FEATURE_STRONGBOX_KEYSTORE`, else TEE), ciphertext in `noBackupFilesDir`; protection `device` uses a second key (`foxy.seed.device.v1`, its own file) with `setUserAuthenticationRequired(true)`: on API 30+ per use, through the framework `BiometricPrompt` (`BIOMETRIC_STRONG or DEVICE_CREDENTIAL`) with a `CryptoObject`; on API 28-29 a 10 s time-bound key opened by `KeyguardManager`'s screen-lock confirmation (`keychain/DeviceAuth.kt`); not invalidated by a new fingerprint; `none` uses the key without auth. A new install, and every P1/P2 install, is `none` until `seedProtect` moves it. Read answers found/absent/failed, never "absent" on an error. A first write cut off between keygen and the file rename leaves a key, no file and `foxy-seed.creating`; that reads absent and the orphan key is removed; a key without file and without the marker stays failed (iOS has no such window: one `SecItemAdd` is atomic). Because a read can remove that orphan key, `isThere`/`read`/`write` run on the `foxy-seed` executor only. Memory copy dropped on `onStop`, on page death, on write | P1 (`none`), P3 (`device`) |
 | `Foxy/Keychain/BIP39.swift`, `bip39-english.txt` | words from 128 bits of `SecRandomCopyBytes`; wordlist pinned by SHA-256 | `SecureRandom` (128 bits); the same wordlist as an asset, refused unless its SHA-256 is the pinned one; the BIP-39 vectors as JVM tests | P1 |
 | `Foxy/Keychain/NUT13.swift` | NUT-13 secrets: PBKDF2-SHA512 seed; HMAC-SHA256 for `01` keysets; BIP-32 on secp256k1 for `00` | `PBKDF2WithHmacSHA512` (JCA), `HmacSHA256`; BIP-32 with `fr.acinq.secp256k1:secp256k1-kmp-jni-android` (libsecp256k1, pinned); the spec vectors and iOS's 856 cashu-ts answers as JVM tests | P1 |
@@ -138,10 +139,10 @@ closed on Android by construction, not by a later fix:
    leave the device. Proved by a manifest test and an instrumented
    `bmgr backupnow` check (SECURITY-INVARIANTS.md S1).
 2. **A Lightning-address invoice was paid without checking its amount.** This
-   is the JS core's, and it is **already fixed at 5581c96**: `payLnurl`
+   is the JS core's, and it is **already fixed at 5581c96** (and still at 8df0bb1): `payLnurl`
    refuses an invoice whose amount is not exactly the one asked, to the
    millisat, and one whose description hash does not match the metadata
-   (`Web/foxy-wallet.js:18100-18125`; iOS REVIEW.md row 64, `tests/run.js`).
+   (`Web/foxy-wallet.js:18696-18721`; iOS REVIEW.md row 64, `tests/run.js`).
    Android ships that code byte for byte (`tools/verify-core.sh`).
 3. **A failed Tor check left traffic flowing.** Android: there is no page-side
    switch to forget; `Route.available` is false unless Tor is running or the
@@ -149,9 +150,9 @@ closed on Android by construction, not by a later fix:
    `Route` (ROUTE.md §2, §5). When Tor fails, nothing has a route; nothing
    falls back to direct. Conformance proves the page asks for nothing that
    needs a route while Tor is connecting or failed (`flows.test.js`).
-4. **Background pollers and the NUT-17 socket were not gated.** At 5581c96 the
-   page opens no socket (`Web/foxy-wallet.js:16674`) and its sweeps check
-   `routeOpen()` first (`Web/foxy-wallet.js:16911`); and native refuses every
+4. **Background pollers and the NUT-17 socket were not gated.** At 5581c96 (and 8df0bb1) the
+   page opens no socket (`Web/foxy-wallet.js:17248`) and its sweeps check
+   `routeOpen()` first (`Web/foxy-wallet.js:17485`); and native refuses every
    request without a route, shuts the door while the app is put away, and runs
    no background job. Android adds no `WorkManager`, alarm or foreground service.
 5. **Native price, chart and Tor-check requests had no tunnel precondition.**

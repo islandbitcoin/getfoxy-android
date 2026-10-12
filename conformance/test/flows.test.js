@@ -23,7 +23,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { boot, wait } = require('../lib/session');
-const { CONTRACT } = require('../lib/host');
+const { CONTRACT, snapshot } = require('../lib/host');
 
 const seen = new Map();
 const pushesSeen = new Set();
@@ -471,6 +471,144 @@ test('tap to pay and the card: their doors, with no radio', async () => {
     await W.tapPayStop();
     await W.cardStop();
     await W.cardSession('Tap behind the phone.', () => Promise.resolve(), {}).catch(() => {});
+  });
+});
+
+/* A card held to the phone (getfoxy/iOS 9832f7d): native says so with `_cardTapped`, a LATER
+ * push Android does not send until card-tap delivery is built (ENG-668). Until then the page
+ * hears nothing of it, and must boot, connect and run as it did before the push existed. */
+const cardTapLines = (s) => s.page.logs.map((l) => l.join(' ')).filter((l) => l.includes('[foxy] card tap:'));
+
+test('the card tap (_cardTapped, LATER): a page never told boots and runs, puts the call on its wallet, and opens no card', async () => {
+  await flow({ seed: true, tor: 'up' }, async (s) => {
+    const W = s.W, app = s.logic();
+    await s.until(() => W.connected === true, 30000, 'the page to connect with no _cardTapped push');
+    await s.until(() => s.host.asked.get('covered') > 0 && s.host.asked.get('price') > 0, 30000, 'covered and price, as any boot');
+    // bootWallet puts it on the wallet once the lock is decided (06-wallet-boot-and-restore.js); native asks until it answers true
+    await s.until(() => typeof W._cardTapped === 'function', 30000, 'the app to put _cardTapped on the wallet');
+    await s.settle(1000);
+    assert.equal(app.state.screen, 'home', 'booted to home');
+    assert.ok(!s.host.pushes.includes('_cardTapped'), 'nothing pushed _cardTapped');
+    assert.deepEqual(cardTapLines(s), [], 'the page heard of no card tap');
+    assert.ok(!s.host.asked.has('cardBegin'), 'and opened no card session');
+  });
+});
+
+test('the card tap (_cardTapped, LATER): answered true, kept while the gate is up, acted on at home once it goes; a P3 host may not send it', async () => {
+  // the intro film never ends in jsdom, and the custody notice would sit over home: both as already seen
+  const storage = { 'foxy.intro.seen': '2026-10-12', 'foxy.custody.told': JSON.stringify({ Minibits: true }) };
+  await flow({ seed: true, tor: 'up', storage }, async (s) => {
+    const W = s.W, d = s.window.document;
+    await s.until(() => W.connected === true && typeof W._cardTapped === 'function', 30000, 'connected, with _cardTapped on the wallet');
+    await s.until(() => d.getElementById('ftg-warn-go'), 30000, 'the first-launch warning');
+    // what native evaluates (CardAddress.pageCall), and its answer: true, the page has the request
+    assert.equal(s.host.push('_cardTapped'), true, 'the page answers true once it has the request');
+    assert.equal(s.host.push('_cardTapped'), true, 'a second tap while one waits is the same tap, still true');
+    await s.until(() => cardTapLines(s).length > 0, 5000, 'a card tap log line');
+    assert.match(cardTapLines(s)[0], /kept until Foxy is open, it is starting/);
+    assert.ok(!s.host.asked.has('cardBegin'), 'no card session under the gate');
+    // through the gate's first-install screens; then home, where nothing is in progress (cardTapRule): act
+    d.getElementById('ftg-warn-go').click();
+    await s.until(() => d.getElementById('ftg-bt-go'), 10000, 'the Bluetooth screen after PROCEED');
+    d.getElementById('ftg-bt-go').click();
+    await s.until(() => s.host.asked.get('cardBegin') > 0, 10000, 'the kept tap to open the card sheet once the gate has gone');
+    const lines = cardTapLines(s);
+    assert.ok(lines.some((l) => /ignored, one is already waiting/.test(l)), 'the second tap was the same one');
+    assert.ok(lines.some((l) => /opening the card screen from home, after \d+ s kept/.test(l)), 'acted on from home: ' + lines.join(' | '));
+  });
+  // no Android phase built today sends it: it is LATER
+  const p3 = await boot({ seed: true, tor: 'up', phase: 'P3' });
+  try {
+    await p3.settle(300);
+    p3.host.violations.length = 0;
+    p3.host.pushAs('_cardTapped');
+    assert.deepEqual(p3.host.violations.map((v) => v.kind), ['unserved'], 'a P3 host refuses to push the LATER _cardTapped');
+  } finally {
+    p3.close();
+  }
+});
+
+/* The send confirmation, read from what Android's host pushes (getfoxy/iOS 77d0908, d37df18).
+ *
+ * The page decides CHECKING… from `_privacy` alone (`routeComing`: tor 'connecting' or 'stuck',
+ * a network under it, not unprotected; build/wallet/02-dleq-lock-holds-imports.js:692), and
+ * NOT ENOUGH from the mint's fee quote against the balance (`payNeed`, build/app/01-ui-basics.js:341).
+ * Android's `_privacy` push is what these screens are drawn from: a push missing a field or
+ * saying a different word shows SEND while the route is still closed, or CHECKING… for good.
+ * The invoice is a real BOLT11 (tools/fake-invoice.js) so the page classifies and decodes it as
+ * it would one scanned; it is handed in through the `scan` action, as the camera hands it. */
+const { fakeInvoice } = require('../../tools/fake-invoice');
+const sendCta = (s) => { try { return s.logic().confirmSpec().cta; } catch (e) { return ''; } };
+const feeRow = (s) => { try { return (s.logic().confirmSpec().rows.find((r) => r.label === 'FEE') || {}).value; } catch (e) { return ''; } };
+
+async function fundedWallet(s, sats) {
+  const W = s.W;
+  await s.until(() => W.connected === true, 30000, 'connected');
+  const inv = await W.invoice(sats, 'conformance send');
+  assert.ok(await W.claim(inv.hash || inv.quote || inv.id), 'the invoice was claimed: minted');
+  s.logic().refreshBalance();
+  await s.until(() => s.logic().state.balSats === sats, 10000, 'the balance to read ' + sats);
+}
+
+/* What the camera hands the page, through native's `scan` (contract: scan), to the screen that takes it. */
+async function scanned(s, text) {
+  s.host.state.scanAnswer = text;
+  const got = await s.W.scan('Scan an invoice');
+  assert.equal(got, text, 'the scan answered the invoice');
+  s.logic().acceptTarget(got);
+}
+
+test('the send confirmation after a return: an invoice scanned while Tor reconnects reads CHECKING… and asks nothing, then SEND once _privacy says up', async () => {
+  const invoice = fakeInvoice(8);
+  await flow({ seed: true, tor: 'up', answers: { scan: (m, host) => [host.state.scanAnswer || 'cashuBconformance', null] } }, async (s) => {
+    const W = s.W, app = s.logic();
+    await fundedWallet(s, 64);
+    // back from the background: native tells the page (`_resumed`), and Tor is at work on a circuit again (`_privacy`)
+    s.host.pushAs('_resumed', 30);
+    s.host.state.tor = 'connecting';
+    s.host.state.progress = 40;
+    s.host.pushAs('_privacy', snapshot(s.host.state));
+    await s.until(() => W.routeComing() === true, 5000, 'the page to read a connection on its way from _privacy');
+    const before = routeActions(s), meltsBefore = s.host.mint.requests.filter((r) => r === 'POST /v1/melt/quote/bolt11').length;
+    await scanned(s, invoice);
+    await s.until(() => app.state.screen === 'sendConfirm', 10000, 'the invoice to go to the confirmation, not the offline card');
+    assert.equal(sendCta(s), 'CHECKING…', 'the button holds while the route is on its way');
+    assert.equal(feeRow(s), 'CHECKING…', 'and the FEE row says the same word');
+    assert.ok(shows(s, 'CHECKING…'), 'CHECKING… is on screen');
+    const end = Date.now() + 3000;
+    while (Date.now() < end) {
+      assert.equal(routeActions(s), before, 'nothing that needs a route was asked while Tor reconnected');
+      assert.equal(sendCta(s), 'CHECKING…', 'and the button stayed CHECKING…');
+      await wait(50);
+    }
+    assert.equal(s.host.mint.requests.filter((r) => r === 'POST /v1/melt/quote/bolt11').length, meltsBefore, 'no melt quote left');
+    // Tor up, pushed as native pushes it: the fee is asked by itself, and the button becomes SEND
+    s.torUp();
+    await s.until(() => /^SEND /.test(sendCta(s)), 20000, 'SEND once the route is up and the fee quoted');
+    assert.ok(s.host.mint.requests.filter((r) => r === 'POST /v1/melt/quote/bolt11').length > meltsBefore, 'the fee was quoted over mintRequest once the route opened');
+    assert.match(String(feeRow(s)), /^UP TO /, 'the FEE row reads the quote');
+    assert.ok(!s.host.mint.requests.includes('POST /v1/melt/bolt11'), 'and nothing was paid: SEND was not pressed');
+  });
+});
+
+test('the send confirmation: a quote the balance cannot cover reads NOT ENOUGH with its figures, and pressing it pays nothing', async () => {
+  // 64 sats held, an invoice for 64: the invoice fits, the fake mint's fee reserve (10, lib/mint.js) does not
+  const invoice = fakeInvoice(64);
+  await flow({ seed: true, tor: 'up', answers: { scan: (m, host) => [host.state.scanAnswer || 'cashuBconformance', null] } }, async (s) => {
+    const app = s.logic();
+    await fundedWallet(s, 64);
+    await scanned(s, invoice);
+    await s.until(() => app.state.screen === 'sendConfirm', 10000, 'the confirmation');
+    await s.until(() => sendCta(s) === 'NOT ENOUGH', 20000, 'NOT ENOUGH once the fee is quoted');
+    const spec = app.confirmSpec();
+    assert.equal(spec.ctaTone, 'warn');
+    assert.match(String(feeRow(s)), /^UP TO /, 'the quoted fee stays in its row');
+    assert.match(String(spec.warn), /this needs 7\d sats and you hold 64\./, 'the wallet\'s sentence at its figures: ' + spec.warn);
+    assert.ok(shows(s, 'NOT ENOUGH'), 'NOT ENOUGH is on screen');
+    spec.go();
+    await s.settle(500);
+    assert.equal(app.state.screen, 'sendConfirm', 'pressing it goes nowhere');
+    assert.ok(!s.host.mint.requests.includes('POST /v1/melt/bolt11'), 'and nothing was paid');
   });
 });
 

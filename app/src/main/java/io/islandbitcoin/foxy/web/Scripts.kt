@@ -2,7 +2,7 @@ package io.islandbitcoin.foxy.web
 
 /**
  * The scripts installed at document start, before any page script runs
- * (Foxy/FoxyWebView.swift:137-203, :378; docs/BRIDGE.md §1). The page itself is
+ * (Foxy/FoxyWebView.swift:137-203, :394; docs/BRIDGE.md §1). The page itself is
  * never edited: these are the only native words in the page.
  */
 object Scripts {

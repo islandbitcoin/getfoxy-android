@@ -1,7 +1,8 @@
 # Test fixtures from the iOS app
 
-Copied unchanged from getfoxy/iOS at `5581c963dd29b28ebec547473ada532873d49a77`
-(the commit in `core/PIN`), `tests/fixtures/`:
+Copied unchanged from getfoxy/iOS at `5581c963dd29b28ebec547473ada532873d49a77`,
+`tests/fixtures/`; the same bytes at `8df0bb19992cceda44d04e947bce211e1415975e`,
+the commit in `core/PIN`:
 
 | File | What | Made by (in the iOS repo) |
 |---|---|---|

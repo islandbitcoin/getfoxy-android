@@ -4,7 +4,7 @@ import java.net.URLDecoder
 
 /**
  * DEBUG BUILDS ONLY: `foxy://receive?amt=50&unit=sat&rail=cashu`, rebuilt from
- * a whitelist into the page's own hash (FoxyWebView.swift:476-507; BRIDGE.md
+ * a whitelist into the page's own hash (FoxyWebView.swift:492-531; BRIDGE.md
  * `deepLink`). The scheme is registered only in the debug manifest
  * (`app/src/debug/AndroidManifest.xml`), MainActivity reads a link only in a
  * debug build, and the page reads the parameters only where `FOXY_DEBUG` is
@@ -14,15 +14,37 @@ import java.net.URLDecoder
  * list and each parameter against what it may be; the hash is rebuilt from
  * what matched, so what reaches JavaScript is drawn from a fixed set plus
  * digits. Anything else is dropped without a word to the page.
+ *
+ * `foxy://card` is not a screen: it is a card held to the phone, said by hand
+ * (FoxyWebView.swift:497-508). It sets no hash and takes no parameters; iOS
+ * tells the page `FoxyWallet._cardTapped()` through CardTapDelivery. [read]
+ * names it [Link.CardTap]; until Android delivers card taps (ENG-668) the
+ * caller only logs it, and nothing reaches the page.
  */
 object DeepLink {
+    /** The screens whose link becomes a hash. */
     val SCREENS = listOf("home", "receive", "send", "token", "nfc", "split")
+
+    /** The one link that is not a screen: a card tap (`foxy://card`). */
+    const val CARD = "card"
+
+    /** What a link asks for: a screen, by the page's hash, or a card tap. */
+    sealed interface Link {
+        data class Screen(val hash: String) : Link
+        data object CardTap : Link
+    }
     private val AMOUNT = Regex("^[0-9]{1,9}([.][0-9]{1,2})?$")
     private val UNITS = setOf("sat", "sats", "usd")
     private val RAILS = setOf("lightning", "cashu", "onchain", "on-chain")
 
-    /** The hash for `link`, or null when it names no screen Foxy has. `ignored` hears each parameter dropped. */
-    fun hash(link: String, ignored: (String) -> Unit = {}): String? {
+    /** The hash for `link`, or null when it names no screen Foxy has (a card tap included). `ignored` hears each parameter dropped. */
+    fun hash(link: String, ignored: (String) -> Unit = {}): String? = (read(link, ignored) as? Link.Screen)?.hash
+
+    /**
+     * What `link` asks for, or null when it is no link of Foxy's. A card tap reads
+     * no parameters, so `ignored` hears none for it, as on iOS.
+     */
+    fun read(link: String, ignored: (String) -> Unit = {}): Link? {
         val colon = link.indexOf(':')
         if (colon < 0 || link.substring(0, colon).lowercase(java.util.Locale.ROOT) != "foxy") return null
         var rest = link.substring(colon + 1)
@@ -40,6 +62,7 @@ object DeepLink {
             else -> place.trimStart('/').substringBefore('/')
         }
         val target = named.lowercase(java.util.Locale.ROOT)
+        if (target == CARD) return Link.CardTap
         if (target !in SCREENS) return null
         val parts = arrayListOf("foxy=$target")
         if (query.isNotEmpty()) {
@@ -55,7 +78,7 @@ object DeepLink {
                 }
             }
         }
-        return parts.joinToString("&")
+        return Link.Screen(parts.joinToString("&"))
     }
 
     private fun decode(s: String): String? = try {

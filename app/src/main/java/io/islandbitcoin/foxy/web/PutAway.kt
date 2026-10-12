@@ -14,7 +14,7 @@ import io.islandbitcoin.foxy.tor.Tor
 import io.islandbitcoin.foxy.tor.TorScheduler
 
 /**
- * Putting Foxy away and bringing it back (docs/BRIDGE.md §2; FoxyWebView.swift:973-1147),
+ * Putting Foxy away and bringing it back (docs/BRIDGE.md §2; FoxyWebView.swift:999-1179),
  * driven by ProcessLifecycleOwner.
  *
  * Away: the seed kept only for the work of leaving, the field log's diary saved,
