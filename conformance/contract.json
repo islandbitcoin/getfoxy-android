@@ -1459,6 +1459,11 @@
     "name": "pasteStart",
     "domain": "clipboard",
     "phase": "P3",
+    "p1": {
+      "text": null,
+      "error": "Nothing to attach the button to.",
+      "why": "No native paste control before P3 (BRIDGE.md §4 item 4 decides it there): the page's own PASTE button stays. The page posts this without waiting on the answer, whenever a PASTE button is on screen, which a host that connects (P2) shows."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -1495,6 +1500,11 @@
     "name": "pasteStop",
     "domain": "clipboard",
     "phase": "P3",
+    "p1": {
+      "text": "",
+      "error": null,
+      "why": "Nothing to take down before P3; posted without waiting on the answer, as pasteStart is."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -2035,6 +2045,11 @@
     "name": "tapPayStart",
     "domain": "bluetooth",
     "phase": "LATER",
+    "p1": {
+      "text": null,
+      "error": "Stopped.",
+      "why": "No Bluetooth tap on Android before LATER: every search ends at once, as a stopped one does, and the page backs off its re-listen (up to a minute). A funded wallet's home screen listens with no one acting, so a host that connects (P2) meets it."
+    },
     "payloadSchema": {
       "fields": {
         "action": "string",

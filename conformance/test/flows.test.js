@@ -169,6 +169,13 @@ test('P2: a host serving P1 and P2 actions goes from connecting to up, mints and
     await W.pay('lnbc80n1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypq').catch(() => {});
     assert.ok(s.host.mint.requests.includes('POST /v1/melt/quote/bolt11'), 'a melt quote, over mintRequest');
     assert.ok(s.host.mint.requests.includes('POST /v1/melt/bolt11'), 'and the melt');
+    // a funded wallet's home listens for a tap (LATER): the stub ends each search at once
+    await assert.rejects(W.tapPay(), /Stopped\./);
+    // a PASTE button on screen asks for the native control (P3), without waiting on the answer
+    const pane = s.window.document.createElement('div');
+    pane.getBoundingClientRect = () => ({ left: 20, top: 400, width: 300, height: 60 });
+    assert.equal(W.startPasteButton(pane, () => {}), true);
+    W.stopPasteButton();
     // the gate's buttons a P2 host serves itself, and the two Orbot ones it stubs (LATER on Android)
     await W.torRetry();
     assert.equal(await W.orbotRefresh(), 'none');

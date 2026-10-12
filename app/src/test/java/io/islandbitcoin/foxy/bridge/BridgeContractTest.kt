@@ -63,7 +63,7 @@ class BridgeContractTest {
         val stubs = entries.filter { it["kind"] == "action" && it["p1"] != null && it["phase"] !in served }.map { it["name"] as String }.toSet()
         assertEquals(18, p1.size)
         assertEquals(setOf("privacy", "torRetry", "unprotected", "mintRequest", "price", "candles", "hostsKnown"), p2)
-        assertEquals(setOf("captured", "orbotRefresh", "orbotAccess", "seedProtection"), stubs)
+        assertEquals(setOf("captured", "orbotRefresh", "orbotAccess", "seedProtection", "tapPayStart", "pasteStart", "pasteStop"), stubs)
         assertEquals(p1, FoxyBridge.P1_ACTIONS)
         assertEquals(p2, FoxyBridge.P2_ACTIONS)
         assertEquals(stubs, ContractStubs.p1.keys)

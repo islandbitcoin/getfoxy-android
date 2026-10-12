@@ -130,10 +130,13 @@ allowlisted, plus the WebRTC removal in every frame.
 - **P2 answers.** The P2 host (ENG-648) serves the 18 P1 actions and the seven
   P2 ones (`privacy`, `torRetry`, `unprotected`, `mintRequest`, `price`,
   `candles`, `hostsKnown`) and answers the `p1` stub of every P3 and LATER
-  action that has one: `captured`, `seedProtection` (stubbed in P2: a host that
-  connects reaches the home screen, which asks it), and `orbotRefresh` and
-  `orbotAccess`, which are LATER on Android (ANDROID-MAPPING decision 3, Orbot
-  is `none`). The Kotlin table emits only those stubs (`ContractStubs`, from
+  action that has one: `captured`; `seedProtection`, `tapPayStart`,
+  `pasteStart` and `pasteStop`, stubbed in P2 because a host that connects
+  reaches the wallet's screens, which ask them with no one acting (the home
+  screen asks the protection, a funded one listens for a tap, a PASTE button on
+  screen asks for the native control, without waiting on the answer); and
+  `orbotRefresh` and `orbotAccess`, which are LATER on Android (ANDROID-MAPPING
+  decision 3, Orbot is `none`). The Kotlin table emits only those stubs (`ContractStubs`, from
   this file). The flow *P2: a host serving P1 and P2 actions …*
   (`conformance/test/flows.test.js`) goes from connecting to up, mints and
   melts, and fails on any later action with no stub.
@@ -698,6 +701,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Native:** iOS: a near-invisible UIPasteControl over the page's PASTE button (paste with no system prompt). Rect must be >30x20, <=90% width, <=50% height, inside the view, below its top third. The pasted text (never a seed phrase) is pushed with _pasted.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "Nothing to attach the button to."; "That is not a place a paste button goes."
+- **In P1:** the error "Nothing to attach the button to.". No native paste control before P3 (BRIDGE.md §4 item 4 decides it there): the page's own PASTE button stays. The page posts this without waiting on the answer, whenever a PASTE button is on screen, which a host that connects (P2) shows.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:403`, `Foxy/Bridge/FoxyBridge.swift:1163-1237`
 
 #### `pasteStop` — P3
@@ -707,6 +711,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Called from:** `Web/foxy-wallet.js:25693`
 - **Native:** Removes the paste control (kept a moment longer, not taking touches, while a paste prompt is up).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — ""
+- **In P1:** ``. Nothing to take down before P3; posted without waiting on the answer, as pasteStart is.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:404`, `Foxy/Bridge/FoxyBridge.swift:983-1016`
 
 #### `clipboard` — P3
@@ -931,6 +936,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Native:** Search for a receiver close enough to be touching and answer its offer plus the four-digit code both phones show; now=true only nudges a search already running and answers "ok".
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json-or-text {payload: string, code: string} or "ok"
 - **Errors:** "Started again."; "Stopped."
+- **In P1:** the error "Stopped.". No Bluetooth tap on Android before LATER: every search ends at once, as a stopped one does, and the page backs off its re-listen (up to a minute). A funded wallet's home screen listens with no one acting, so a host that connects (P2) meets it.
 - **Timing:** Page waits 30 min for a payer to touch.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:418`, `Foxy/Bridge/FoxyBridge+Tap.swift:167-218`
 
