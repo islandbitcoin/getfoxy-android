@@ -26,6 +26,22 @@ class SeedEnvironment(
     val flags: Flags,
     /** A phone with a screen lock. "passcode": false is said only on one without. */
     var passcodeSet: () -> Boolean = { true },
+    /**
+     * SeedVault.write with replace (seedAdopt, P3): null when written.
+     * `confirm` is asked only when a different seed is saved; the candidate
+     * `keep` survives the write's forgetting (review M6).
+     */
+    val writeReplacing: (words: String, keep: String?, confirm: () -> Boolean) -> String? = { _, _, _ -> "The saved seed was not replaced." },
+    /** SeedVault.delete: true only when no seed is left (seedWipe, P3). */
+    val delete: () -> Boolean = { false },
+    /** What the person asked to stand in front of the seed: "device" or "none" (SeedVault.protection). */
+    val protection: () -> String = { SeedVault.NONE },
+    /** SeedVault.setProtection: null when the seed is where the mode says. */
+    val setProtection: (mode: String) -> String? = { "the seed could not be read" },
+    /** SeedVault.wordsForScreen: the words for seedShow's own screen, never the page. */
+    val wordsForScreen: () -> SeedVault.Answer = { SeedVault.Answer.Failed("there is no vault") },
+    /** SeedVault.unlock: the PIN lock's biometric opening a `device` seed; null when there is none to open. */
+    val unlock: (reason: String, credential: Boolean) -> String? = { _, _ -> null },
 )
 
 /** An action's answer to the page: JSON text, or a plain error. Never both. */
@@ -57,7 +73,7 @@ object SeedActions {
     fun problem(error: Throwable): String = when (error) {
         is Refusal -> error.message ?: "refused"
         is CounterStore.Failure -> error.text
-        is SeedCandidates.Failure.Unknown -> "unknown candidate"
+        is SeedCandidates.Failure -> error.message ?: "unknown candidate"
         // an index no window reaches, and one past 2^31, are the same answer
         is P2PK.Failure.BadIndex -> "outside the lock-key window"
         // an invalid BIP-32 child or r = 0, about 1 in 2^127, never a different key instead
@@ -308,5 +324,99 @@ object SeedActions {
         }
     } catch (e: Exception) {
         SeedReply.refuse(problem(e))
+    }
+
+    // MARK: Adopting typed words, and wiping (P3)
+
+    /**
+     * seedAdopt {candidate} → {"adopted": false, "same": true} for the saved
+     * seed's words; otherwise, where a different seed is saved,
+     * `confirmReplace` (the Replace alert, then the device owner), then
+     * {"adopted": true} or "Nothing was changed." (SeedActions.swift:517-563).
+     *
+     * Either way each counter is raised to at least 1000 short of the end the
+     * typed words were served for its keyset (review M2): the end of the last
+     * batch of a scan that held a signature. The candidate is kept, so scans
+     * still running with it can finish (M6).
+     */
+    fun adopt(candidate: String, env: SeedEnvironment, confirmReplace: () -> Boolean): SeedReply {
+        val words = env.candidates.phrase(candidate) ?: return SeedReply.refuse("unknown candidate")
+        val typed = try {
+            env.candidates.seed(candidate)
+        } catch (e: SeedCandidates.Failure) {
+            return SeedReply.refuse("unknown candidate")
+        }
+        val served = RestoreWindow.adoptedCounters(env.candidates.servedEnds(candidate))
+        when (val saved = env.savedSeed()) {
+            SeedVault.SecretsSeed.Failed -> return SeedReply.refuse("the seed could not be read")
+            is SeedVault.SecretsSeed.Found -> if (saved.seed.sameBytes(typed)) {
+                try {
+                    env.counters.raise(served)
+                } catch (e: Exception) {
+                    return SeedReply.refuse(problem(e))
+                }
+                return SeedReply.answer(json(mapOf("adopted" to false, "same" to true)))
+            }
+            SeedVault.SecretsSeed.Absent -> {}
+        }
+        // SeedVault.write asks only when a different seed is saved; a page script can ask for this, not answer it
+        var declined = false
+        val written = env.writeReplacing(words, candidate) {
+            val yes = confirmReplace()
+            declined = !yes
+            yes
+        }
+        if (declined) return SeedReply.refuse("Nothing was changed.")
+        if (written != null) return SeedReply.refuse(written)
+        env.closeMigrationWindow("typed words were adopted")
+        try {
+            env.counters.moveAside()
+        } catch (e: Exception) {
+            return SeedReply.refuse("the seed was replaced, but its counters could not be set aside")
+        }
+        try {
+            env.counters.raise(served)
+        } catch (e: Exception) {
+            return SeedReply.refuse("the seed was replaced, but its counters could not be raised")
+        }
+        Log.line("[foxy] seed: replaced by typed words; the old counters set aside, the new ones raised to what was served")
+        return SeedReply.answer(json(mapOf("adopted" to true)))
+    }
+
+    /** seedCandidateForget {candidate} → {"forgotten": true}, known or not. */
+    fun candidateForget(candidate: String, env: SeedEnvironment): SeedReply {
+        env.candidates.forget(candidate)
+        return SeedReply.answer(json(mapOf("forgotten" to true)))
+    }
+
+    /**
+     * seedWipe, after both yeses: the seed deleted and checked gone, then its
+     * counters set aside, every candidate dropped and a new seed made, in that
+     * order (SeedActions.swift:586-600). A seed that would not go stops it
+     * before anything else moves.
+     */
+    fun wipe(env: SeedEnvironment): SeedReply {
+        if (!env.delete()) return SeedReply.refuse("the seed could not be deleted")
+        env.candidates.forgetAll()
+        try {
+            env.counters.moveAside()
+        } catch (e: Exception) {
+            return SeedReply.refuse("the seed was deleted, but its counters could not be set aside")
+        }
+        val made = create(env)
+        made.error?.let { return SeedReply.refuse("the seed was deleted, but a new one was not made: $it") }
+        return SeedReply.answer(json(mapOf("wiped" to true, "created" to true)))
+    }
+
+    // MARK: What stands in front of the seed (P3)
+
+    /** seedProtection {} → {"mode": "device"|"none", "passcode": true|false}. Asks the person for nothing. */
+    fun protection(env: SeedEnvironment): SeedReply =
+        SeedReply.answer(json(mapOf("mode" to env.protection(), "passcode" to env.passcodeSet())))
+
+    /** seedProtect {mode}, checked → {"mode": …}: the SECURE FOXY card's answer. */
+    fun setProtection(env: SeedEnvironment, mode: String): SeedReply {
+        env.setProtection(mode)?.let { return SeedReply.refuse(it) }
+        return SeedReply.answer(json(mapOf("mode" to env.protection())))
     }
 }
