@@ -23,7 +23,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { boot, wait } = require('../lib/session');
-const { CONTRACT } = require('../lib/host');
+const { CONTRACT, snapshot } = require('../lib/host');
 
 const seen = new Map();
 const pushesSeen = new Set();
@@ -526,6 +526,90 @@ test('the card tap (_cardTapped, LATER): answered true, kept while the gate is u
   } finally {
     p3.close();
   }
+});
+
+/* The send confirmation, read from what Android's host pushes (getfoxy/iOS 77d0908, d37df18).
+ *
+ * The page decides CHECKING… from `_privacy` alone (`routeComing`: tor 'connecting' or 'stuck',
+ * a network under it, not unprotected; build/wallet/02-dleq-lock-holds-imports.js:692), and
+ * NOT ENOUGH from the mint's fee quote against the balance (`payNeed`, build/app/01-ui-basics.js:341).
+ * Android's `_privacy` push is what these screens are drawn from: a push missing a field or
+ * saying a different word shows SEND while the route is still closed, or CHECKING… for good.
+ * The invoice is a real BOLT11 (tools/fake-invoice.js) so the page classifies and decodes it as
+ * it would one scanned; it is handed in through the `scan` action, as the camera hands it. */
+const { fakeInvoice } = require('../../tools/fake-invoice');
+const sendCta = (s) => { try { return s.logic().confirmSpec().cta; } catch (e) { return ''; } };
+const feeRow = (s) => { try { return (s.logic().confirmSpec().rows.find((r) => r.label === 'FEE') || {}).value; } catch (e) { return ''; } };
+
+async function fundedWallet(s, sats) {
+  const W = s.W;
+  await s.until(() => W.connected === true, 30000, 'connected');
+  const inv = await W.invoice(sats, 'conformance send');
+  assert.ok(await W.claim(inv.hash || inv.quote || inv.id), 'the invoice was claimed: minted');
+  s.logic().refreshBalance();
+  await s.until(() => s.logic().state.balSats === sats, 10000, 'the balance to read ' + sats);
+}
+
+/* What the camera hands the page, through native's `scan` (contract: scan), to the screen that takes it. */
+async function scanned(s, text) {
+  s.host.state.scanAnswer = text;
+  const got = await s.W.scan('Scan an invoice');
+  assert.equal(got, text, 'the scan answered the invoice');
+  s.logic().acceptTarget(got);
+}
+
+test('the send confirmation after a return: an invoice scanned while Tor reconnects reads CHECKING… and asks nothing, then SEND once _privacy says up', async () => {
+  const invoice = fakeInvoice(8);
+  await flow({ seed: true, tor: 'up', answers: { scan: (m, host) => [host.state.scanAnswer || 'cashuBconformance', null] } }, async (s) => {
+    const W = s.W, app = s.logic();
+    await fundedWallet(s, 64);
+    // back from the background: native tells the page (`_resumed`), and Tor is at work on a circuit again (`_privacy`)
+    s.host.pushAs('_resumed', 30);
+    s.host.state.tor = 'connecting';
+    s.host.state.progress = 40;
+    s.host.pushAs('_privacy', snapshot(s.host.state));
+    await s.until(() => W.routeComing() === true, 5000, 'the page to read a connection on its way from _privacy');
+    const before = routeActions(s), meltsBefore = s.host.mint.requests.filter((r) => r === 'POST /v1/melt/quote/bolt11').length;
+    await scanned(s, invoice);
+    await s.until(() => app.state.screen === 'sendConfirm', 10000, 'the invoice to go to the confirmation, not the offline card');
+    assert.equal(sendCta(s), 'CHECKING…', 'the button holds while the route is on its way');
+    assert.equal(feeRow(s), 'CHECKING…', 'and the FEE row says the same word');
+    assert.ok(shows(s, 'CHECKING…'), 'CHECKING… is on screen');
+    const end = Date.now() + 3000;
+    while (Date.now() < end) {
+      assert.equal(routeActions(s), before, 'nothing that needs a route was asked while Tor reconnected');
+      assert.equal(sendCta(s), 'CHECKING…', 'and the button stayed CHECKING…');
+      await wait(50);
+    }
+    assert.equal(s.host.mint.requests.filter((r) => r === 'POST /v1/melt/quote/bolt11').length, meltsBefore, 'no melt quote left');
+    // Tor up, pushed as native pushes it: the fee is asked by itself, and the button becomes SEND
+    s.torUp();
+    await s.until(() => /^SEND /.test(sendCta(s)), 20000, 'SEND once the route is up and the fee quoted');
+    assert.ok(s.host.mint.requests.filter((r) => r === 'POST /v1/melt/quote/bolt11').length > meltsBefore, 'the fee was quoted over mintRequest once the route opened');
+    assert.match(String(feeRow(s)), /^UP TO /, 'the FEE row reads the quote');
+    assert.ok(!s.host.mint.requests.includes('POST /v1/melt/bolt11'), 'and nothing was paid: SEND was not pressed');
+  });
+});
+
+test('the send confirmation: a quote the balance cannot cover reads NOT ENOUGH with its figures, and pressing it pays nothing', async () => {
+  // 64 sats held, an invoice for 64: the invoice fits, the fake mint's fee reserve (10, lib/mint.js) does not
+  const invoice = fakeInvoice(64);
+  await flow({ seed: true, tor: 'up', answers: { scan: (m, host) => [host.state.scanAnswer || 'cashuBconformance', null] } }, async (s) => {
+    const app = s.logic();
+    await fundedWallet(s, 64);
+    await scanned(s, invoice);
+    await s.until(() => app.state.screen === 'sendConfirm', 10000, 'the confirmation');
+    await s.until(() => sendCta(s) === 'NOT ENOUGH', 20000, 'NOT ENOUGH once the fee is quoted');
+    const spec = app.confirmSpec();
+    assert.equal(spec.ctaTone, 'warn');
+    assert.match(String(feeRow(s)), /^UP TO /, 'the quoted fee stays in its row');
+    assert.match(String(spec.warn), /this needs 7\d sats and you hold 64\./, 'the wallet\'s sentence at its figures: ' + spec.warn);
+    assert.ok(shows(s, 'NOT ENOUGH'), 'NOT ENOUGH is on screen');
+    spec.go();
+    await s.settle(500);
+    assert.equal(app.state.screen, 'sendConfirm', 'pressing it goes nowhere');
+    assert.ok(!s.host.mint.requests.includes('POST /v1/melt/bolt11'), 'and nothing was paid');
+  });
 });
 
 test('native pushes: each one the contract lists, delivered with a contract-shaped payload', async () => {
