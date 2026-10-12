@@ -272,12 +272,20 @@ As built in P2 (ENG-648). Kotlin paths are under
   other request, then shuts the door and parks Tor (`DisableNetwork 1`: Tor has
   no connection to lose and holds nothing against its guards). The 20 s is a
   ceiling the page cannot hold open: a read of `_tidying` that has not
-  answered in 1 s counts as not tidying, and a watchdog at 21 s leaves even if
-  the page never answered (a WebView whose JS is throttled may never call
-  back). Android gives no fixed background allowance, so Tor is not held on
-  the network past that. Back finishing the activity (API 28-30) removes the
+  answered in 1 s counts as not tidying (a WebView whose JS is throttled may
+  never call back). That timeout is a main-looper post like the looks
+  themselves, so a look is decided every 1.25 s at the latest whatever the
+  page does, and the first past 20 s leaves: Tor is parked by about 20.15 s.
+  There is no separate watchdog; the read timeout is what keeps the ceiling
+  (`PutAwayLeavingTest`). Android gives no fixed background allowance, so Tor
+  is not held on the network past that. Back finishing the activity (API 28-30) removes the
   observer before `onStop` arrives, so `MainActivity.onDestroy` shuts the door
-  and parks Tor itself; the next activity sets Tor up again. A return sets Tor
+  and parks Tor itself; the next activity sets Tor up again. A park that
+  comes while Tor is still starting, before its control link is up, is held:
+  iOS skips that case (`TorService.swift` `backgrounded`) because it suspends
+  the process and a late bootstrap never runs, but Android keeps the process
+  running, so `TorMachine` marks Tor parked and sends `DisableNetwork 1` the
+  moment the link comes up, with no set-up, until Foxy comes back. A return sets Tor
   up again. No `WorkManager` job, alarm or foreground service
   makes requests while the app is away.
 - **The phone's network.** `network/NetworkKind.kt` watches the default

@@ -62,8 +62,8 @@ class PutAwayLeavingTest {
         assertEquals("Tor is parked a moment later, not at once", 0, parks)
         sched.advance(500)
         assertEquals("parked through the injected call", 1, parks)
-        sched.advance(PutAway.LEAVE_AT_MOST_MS)
-        assertEquals("parked once: the watchdog does not leave twice", 1, parks)
+        sched.advance(Route.WAIT_FOR_MONEY_MS + 1_000)
+        assertEquals("parked once: nothing leaves twice", 1, parks)
     }
 
     @Test
@@ -83,9 +83,35 @@ class PutAwayLeavingTest {
         away.away()
         sched.advance(Route.WAIT_FOR_MONEY_MS)
         assertEquals("a melt out: waited for, up to 20 s", 0, parks)
-        sched.advance(PutAway.LEAVE_AT_MOST_MS - Route.WAIT_FOR_MONEY_MS)
+        sched.advance(1_000)
         assertEquals("by 21 s Tor is parked although the page never answered", 1, parks)
         assertTrue(Route.shut())
+    }
+
+    /**
+     * What holds the ceiling when the page never answers: the 1 s read timeout,
+     * a main-looper post like the looks, so a look is decided every 1.25 s
+     * (0.4 s + 1 s, then every 1 s + 0.25 s) and the first past 20 s, at
+     * 20.15 s, leaves at once. Not a watchdog: there is none.
+     */
+    @Test
+    fun theReadTimeoutAloneHoldsTheCeilingAt20SecondsAndAQuarter() {
+        page.answers = false
+        page.moneyInFlight = 1
+        away.away()
+        val lastLook = PutAway.FIRST_LOOK_MS + PutAway.READ_AT_MOST_MS +
+            ((Route.WAIT_FOR_MONEY_MS - PutAway.FIRST_LOOK_MS - PutAway.READ_AT_MOST_MS) / (PutAway.READ_AT_MOST_MS + PutAway.LOOK_EVERY_MS) + 1) *
+            (PutAway.READ_AT_MOST_MS + PutAway.LOOK_EVERY_MS)
+        assertEquals(20_150L, lastLook)
+        sched.advance(lastLook - 1)
+        assertEquals("the look before 20 s still waits for the melt", 0, parks)
+        val reads = page.reads
+        sched.advance(1)
+        assertEquals("the first look past 20 s leaves and parks at once", 1, parks)
+        assertTrue(Route.shut())
+        sched.advance(60_000)
+        assertEquals("no look after the leave", reads, page.reads)
+        assertEquals(1, parks)
     }
 
     @Test
@@ -94,7 +120,7 @@ class PutAwayLeavingTest {
         away.away()
         sched.advance(Route.WAIT_FOR_MONEY_MS)
         assertEquals(0, parks)
-        sched.advance(PutAway.LEAVE_AT_MOST_MS - Route.WAIT_FOR_MONEY_MS)
+        sched.advance(1_000)
         assertEquals(1, parks)
     }
 
@@ -108,6 +134,6 @@ class PutAwayLeavingTest {
         assertEquals(listOf(5L), backs)
         assertTrue("the door is open again", !Route.shut())
         sched.advance(60_000)
-        assertEquals("no park after the return, from a look or from the watchdog", 0, parks)
+        assertEquals("no park after the return, from a look or a read timeout", 0, parks)
     }
 }

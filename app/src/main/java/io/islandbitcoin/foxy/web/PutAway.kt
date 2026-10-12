@@ -28,9 +28,11 @@ import io.islandbitcoin.foxy.tor.TorScheduler
  *
  * The 20 s is a ceiling the page cannot hold open (docs/ROUTE.md "parked when
  * the work is done or after 20 s, whichever first"): a read of `_tidying` that
- * has not answered in [READ_AT_MOST_MS] counts as not tidying, and a watchdog
- * at 20 s + 1 s leaves even if no look ever ran (a WebView whose JS is
- * throttled may never call back).
+ * has not answered in [READ_AT_MOST_MS] counts as not tidying (a WebView whose
+ * JS is throttled may never call back). That timeout is a main-looper post like
+ * every look, so a look is decided at least every [READ_AT_MOST_MS] +
+ * [LOOK_EVERY_MS] whatever the page does, and [Route.leaving] answers Leave
+ * once 20 s have passed: Tor is parked by 20 s + 1.25 s at the latest.
  *
  * Back: the door opens, the seed kept for leaving goes, Tor sets up again,
  * `__foxyUptime` and then `_resumed(secondsAway)` are pushed. Every timer is a
@@ -65,9 +67,6 @@ class PutAway(
 
         /** A read of `_tidying` not answered by then counts as not tidying. */
         const val READ_AT_MOST_MS = 1_000L
-
-        /** Leave regardless, this long after being put away: Route's 20 s ceiling and a second's grace. */
-        const val LEAVE_AT_MOST_MS = Route.WAIT_FOR_MONEY_MS + 1_000L
     }
 
     /** The main looper, as [TorScheduler]: every timer cancellable. */
@@ -166,13 +165,6 @@ class PutAway(
 
         host()?.evaluate("window.FoxyWallet && window.FoxyWallet._putAway && window.FoxyWallet._putAway(true)")
         after(FIRST_LOOK_MS) { look() }
-        // the ceiling: if the looks never got to leave (a read that never answers), leave now
-        after(LEAVE_AT_MOST_MS) {
-            if (run == parkRun && !left) {
-                Log.line("[foxy] put away: ${LEAVE_AT_MOST_MS / 1000}s passed; leaving")
-                leave(0)
-            }
-        }
     }
 
     /** Foxy is back (ProcessLifecycleOwner's start). */

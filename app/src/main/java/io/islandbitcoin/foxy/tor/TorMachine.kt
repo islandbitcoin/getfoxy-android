@@ -253,6 +253,23 @@ class TorMachine(
     fun controlReady(ctrl: TorControl) {
         control = ctrl
         noteLife()
+        if (parked) {
+            // put away before the link came up: Tor goes off the network now and
+            // nothing is set up until Foxy comes back (Android keeps the process
+            // running where iOS suspends it, so a late bootstrap would stay online)
+            setUpPending = false
+            val gen = setUpGen
+            ctrl.setConf(listOf("DisableNetwork" to "1"), 4_000) { ok, message ->
+                if (gen == setUpGen && parked) {
+                    if (transport != TorTransport.DIRECT) transports.stopAll()
+                    Log.line(if (ok) "[foxy] tor: off the network; Foxy was put away before its control link came up" else "[foxy] tor: could not switch its network off ($message)")
+                }
+            }
+            // the watch runs from here on (it rests while parked); the set-up on the return turns it on
+            watchForStall()
+            changed()
+            return
+        }
         ctrl.getInfo("status/enough-dir-info") { v -> if (control === ctrl) dirInfoChanged(v != "0") }
         // where Tor has got to, asked rather than waited for: a link that came up late heard no steps
         ctrl.getInfo("status/bootstrap-phase", 5_000) { line ->
@@ -605,7 +622,22 @@ class TorMachine(
      */
     fun backgrounded(done: () -> Unit) {
         val ctrl = control
-        if (!launched || ctrl == null || parked) return done()
+        if (!launched || parked) return done()
+        if (ctrl == null) {
+            // Tor is starting and its control link is not up yet: parked now, so
+            // `controlReady` takes it off the network the moment the link arrives
+            parked = true
+            setUpGen += 1
+            setUpPending = false
+            stallOff()
+            deadline?.cancel()
+            deadline = null
+            ready = false
+            circuitUp = false
+            Log.line("[foxy] tor: put away before its control link came up; off the network once it does")
+            changed()
+            return done()
+        }
         parked = true
         setUpGen += 1
         val gen = setUpGen

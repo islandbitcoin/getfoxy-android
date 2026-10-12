@@ -259,6 +259,39 @@ class TorMachineTest {
         assertTrue(m.isRunning)
     }
 
+    /**
+     * Put away while Tor is still starting, before its control link is up
+     * (Back within the first second on API 28-30). iOS suspends the process so a
+     * late bootstrap never runs; Android keeps it, so the park must hold until
+     * the link arrives and take Tor off the network then.
+     */
+    @Test
+    fun putAwayBeforeTheControlLinkTakesTorOffTheNetworkWhenTheLinkArrives() {
+        val m = machine()
+        m.start()
+        var done = false
+        m.backgrounded { done = true }
+        assertTrue("done at once: there is no link to ask", done)
+        assertTrue(m.parked)
+        assertTrue("nothing sent yet: no link", control.setConfs.isEmpty())
+        m.controlReady(control)
+        sched.drain()
+        assertEquals("off the network the moment the link came up", listOf(listOf("DisableNetwork" to "1")), control.setConfs)
+        assertFalse("no set-up turned the network back on", control.setConfs.any { s -> s.contains("DisableNetwork" to "0") })
+        circuit(m)
+        assertFalse("a late circuit while parked is not ready", m.isRunning)
+        sched.advance(120_000)
+        assertFalse(m.isRunning)
+        assertEquals("still only the park: no ladder step ran while away", 1, control.setConfs.size)
+        // back: a fresh set-up, network on, ready on the next circuit
+        m.resumed(30)
+        sched.drain()
+        assertFalse(m.parked)
+        assertEquals(listOf("DisableNetwork" to "0"), control.setConfs.last())
+        circuit(m)
+        assertTrue(m.isRunning)
+    }
+
     @Test
     fun aQuickReturnToACircuitThatNeverWentDownChangesNothing() {
         val m = connected()
