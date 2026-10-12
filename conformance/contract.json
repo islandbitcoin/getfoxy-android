@@ -2432,7 +2432,7 @@
     "kind": "action",
     "name": "cardBegin",
     "domain": "card",
-    "phase": "LATER",
+    "phase": "P3",
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -2450,14 +2450,17 @@
         "<CardLinkError words>"
       ]
     },
-    "behaviour": "Open the NFC session with one printable line (<=120 chars) of the page's text; answers when a card is there. One session at a time.",
+    "behaviour": "Open the NFC session with one printable line (<=120 chars) of the page's text; answers when a card is there. One session at a time. Android (ENG-667): bridge/CardBridge.kt over a flashcard/CardLink: on a phone with NFC, reader mode (NfcAdapter.enableReaderMode, NFC-A/B, the NDEF check skipped) with Foxy's own card sheet over the page (Android has no system one: \"Ready to Scan\", the line, Cancel), on the resumed activity only; in a debug build with no NFC (the emulator), or started with the FoxyCardSim extra, the getfoxy/card simulator over loopback (SimCardLink, ports 47431-47434). The sheet waits 60 s for a card (\"the session timed out\"); Cancel or Back is \"the session was cancelled\"; no NFC adapter, or NFC switched off, is \"NFC is not available on this phone\". With no line from the page the sheet says \"Hold the card to the back of the phone\" (iOS: the top). Foxy put away while the sheet waits ends it \"Foxy was put away\" (the begin answered \"the session was cancelled\"); with a card in hand the card is lost.",
     "timing": "Page waits 63 s.",
     "pageRef": [
       "Web/foxy-wallet.js:25566@'cardBegin'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:429@\"cardBegin\"",
-      "Foxy/Bridge/FoxyBridge+Flashcard.swift:27-64@handleCardBegin"
+      "Foxy/Bridge/FoxyBridge+Flashcard.swift:27-64@handleCardBegin",
+      "Foxy/Flashcard/CardLink.swift:26-44@enum CardLinkError",
+      "Foxy/Flashcard/CardLink.swift:177-182@wentAway",
+      "Foxy/Flashcard/CardLink.swift:288-290@static let wait"
     ]
   },
   {
@@ -2465,7 +2468,7 @@
     "kind": "action",
     "name": "cardSend",
     "domain": "card",
-    "phase": "LATER",
+    "phase": "P3",
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -2483,14 +2486,15 @@
       ],
       "note": "the response APDU, hex"
     },
-    "behaviour": "One APDU (hex) and its answer. Only SELECT of Foxy's own applet AID (F0 46 4F 58 59 43 41 52 44 01), then only that applet's 31 instructions (CardGate.instructions, CLA B0): 01, 10, 11, 13-1A, 20, 22-26, 30-32, 34-37, 40-45, 51. 1A (GET_DLEQ, card software 1.20) reads back the mint's NUT-12 proof a card keeps with an unspent piece, two places per command; 30 with P1 = 1 (LOAD_PROOF) writes a piece with its proof, 96 more bytes of data (e, s, r), still a short APDU. 12, 33 and 50, which the applet has, stay out. Never logged: one carries the PIN.",
+    "behaviour": "One APDU (hex) and its answer. Only SELECT of Foxy's own applet AID (F0 46 4F 58 59 43 41 52 44 01), then only that applet's 31 instructions (CardGate.instructions, CLA B0): 01, 10, 11, 13-1A, 20, 22-26, 30-32, 34-37, 40-45, 51. 1A (GET_DLEQ, card software 1.20) reads back the mint's NUT-12 proof a card keeps with an unspent piece, two places per command; 30 with P1 = 1 (LOAD_PROOF) writes a piece with its proof, 96 more bytes of data (e, s, r), still a short APDU. 12, 33 and 50, which the applet has, stay out. Never logged: one carries the PIN. Android (ENG-667): flashcard/CardGate.kt is CardGate.swift's 31 byte for byte (CardGateTest also holds it to the page's CARD_INS, both ways, and tries every class, instruction and P1/P2). SET_TAG (52, card software 1.19) is not carried, as CardGate.swift at the pin does not carry it, though the card's FOXY-CARD-SPEC.md section 7 says a phone's gate should: that is for getfoxy/iOS to settle. The command is carried over IsoDep (10 s for an answer) or the simulator's \"apdu HEX\"; an answer under two bytes, a dropped card or the simulator's \"gone\" is \"the tag was lost\" with a `_card` lost push, and nothing more is carried until cardAgain finds a card and the applet is chosen again.",
     "pageRef": [
       "Web/foxy-wallet.js:25491@'cardSend'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:430@\"cardSend\"",
       "Foxy/Bridge/FoxyBridge+Flashcard.swift:69-95@handleCardSend",
-      "Foxy/Flashcard/CardGate.swift:23-51@0x1A"
+      "Foxy/Flashcard/CardGate.swift:23-51@0x1A",
+      "Foxy/Flashcard/CardGate.swift:33@static let instructions"
     ]
   },
   {
@@ -2498,7 +2502,7 @@
     "kind": "action",
     "name": "cardSay",
     "domain": "card",
-    "phase": "LATER",
+    "phase": "P3",
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -2514,7 +2518,7 @@
       ],
       "errors": []
     },
-    "behaviour": "Change the line on the NFC sheet.",
+    "behaviour": "Change the line on the NFC sheet. Android (ENG-667): the line on Foxy's card sheet (CardGate.line: one printable line, 120 characters), and a `_card` say push; \"ok\" with or without a session.",
     "pageRef": [
       "Web/foxy-wallet.js:25495@'cardSay'"
     ],
@@ -2528,7 +2532,7 @@
     "kind": "action",
     "name": "cardAgain",
     "domain": "card",
-    "phase": "LATER",
+    "phase": "P3",
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -2546,13 +2550,14 @@
         "<CardLinkError words>"
       ]
     },
-    "behaviour": "The card left part way: look for it again; the applet must be selected again.",
+    "behaviour": "The card left part way: look for it again; the applet must be selected again. Android (ENG-667): reader mode is turned off and on again, so a card still in the field is found afresh (iOS: restartPolling), with a new 60 s wait; the sheet shows the page's line (\"Hold the card here again\" with none). No session: \"the session was cancelled\".",
     "pageRef": [
       "Web/foxy-wallet.js:25512@'cardAgain'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:432@\"cardAgain\"",
-      "Foxy/Bridge/FoxyBridge+Flashcard.swift:101-119@handleCardAgain"
+      "Foxy/Bridge/FoxyBridge+Flashcard.swift:101-119@handleCardAgain",
+      "Foxy/Flashcard/CardLink.swift:109@func again"
     ]
   },
   {
@@ -2560,7 +2565,7 @@
     "kind": "action",
     "name": "cardEnd",
     "domain": "card",
-    "phase": "LATER",
+    "phase": "P3",
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -2577,7 +2582,7 @@
       ],
       "errors": []
     },
-    "behaviour": "Close the sheet with a word or a reason.",
+    "behaviour": "Close the sheet with a word or a reason. Android (ENG-667): a tick and the word (1.2 s), or the reason in red (2.4 s), then the sheet goes; reader mode off and the card let go. A sheet still waiting for a card is answered \"the session was cancelled\". \"ok\" with or without a session.",
     "pageRef": [
       "Web/foxy-wallet.js:25473@'cardEnd'",
       "Web/foxy-wallet.js:25504@'cardEnd'"
@@ -3241,7 +3246,7 @@
     },
     "name": "_card",
     "domain": "card",
-    "phase": "LATER",
+    "phase": "P3",
     "target": "window.FoxyWallet._card({stage, text})",
     "payloadSchema": {
       "fields": {
@@ -3249,7 +3254,7 @@
         "text": "string"
       }
     },
-    "behaviour": "NFC session progress: stage connected|say|end|lost.",
+    "behaviour": "NFC session progress: stage connected|say|end|lost. Android (ENG-667): pushed by CardBridge through CardGate.progressScript (the text cut to a line and quoted as JSON, `<` `>` `&` and every control escaped) only while the link is the session in hand: connected (\"Reading the card\") when a card answers, say on cardSay, end when the page closes it, lost when the card leaves mid-command, the wait runs out, the sheet is cancelled or Foxy is put away with a card in hand.",
     "pageRef": [
       "Web/foxy-wallet.js:25446@_card"
     ],

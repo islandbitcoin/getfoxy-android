@@ -2,6 +2,7 @@ package io.islandbitcoin.foxy.bridge
 
 import io.islandbitcoin.foxy.debug.FieldLog
 import io.islandbitcoin.foxy.debug.Log
+import io.islandbitcoin.foxy.flashcard.CardLink
 import io.islandbitcoin.foxy.flashcard.InterimCardTime
 
 /**
@@ -91,6 +92,14 @@ interface PageHost {
 
     /** The seed screen up now, if any, closes with the answer its back button gives. */
     fun closeSeedScreen() {}
+
+    /**
+     * A new card link for one session (ENG-667): the radio and Foxy's card sheet
+     * on a phone with NFC, the card simulator over loopback in a debug build
+     * that asks for it or has no NFC, null with neither (the page is told NFC
+     * is not available). Main thread.
+     */
+    fun cardLink(): CardLink? = null
 }
 
 /**
@@ -99,9 +108,9 @@ interface PageHost {
  *
  * One table: the 18 P1 actions, the 7 P2 actions ([NetBridge]: Tor's snapshot,
  * RETRY, CONTINUE WITHOUT TOR, and the three requests that leave through
- * Route), the 26 P3 actions ([SeedBridge]'s screens, adopting, wiping and
- * protection, and a card's owner key; the card's signed time;
- * [PlatformBridge]'s camera, clipboard, share, notifications,
+ * Route), the 31 P3 actions ([SeedBridge]'s screens, adopting, wiping and
+ * protection, and a card's owner key; the card's signed time; [CardBridge]'s
+ * card session (ENG-667); [PlatformBridge]'s camera, clipboard, share, notifications,
  * biometric, the Bluetooth screen's and the receive screen's TAP's fixed
  * "unsupported" and the rest), and the `p1` stubs of conformance/contract.json
  * for the LATER phase ([ContractStubs], generated from it), which answer the
@@ -140,9 +149,11 @@ class FoxyBridge(
         /**
          * The P3 actions: docs/BRIDGE.md, phase P3, kind action. ENG-666 adds the
          * card's owner key ([SeedBridge.CARD_ACTIONS]) and the card's signed time
-         * (`cardTime`), which need no NFC and are answered before the card link is.
+         * (`cardTime`), which need no NFC; ENG-667 the card session ([CardBridge.ACTIONS]:
+         * `cardBegin`, `cardSend`, `cardSay`, `cardAgain`, `cardEnd`) over the NFC link.
          */
-        val P3_ACTIONS: Set<String> = SeedBridge.P3_ACTIONS + PlatformBridge.ACTIONS + SeedBridge.CARD_ACTIONS + "cardTime"
+        val P3_ACTIONS: Set<String> =
+            SeedBridge.P3_ACTIONS + PlatformBridge.ACTIONS + SeedBridge.CARD_ACTIONS + "cardTime" + CardBridge.ACTIONS
 
         /** Main frame, asset origin, nothing else (FoxyBridge.swift `answers`). */
         fun answers(isMainFrame: Boolean, origin: String?): Boolean = isMainFrame && origin == ORIGIN
@@ -165,6 +176,10 @@ class FoxyBridge(
     private val seeds = SeedBridge(seedEnvironment, seedExecutor, ::resolve, host, clock)
     private val net = NetBridge(netEnvironment, host, ::resolve)
     private val platform = PlatformBridge(host, ::resolve, seedEnvironment, seedExecutor, clock)
+    private val cards = CardBridge(host, ::resolve)
+
+    /** Whether a card session is open (the tests). */
+    val cardSessionOpen: Boolean get() = cards.open
 
     /** Swaps, melts, mints and restores not yet answered: putting Foxy away waits for them. */
     val moneyInFlight: Int get() = net.moneyInFlight.size
@@ -183,7 +198,15 @@ class FoxyBridge(
     fun letGo() {
         platform.letGo()
         seeds.closeScreens()
+        cards.putAway()
     }
+
+    /**
+     * Foxy left the foreground (the activity stopped): a card session ends now,
+     * as iOS's NFC session ends when the app goes to the background, not when
+     * [letGo] comes 700 ms later. Main thread.
+     */
+    fun cardPutAway() = cards.putAway()
 
     /**
      * The page went (its process ended, or it is loading again): what [letGo]
@@ -193,6 +216,7 @@ class FoxyBridge(
     fun pageGone() {
         platform.pageGone()
         seeds.closeScreens()
+        cards.pageGone()
     }
 
     /** The saved seed was written or deleted: no seed screen shows words from before (L4). Main thread. */
@@ -238,6 +262,10 @@ class FoxyBridge(
         // a card's owner key: seed actions, on the seed executor (NativeSeedBridge.swift:402-417)
         for (action in SeedBridge.CARD_ACTIONS) {
             put(action) { id, body -> seeds.handle(action, id, body) }
+        }
+        // a card's session over the NFC link (FoxyBridge+Flashcard.swift:27-145), ENG-667
+        for (action in CardBridge.ACTIONS) {
+            put(action) { id, body -> cards.handle(action, id, body) }
         }
         /*
          * {} → {"sig", "time"}: the phone's clock in whole seconds since 1970, signed by

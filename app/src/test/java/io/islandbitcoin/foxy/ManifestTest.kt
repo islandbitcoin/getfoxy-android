@@ -58,12 +58,12 @@ class ManifestTest {
     }
 
     @Test
-    fun thePermissionsP3NeedsAndNoOther() {
+    fun thePermissionsP3AndTheCardNeedAndNoOther() {
         val permissions = elements(merged, "uses-permission").map { it.getAttributeNS(android, "name") }.toSet()
         assertEquals(
             "INTERNET (Tor and Route), ACCESS_NETWORK_STATE (NetworkKind), and P3's CAMERA (the scanner), " +
                 "POST_NOTIFICATIONS (payments), USE_BIOMETRIC (the PIN lock, the seed's device protection) and " +
-                "DETECT_SCREEN_CAPTURE (_screenshot), and nothing else: $permissions",
+                "DETECT_SCREEN_CAPTURE (_screenshot), NFC (a card session, ENG-667), and nothing else: $permissions",
             setOf(
                 "android.permission.INTERNET",
                 "android.permission.ACCESS_NETWORK_STATE",
@@ -71,6 +71,7 @@ class ManifestTest {
                 "android.permission.POST_NOTIFICATIONS",
                 "android.permission.USE_BIOMETRIC",
                 "android.permission.DETECT_SCREEN_CAPTURE",
+                "android.permission.NFC",
                 "io.islandbitcoin.foxy.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
             ),
             permissions,
@@ -81,6 +82,24 @@ class ManifestTest {
         })
         val camera = elements(merged, "uses-feature").filter { it.getAttributeNS(android, "name").startsWith("android.hardware.camera") }
         assertTrue("a camera is used where there is one, never required", camera.isNotEmpty() && camera.all { it.getAttributeNS(android, "required") == "false" })
+        val nfc = elements(merged, "uses-feature").filter { it.getAttributeNS(android, "name") == "android.hardware.nfc" }
+        assertEquals("NFC is used where there is one, never required: a phone without it installs Foxy", 1, nfc.size)
+        assertEquals("false", nfc.single().getAttributeNS(android, "required"))
+    }
+
+    /**
+     * ENG-667: a card is read only in a session the page opened, in reader mode
+     * (flashcard/ReaderModeRadio.kt). No activity takes a card from Android's tag
+     * dispatch (a card held to a phone that opens Foxy is ENG-668), in either build.
+     */
+    @Test
+    fun noActivityIsHandedACardByTheSystem() {
+        for (manifest in listOf(merged, release)) {
+            val actions = elements(manifest, "action").map { it.getAttributeNS(android, "name") }
+            for (dispatch in listOf("android.nfc.action.NDEF_DISCOVERED", "android.nfc.action.TECH_DISCOVERED", "android.nfc.action.TAG_DISCOVERED")) {
+                assertFalse("$dispatch is not filtered for", dispatch in actions)
+            }
+        }
     }
 
     @Test

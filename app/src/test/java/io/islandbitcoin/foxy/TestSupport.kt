@@ -241,6 +241,15 @@ class FakeHost : PageHost {
 
     override fun alertShowing() = alertUp
 
+    /** ENG-667: the card link each `cardBegin` is handed; null is a phone that cannot read a card. */
+    var cardLinks: () -> io.islandbitcoin.foxy.flashcard.CardLink? = { null }
+    var cardLinksMade = 0
+
+    override fun cardLink(): io.islandbitcoin.foxy.flashcard.CardLink? {
+        cardLinksMade++
+        return cardLinks()
+    }
+
     override fun deviceOwnerApproves(reason: String): Boolean {
         ownerReasons.add(reason)
         return ownerApproves

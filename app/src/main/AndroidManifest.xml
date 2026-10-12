@@ -10,7 +10,13 @@
      POST_NOTIFICATIONS for "Payment sent"/"Payment received" (API 33+, asked on
      the first one); USE_BIOMETRIC for the PIN lock and the seed's device
      protection; DETECT_SCREEN_CAPTURE for `_screenshot` (API 34+). A camera is
-     not required: a phone without one answers "No camera available." -->
+     not required: a phone without one answers "No camera available."
+
+     ENG-667: NFC for a card session (cardBegin): reader mode on the activity in
+     front, only while the page has a session open (flashcard/ReaderModeRadio.kt).
+     NFC is not required: a phone without it installs Foxy and the page is told
+     "NFC is not available on this phone". No activity filters for the system's
+     tag dispatch (ManifestTest). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
@@ -20,9 +26,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.DETECT_SCREEN_CAPTURE" />
+    <uses-permission android:name="android.permission.NFC" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
 
     <application
         android:name=".FoxyApplication"
