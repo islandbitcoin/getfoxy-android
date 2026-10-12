@@ -184,17 +184,20 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
      * DEBUG BUILDS ONLY (FoxyWebView.swift:492-531): `foxy://receive?amt=50&unit=sat`,
      * rebuilt from a whitelist into the page's hash. A release build registers
      * no scheme (ManifestTest) and reads no link here.
+     *
+     * `foxy://card` is a card tap said by hand (FoxyWebView.swift:497-508). iOS
+     * tells the page `_cardTapped`; Android does not deliver card taps yet
+     * (ENG-668), so it is logged and nothing reaches the page.
      */
     private fun receiveDeepLink(intent: Intent?) {
         if (!BuildConfig.DEBUG) return
         if (intent?.action != Intent.ACTION_VIEW) return
         val link = intent.dataString ?: return
-        val hash = DeepLink.hash(link) { Log.line("[deeplink] ignored parameter: ${it.take(32)}") }
-        if (hash == null) {
-            Log.line("[deeplink] no such screen")
-            return
+        when (val read = DeepLink.read(link) { Log.line("[deeplink] ignored parameter: ${it.take(32)}") }) {
+            null -> Log.line("[deeplink] no such screen")
+            DeepLink.Link.CardTap -> Log.line("[deeplink] a card tap: not passed to the page, card taps are not delivered yet (ENG-668)")
+            is DeepLink.Link.Screen -> host?.deepLink(read.hash)
         }
-        host?.deepLink(hash)
     }
 
     override fun onDestroy() {
