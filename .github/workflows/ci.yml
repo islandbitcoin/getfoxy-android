@@ -75,6 +75,11 @@ jobs:
       - name: Unit tests, lint, the debug APK and the instrumented-test APK
         run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest
 
+      # ENG-667: the bridge, CardGate and the debug build's SimCardLink against getfoxy/card's own
+      # applet at tools/cardsim.PIN, built with that repository's tooling (Maven) and run in jCardSim
+      - name: The card session against the real applet in jCardSim
+        run: tools/cardsim-test.sh
+
       - name: The debug APK
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

@@ -45,7 +45,7 @@ async function boot(o) {
     W._routeWaitMs = 0;
     W._keysetCheckDelay = [0, 0];
   }
-  if (w.CashuTS && w.CashuTS.createNewMintKeys) host.mint = fakeMint(w);
+  if (w.CashuTS && w.CashuTS.createNewMintKeys) host.mint = fakeMint(w, { p2pk: !!opts.p2pk });
   // _privacy is a P2 push: a P1 host has no route to report
   if (opts.phase !== 'P1') host.push('_privacy', snapshot(host.state));
   const s = {
