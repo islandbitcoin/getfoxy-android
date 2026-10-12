@@ -585,6 +585,20 @@ class TorMachineTest {
     }
 
     @Test
+    fun aRetryAfterAFailedSetUpIsANewSetUpHoweverSoon() {
+        val m = connected()
+        control.answerSetConf = false
+        m.start()
+        sched.advance(TorMachine.CONTROL_WAIT_MS)
+        assertEquals("failed", m.state)
+        control.answerSetConf = true
+        val offs = networkOffs()
+        m.start()
+        sched.drain()
+        assertEquals("RETRY within 4 s of a failed set-up does not join it", offs + 1, networkOffs())
+    }
+
+    @Test
     fun aReturnFromBeingPutAwayIsAlwaysASetUp() {
         val m = connected()
         m.start()

@@ -197,6 +197,8 @@ class TorMachine(
     /** Start Tor; or, if it is running without a circuit, try again now. */
     fun start() {
         if (ready) return
+        // asked before `failed` is cleared: a failed set-up is never joined (ROUTE.md)
+        val join = joinable()
         failed = false
         when {
             !launched -> {
@@ -208,7 +210,7 @@ class TorMachine(
                 armDeadline()
                 changed()
             }
-            joinable() -> Log.line("[foxy] tor: retrying — a set-up began ${sched.now() - setUpAt}ms ago; joining it")
+            join -> Log.line("[foxy] tor: retrying — a set-up began ${sched.now() - setUpAt}ms ago; joining it")
             else -> setUp("retrying")
         }
     }
@@ -638,8 +640,8 @@ class TorMachine(
         }
         setUpProgress(20)
         if (clockKeptFor != gen) armDeadline()
-        // a newer set-up, a put-away or the network going has taken over: this one's network stays off
-        apply(settings, ctrl) { if (gen == setUpGen) networkOn(gen, ctrl) }
+        // networkOn keeps the network off if a newer set-up, a put-away or the network going has taken over
+        apply(settings, ctrl) { networkOn(gen, ctrl) }
     }
 
     private fun networkOn(gen: Int, ctrl: TorControl, then: (() -> Unit)? = null) {
