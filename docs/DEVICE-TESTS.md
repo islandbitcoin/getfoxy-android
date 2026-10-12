@@ -129,7 +129,9 @@ testnut.cashu.space (fake money) and use it for every check here.
    `Permission denied`) shows `foxy-seed.device.v1.bin` and no
    `foxy-seed.v1.bin`. Force-stop and open:
    the wallet asks for the finger before it opens. Turn it off again: asked
-   once more, and the files are back the other way.
+   once more, and the files are back the other way. The page's own labels
+   still say Face ID on Android (core/web, ENG-663); the system prompt is what
+   this checks.
 7. **SHOW WORDS and RESTORE.** BACKUP → SHOW WORDS: the native screen ("On this
    phone · not the web page"), the words behind TAP TO REVEAL, VERIFY with the
    quiz; HOME while it is up and back: the screen is gone. RESTORE: type twelve
@@ -148,6 +150,9 @@ testnut.cashu.space (fake money) and use it for every check here.
    Nothing asks for a Bluetooth permission. The conformance flow *P3: the
    receive screen's TAP …* and `TapReceiveTest` cover the same in jsdom and the
    JVM; this is the check on the real WebView.
+   The 2026-10-12 run was inconclusive for this check ("not sure what
+   happened"): the field log or logcat for `[tap] receive:` and
+   `tap: not advertising` is still to be read, so there is no result yet.
 9. **Large text (ENG-661). Pending: the architect's on-device check; no phone
    was used for this change.** With the phone's font size raised (Settings →
    Display → Font size; the Pixel 8 Pro of the report ran font_scale 1.3 with
