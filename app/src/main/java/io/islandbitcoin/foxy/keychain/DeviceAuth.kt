@@ -46,7 +46,13 @@ class DeviceAuth(private val app: Context, private val front: () -> Activity?) :
      * MainActivity's launcher, registered in onCreate (a launcher cannot be
      * registered later). Null with no activity to start it from. Main thread.
      */
-    @Volatile var confirmCredential: ((Intent, (Boolean) -> Unit) -> Boolean)? = null
+    var confirmCredential: ((Intent, (Boolean) -> Unit) -> Boolean)?
+        get() = confirmation.start
+        set(value) {
+            confirmation.start = value
+        }
+
+    private val confirmation = ScreenLockConfirmation<Intent>()
 
     val passcodeSet: Boolean get() = keyguard?.isDeviceSecure ?: false
 
@@ -59,8 +65,7 @@ class DeviceAuth(private val app: Context, private val front: () -> Activity?) :
      * while it is set (a put-away would forget the seed being read and close
      * the seed screen about to open).
      */
-    @Volatile var confirming: Boolean = false
-        private set
+    val confirming: Boolean get() = confirmation.confirming
 
     /**
      * Told each screen-lock confirmation's answer (true for a yes), on the main
@@ -69,7 +74,11 @@ class DeviceAuth(private val app: Context, private val front: () -> Activity?) :
      * yes proves that, so a no or a cancel is a return like any other and
      * PutAway puts away what it skipped (the PIN lock comes back).
      */
-    @Volatile var confirmAnswered: ((Boolean) -> Unit)? = null
+    var confirmAnswered: ((Boolean) -> Unit)?
+        get() = confirmation.answered
+        set(value) {
+            confirmation.answered = value
+        }
 
     // MARK: SeedGate (the seed executor)
 
@@ -234,24 +243,7 @@ class DeviceAuth(private val app: Context, private val front: () -> Activity?) :
     private fun confirm(reason: String, done: (Result) -> Unit): CancellationSignal? {
         @Suppress("DEPRECATION")
         val intent = keyguard?.createConfirmDeviceCredentialIntent(reason, null)
-        val start = confirmCredential
-        when {
-            intent == null -> done(Result.UNAVAILABLE)
-            start == null -> done(Result.NO)
-            else -> {
-                // set before the activity starts: its stop of MainActivity is this question's, not a put-away
-                confirming = true
-                val started = start(intent) { yes ->
-                    confirming = false
-                    confirmAnswered?.invoke(yes)
-                    done(if (yes) Result.YES else Result.NO)
-                }
-                if (!started) {
-                    confirming = false
-                    done(Result.NO)
-                }
-            }
-        }
+        confirmation.ask(intent, done)
         return null
     }
 }
