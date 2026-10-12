@@ -529,3 +529,79 @@ test('sync-core.sh refuses a Web/ holding dot-files, and leaves core/ as it was'
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+/* ENG-666: the fake host's card owner key and signed time are the phone's. A fake that
+ * derived another key, or signed for a label Android refuses, would make every card
+ * flow a test of nothing, so lib/card-owner.js is held here to the same vectors the
+ * Kotlin is (app/src/test/resources/fixtures: iOS's card-owner-vectors.json and the
+ * card's own owner.json), to CardOwner.kt's six labels, and to the page's time key. */
+test('card-owner.js: the owner key and its signatures are the iOS vectors, the labels CardOwner.kt\'s, the time key the page\'s', () => {
+  const CardOwner = require('../lib/card-owner');
+  const FIX = path.join(ROOT, 'app', 'src', 'test', 'resources', 'fixtures');
+  const V = JSON.parse(fs.readFileSync(path.join(FIX, 'card-owner-vectors.json'), 'utf8'));
+  assert.equal(CardOwner.N.toString(16), V.n);
+  assert.equal(V.cases.length, 3);
+  let signed = 0;
+  for (const c of V.cases) {
+    const seed = c.mnemonic ? CardOwner.seedOf(c.mnemonic) : Buffer.from(c.seed, 'hex');
+    assert.equal(seed.toString('hex'), c.seed, 'BIP-39, as Node worked it out');
+    const d = CardOwner.scalar(seed, Buffer.from(c.cardKey, 'hex'));
+    assert.equal(d.toString('hex'), c.scalar);
+    assert.equal(CardOwner.publicKey(d).toString('hex'), c.pub);
+    const [text, error] = CardOwner.ownerKey({ key: c.cardKey.toUpperCase() }, seed);
+    assert.equal(error, null);
+    assert.equal(text, '{"pub":"' + c.pub + '"}');
+    assert.deepEqual(c.signatures.map((x) => x.label), CardOwner.LABELS);
+    for (const s of c.signatures) {
+      const m = { key: c.cardKey, label: s.label, nonce: s.nonce, value: s.value };
+      const r = CardOwner.signRequest(m);
+      assert.ok(r, s.label);
+      assert.equal(CardOwner.message(r.label, r.nonce, r.value).toString('hex'), s.message);
+      assert.ok(CardOwner.verify(c.pub, Buffer.from(s.message, 'hex'), s.sig), 'Node\'s ' + s.label);
+      const ours = JSON.parse(CardOwner.ownerSign(m, seed)[0]).sig;
+      assert.ok(CardOwner.verify(c.pub, Buffer.from(s.message, 'hex'), ours), 'ours, ' + s.label);
+      assert.equal(CardOwner.verify(c.pub, Buffer.concat([Buffer.from(s.message, 'hex'), Buffer.from([0])]), ours), false, 'and not another message');
+      signed += 1;
+    }
+  }
+  assert.equal(signed, 18);
+  for (const r of V.reductions) assert.equal((BigInt('0x' + r.hash) % CardOwner.N).toString(16).padStart(64, '0'), r.reduced);
+  // the card's own proofs: the six verify over the message this signs; lock and tag are refused
+  const card = JSON.parse(fs.readFileSync(path.join(FIX, 'card-owner-proofs.json'), 'utf8'));
+  const refused = [];
+  for (const p of card.proofs) {
+    const label = p.label.replace(/^FoxyCard\//, '');
+    const r = CardOwner.signRequest({ key: V.cases[0].cardKey, label, nonce: p.nonce, value: p.value });
+    if (!r) { refused.push(label); continue; }
+    assert.ok(CardOwner.verify(card.ownerKey, CardOwner.message(r.label, r.nonce, r.value), p.signature), p.label);
+  }
+  assert.deepEqual(refused, ['lock', 'tag']);
+  // the labels are CardOwner.kt's, in its order
+  const kt = fs.readFileSync(path.join(ROOT, 'app', 'src', 'main', 'java', 'io', 'islandbitcoin', 'foxy', 'keychain', 'CardOwner.kt'), 'utf8');
+  const enumBody = kt.slice(kt.indexOf('enum class Label'), kt.indexOf('fun accepts'));
+  assert.deepEqual([...enumBody.matchAll(/^\s+[A-Z_]+\("([a-z-]+)"\)/gm)].map((m) => m[1]), CardOwner.LABELS);
+  // and refusals, before anything is derived, with no seed or with one
+  const seed = CardOwner.seedOf('abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about');
+  const key = V.cases[0].cardKey, nonce = '000102030405060708090a0b0c0d0e0f';
+  for (const bad of [{ label: 'lock' }, { label: 'tag', value: '01' }, { label: 'time' }, { label: 'FoxyCard/load' }, { label: 'change-pin', value: '313233' },
+    { label: 'set-limit', value: '00' }, { label: 'load', value: '00' }, { label: 'reset', value: '00' }, { nonce: 'ab' }, { key: '04' + key.slice(2) },
+    { value: undefined }, { nonce: 'é'.repeat(16) }]) {
+    const m = Object.assign({ key, label: 'load', nonce, value: '' }, bad);
+    assert.deepEqual(CardOwner.ownerSign(m, seed), [null, 'bad request'], JSON.stringify(bad));
+    assert.deepEqual(CardOwner.ownerSign(m, null), [null, 'bad request'], 'refused before the seed: ' + JSON.stringify(bad));
+  }
+  assert.deepEqual(CardOwner.ownerKey({ key: '04' + key.slice(2) }, seed), [null, 'bad request']);
+  assert.deepEqual(CardOwner.ownerKey({ key }, null), [null, 'no seed']);
+  // the time: the page's key, the four bytes big-endian, and a clock no card can be told
+  const page = fs.readFileSync(path.join(ROOT, 'core', 'web', 'foxy-wallet.js'), 'utf8');
+  assert.equal(/CARD_TIME_KEY = '([0-9a-f]+)'/.exec(page)[1], CardOwner.TIME_PUBLIC);
+  const [t] = CardOwner.cardTime(1800000000999);
+  const j = JSON.parse(t);
+  assert.deepEqual(Object.keys(j).sort(), ['sig', 'time']);
+  assert.equal(j.time, 1800000000);
+  assert.equal(CardOwner.timeMessage(1800000000).toString('hex'), '466f7879436172642f74696d65' + '6b49d200');
+  assert.ok(CardOwner.verify(CardOwner.TIME_PUBLIC, CardOwner.timeMessage(1800000000), j.sig));
+  assert.equal(CardOwner.verify(CardOwner.TIME_PUBLIC, CardOwner.timeMessage(1800000001), j.sig), false);
+  assert.deepEqual(CardOwner.cardTime(-1), [null, CardOwner.UNTELLABLE]);
+  assert.deepEqual(CardOwner.cardTime(4294967296000), [null, CardOwner.UNTELLABLE]);
+});
