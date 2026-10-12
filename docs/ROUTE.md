@@ -182,7 +182,8 @@ iOS builds four walls (`Foxy/FoxyWebView.swift`):
 - **One HTTP client, built in one place.** `Route.kt` owns OkHttp and is the only
   code that makes a network call. No `HttpURLConnection`, `URL.openStream`,
   `DownloadManager`, Cronet, Volley, Ktor, `WebView.loadUrl` of a remote URL or
-  `InetAddress` lookup anywhere else; a CI check (`tools/check-no-network.sh`,
+  `InetAddress` lookup anywhere else, and no `java.net.URL` built or named
+  (`URL(u).readText()` is `openStream` by another name); a CI check (`tools/check-no-network.sh`,
   P1) greps the Kotlin sources for each and fails the build.
 - **Through Tor's SOCKS port, with Tor resolving names.** OkHttp with
   `Proxy(Proxy.Type.SOCKS, 127.0.0.1:<port read from Tor's control port>)`, so
