@@ -9,10 +9,11 @@ extend-exclude = [
     "app/src/test/resources/fixtures/*.json",
 ]
 
-# Invoice and payment-request vectors copied from FoxyTests/TapProtocolTests.swift
-# (bech32 and base64, not words).
+# Invoice, payment-request and token vectors copied from FoxyTests/TapProtocolTests.swift
+# and TapSessionTests.swift (bech32 and base64, not words).
 [default]
 extend-ignore-re = [
     "lnbc10n1[A-Za-z0-9]*",
     "creqA[A-Za-z0-9_=+/-]*",
+    "cashuB[A-Za-z0-9_=+/-]*",
 ]
