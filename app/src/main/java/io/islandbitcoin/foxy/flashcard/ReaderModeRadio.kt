@@ -19,8 +19,15 @@ import io.islandbitcoin.foxy.debug.Log
  * system dialog over Foxy (the screen lock's prompt) does not end a tap that is
  * waiting for its card; Foxy put away ends the session itself
  * ([NfcCardLink.putAway]).
+ *
+ * [off] hears reader mode turned off by [stop] (ENG-668): a card still resting on
+ * the phone is then found by Android's own dispatch, and its address is the card
+ * just read, not a tap (CardTapIntake).
  */
-class ReaderModeRadio(private val activity: Activity) : CardRadio {
+class ReaderModeRadio(
+    private val activity: Activity,
+    private val off: () -> Unit = {},
+) : CardRadio {
     companion object {
         const val FLAGS = NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
 
@@ -59,6 +66,7 @@ class ReaderModeRadio(private val activity: Activity) : CardRadio {
         } catch (e: IllegalStateException) {
             Log.line("[card] reader mode was already off")
         }
+        off()
     }
 
     /** The activity is in front again: a sheet still looking looks again (Android ended reader mode on the pause). */
