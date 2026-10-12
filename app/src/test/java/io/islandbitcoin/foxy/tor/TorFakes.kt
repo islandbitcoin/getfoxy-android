@@ -110,3 +110,49 @@ class FakeTransports : PluggableTransports {
         stops++
     }
 }
+
+/**
+ * A control link whose SETCONF replies wait until the test lets them through,
+ * oldest first ([release]); GETINFO and EXTENDCIRCUIT answer at once. For the
+ * order in which a superseded set-up's replies arrive.
+ */
+class HeldControl(private val sched: FakeScheduler) : TorControl {
+    val setConfs = mutableListOf<List<Pair<String, String>>>()
+    private val held = ArrayDeque<() -> Unit>()
+    val info = mutableMapOf(
+        "net/listeners/socks" to "\"127.0.0.1:9150\"",
+        "status/enough-dir-info" to "1",
+        "traffic/read" to "0",
+    )
+    var circuitsAsked = 0
+
+    override fun setConf(settings: List<Pair<String, String>>, timeoutMs: Long, done: (Boolean, String) -> Unit) {
+        setConfs.add(settings)
+        held.addLast { done(true, "OK") }
+    }
+
+    override fun getInfo(key: String, timeoutMs: Long, done: (String?) -> Unit) {
+        val v = info[key]
+        sched.post { done(v) }
+    }
+
+    override fun extendCircuit(timeoutMs: Long, done: (Boolean) -> Unit) {
+        circuitsAsked++
+        sched.post { done(true) }
+    }
+
+    val waiting: Int get() = held.size
+
+    /** The oldest reply Tor has not given yet, given now. */
+    fun release() {
+        held.removeFirst()()
+        sched.drain()
+    }
+
+    fun releaseAll() {
+        while (held.isNotEmpty()) release()
+    }
+
+    /** Every DisableNetwork value sent, in order. */
+    fun network(): List<String> = setConfs.mapNotNull { s -> s.firstOrNull { it.first == "DisableNetwork" }?.second }
+}

@@ -84,6 +84,18 @@ class TorMachine(
         const val STALL_AFTER_MS: Long = 5_000
         const val DIRECT_TRIES_MAX = 2
         const val CONTROL_WAIT_MS: Long = 3_000
+
+        /**
+         * A RETRY or RESTART TOR this soon after a set-up began joins it
+         * instead of starting another (ENG-652). Every set-up switches Tor's
+         * network off, which kills the circuits the one before it was
+         * building, and Tor blames their guards: three stacked inside a second
+         * (a return, the next activity's start, a restart) left every primary
+         * guard "not reachable", and Tor held each new stream "waiting for
+         * circuit" until the SOCKS handshake timed out, 30 s, with a circuit
+         * established.
+         */
+        const val SET_UP_JOIN_MS: Long = 4_000
     }
 
     /** Told on every change the page should hear, on the scheduler. */
@@ -123,6 +135,15 @@ class TorMachine(
     private var clockKeptFor = -1
     private var setUpGen = 0
     private var setUpPending = false
+    private var setUpAt = Long.MIN_VALUE / 2
+    /**
+     * Whether a CIRCUIT_ESTABLISHED now is about Tor's network as it is: false
+     * from a `DisableNetwork 1` until the `DisableNetwork 0` after it is
+     * answered. Tor writes an event on the control link before its reply to a
+     * later command, and the network being off builds nothing, so an event
+     * heard in between is about circuits that `DisableNetwork 1` closed.
+     */
+    private var circuitsCount = true
     var parked = false
         private set
     private var socksGen = 0
@@ -187,9 +208,19 @@ class TorMachine(
                 armDeadline()
                 changed()
             }
+            joinable() -> Log.line("[foxy] tor: retrying — a set-up began ${sched.now() - setUpAt}ms ago; joining it")
             else -> setUp("retrying")
         }
     }
+
+    /**
+     * A set-up began less than [SET_UP_JOIN_MS] ago and is still going: not
+     * failed, not parked, not off for want of a network, its link up. Another
+     * now would only switch the network off under the circuits it is building.
+     */
+    private fun joinable(): Boolean =
+        launched && !ready && !failed && !parked && !offForBlackout && !setUpPending && control != null &&
+            sched.now() - setUpAt < SET_UP_JOIN_MS
 
     /**
      * RESTART TOR and RETRY: a full set-up, keeping the fallback clock and the
@@ -203,6 +234,10 @@ class TorMachine(
         if (parked) return setUp(reason)
         if (sched.now() - networkBackAt < 4_000 && control != null) {
             Log.line("[foxy] tor: $reason — already setting up, the network came back a moment ago")
+            return
+        }
+        if (joinable()) {
+            Log.line("[foxy] tor: $reason — a set-up began ${sched.now() - setUpAt}ms ago; joining it")
             return
         }
         Log.line("[foxy] tor: restarting ($reason): a new set-up")
@@ -239,6 +274,7 @@ class TorMachine(
 
     private fun launch() {
         launched = true
+        circuitsCount = true
         transport = forced ?: memory.remembered
         var settings = transportSettings(transport)
         if (settings == null) {
@@ -272,6 +308,7 @@ class TorMachine(
             // running where iOS suspends it, so a late bootstrap would stay online)
             setUpPending = false
             val gen = setUpGen
+            circuitsCount = false
             ctrl.setConf(listOf("DisableNetwork" to "1"), 4_000) { ok, message ->
                 if (gen == setUpGen && parked) {
                     if (transport != TorTransport.DIRECT) transports.stopAll()
@@ -343,6 +380,10 @@ class TorMachine(
         when {
             action == "CIRCUIT_ESTABLISHED" -> {
                 noteLife()
+                if (!circuitsCount) {
+                    Log.line("[foxy] tor: a circuit from before the network went off; not counted")
+                    return
+                }
                 established()
             }
             action == "CIRCUIT_NOT_ESTABLISHED" -> {
@@ -538,6 +579,7 @@ class TorMachine(
         if (!launched) return start()
         setUpGen += 1
         val gen = setUpGen
+        setUpAt = sched.now()
         val keep = keepClock
         keepClock = false
         clockKeptFor = if (keep) gen else -1
@@ -565,11 +607,13 @@ class TorMachine(
         if (!hasNetwork()) {
             offForBlackout = true
             Log.line("[foxy] tor: $reason — the phone has no network; off it until there is one")
+            circuitsCount = false
             ctrl.setConf(listOf("DisableNetwork" to "1"), 4_000) { _, _ -> }
             return
         }
         Log.line("[foxy] tor: setting up a private connection ($reason) through ${transport.wire}")
         var answered = false
+        circuitsCount = false
         ctrl.setConf(listOf("DisableNetwork" to "1"), 4_000) { _, _ ->
             if (gen != setUpGen || answered) return@setConf
             answered = true
@@ -594,12 +638,16 @@ class TorMachine(
         }
         setUpProgress(20)
         if (clockKeptFor != gen) armDeadline()
-        apply(settings, ctrl) { networkOn(gen, ctrl) }
+        // a newer set-up, a put-away or the network going has taken over: this one's network stays off
+        apply(settings, ctrl) { if (gen == setUpGen) networkOn(gen, ctrl) }
     }
 
     private fun networkOn(gen: Int, ctrl: TorControl, then: (() -> Unit)? = null) {
+        // never on for a set-up something newer superseded: that could be Foxy put away (S21)
+        if (gen != setUpGen) return
         ctrl.setConf(listOf("DisableNetwork" to "0")) { ok, _ ->
             if (gen != setUpGen) return@setConf
+            circuitsCount = true
             if (!ok) Log.line("[foxy] tor: could not switch the network back on")
             stallReset()
             setUpProgress(30)
@@ -669,6 +717,7 @@ class TorMachine(
         setUpGen += 1
         val gen = setUpGen
         setUpPending = false
+        circuitsCount = false
         stallOff()
         deadline?.cancel()
         deadline = null
@@ -723,6 +772,7 @@ class TorMachine(
         offForBlackout = true
         setUpGen += 1
         setUpPending = false
+        circuitsCount = false
         stallOff()
         deadline?.cancel()
         deadline = null
@@ -852,6 +902,7 @@ class TorMachine(
         changed()
         val gen = setUpGen
         apply(settings, ctrl) {
+            if (gen != setUpGen) return@apply
             readSocksPort()
             askForCircuit(gen)
         }
@@ -879,11 +930,13 @@ class TorMachine(
         Log.line("[foxy] tor: retrying")
         forgetSocksPort()
         stallReset()
+        circuitsCount = false
         ctrl.setConf(listOf("DisableNetwork" to "1")) { _, _ ->
             if (gen != setUpGen || parked) return@setConf
             ctrl.setConf(listOf("DisableNetwork" to "0")) { ok, _ ->
                 if (gen != setUpGen || parked) return@setConf
                 if (!ok) Log.line("[foxy] tor: could not switch the network back on")
+                circuitsCount = true
                 stallReset()
                 readSocksPort()
             }
