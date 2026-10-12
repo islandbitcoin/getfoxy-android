@@ -292,8 +292,10 @@ Before it prints the quote, it also writes a held-money marker next to the AVD
 the mint, the quote id and the time) and deletes it only once the change is
 out. While the marker exists the next run refuses too (exit 4), even with no
 emulator up (it died, the terminal closed, the Mac rebooted): the ecash is in the
-AVD's userdata and `-wipe-data` would destroy it. Start the AVD again without
-`-wipe-data`, claim and drain it by hand as above, stop it, then delete the marker.
+AVD's userdata and `-wipe-data` would destroy it. If the emulator is still up
+(the usual case: the run left it running), claim and drain it by hand as above,
+stop it, then delete the marker. If it is not, start the AVD again without
+`-wipe-data` first; the refusal prints which of the two applies.
 
 `tools/leak-test.sh` starts the AVD wiped and headless with `-tcpdump`, turns
 private DNS and the virtual Wi-Fi off (the capture sees the emulated cellular

@@ -41,8 +41,8 @@
 # (<avd home>/<AVD>.avd/foxy-money-held: mint, quote id, time) and removed only
 # once the change is out; while it exists a run refuses too (exit 4), even with
 # no emulator up (it died, the Mac rebooted): the ecash is in the AVD's userdata,
-# and -wipe-data would destroy it. Recover by starting the AVD WITHOUT -wipe-data
-# and draining it, then delete the marker.
+# and -wipe-data would destroy it. Recover by draining it (after starting the AVD
+# WITHOUT -wipe-data when no emulator is up), then delete the marker.
 set -euo pipefail
 mode="$1"
 out="$(cd "$2" && pwd)"
@@ -67,16 +67,24 @@ held_marker="${ANDROID_AVD_HOME:-$HOME/.android/avd}/$avd.avd/foxy-money-held"
 # `adb get-state` fails for an `offline` emulator, so the console port is probed directly, and
 # the serial in any adb state (device, offline, unauthorized, …) counts as up. The grep reads all
 # of adb's output (no -q): an early exit could SIGPIPE adb and, under pipefail, read as "not up".
+emulator_up() { (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || adb devices 2>/dev/null | grep "^$ANDROID_SERIAL[[:space:]]" > /dev/null; }
+# a previous run's held-money marker: the AVD's userdata may hold ecash even with no emulator up
 if [ -e "$held_marker" ]; then
   echo "leak-test $mode: AVD $avd may hold real ecash from a previous run ($held_marker):" >&2
   sed 's/^/  /' "$held_marker" >&2 || true
-  echo "leak-test $mode: not starting it with -wipe-data. Recover it first (docs/DEVICE-TESTS.md \"Leftover sats\"):" >&2
-  echo "  $sdk/emulator/emulator -avd $avd -port $port -no-snapshot &   # NO -wipe-data" >&2
-  echo "  adb -s $ANDROID_SERIAL wait-for-device; adb -s $ANDROID_SERIAL shell am start -n $pkg/.MainActivity" >&2
+  if emulator_up; then
+    # the usual case: the held run ended LEFT RUNNING. Starting the AVD again would fail on the
+    # port or the AVD's instance lock, so the recovery goes straight to the drain.
+    echo "leak-test $mode: it is still running ($ANDROID_SERIAL). Recover it first (docs/DEVICE-TESTS.md \"Leftover sats\"):" >&2
+  else
+    echo "leak-test $mode: not starting it with -wipe-data. Recover it first (docs/DEVICE-TESTS.md \"Leftover sats\"):" >&2
+    echo "  $sdk/emulator/emulator -avd $avd -port $port -no-snapshot &   # NO -wipe-data" >&2
+    echo "  adb -s $ANDROID_SERIAL wait-for-device; adb -s $ANDROID_SERIAL shell am start -n $pkg/.MainActivity" >&2
+  fi
   echo "  then claim the quote if it was paid and drain the wallet into your own (the commands the held run printed), stop it (adb -s $ANDROID_SERIAL emu kill), and only then: rm '$held_marker'" >&2
   exit 4
 fi
-if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || adb devices 2>/dev/null | grep "^$ANDROID_SERIAL[[:space:]]" > /dev/null; then
+if emulator_up; then
   echo "leak-test $mode: $ANDROID_SERIAL is already running (it may hold ecash from a previous run): drain it and stop it first (docs/DEVICE-TESTS.md \"Leftover sats\")" >&2
   exit 4
 fi
