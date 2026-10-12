@@ -218,7 +218,15 @@ As built in P2 (ENG-648). Kotlin paths are under
 - **One retry, and only before the request.** A failure of the SOCKS handshake
   is thrown from the socket's `connect`, before OkHttp writes a byte of the
   request; that, and only that, is retried, once, after 0.4 s, on Tor's port
-  as it is then (`FoxyBridge.swift:1447-1460`). OkHttp's own retry is off
+  as it is then (`FoxyBridge.swift:1447-1460`), within the time the first try
+  left: a mint request is answered within its 60 s however it went, inside the
+  page's 65 s wait, and a retry with under 5 s left is not sent. The handshake
+  waits for Tor's answer to its CONNECT as long as the request may, at most
+  60 s, iOS's request timeout (`TorService.swift:1831-1832`): a new label is a
+  new circuit, and right after "circuit established" Tor took longer than the
+  30 s the handshake used to allow, so every first request on a label timed
+  out, and its retry, for about two minutes (ENG-655,
+  `MintRequestRetryTest`). OkHttp's own retry is off
   (`retryOnConnectionFailure(false)`), and a failure on a redirect's later hop
   is never "before the request". So a POST that reached the mint is never sent
   twice (`MintRequestRetryTest`, `RouteClientTest`). Two failed handshakes on
