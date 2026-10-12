@@ -25,6 +25,7 @@
 const crypto = require('crypto');
 const { check } = require('./schema');
 const TapRules = require('./tap-rules');
+const CardOwner = require('./card-owner');
 const CONTRACT = require('../contract.json');
 
 const BY_NAME = new Map(CONTRACT.map((e) => [e.name, e]));
@@ -97,6 +98,10 @@ function replyProblems(entry, text, error) {
  *               ("Unknown action: …") and is a violation ('unserved'), so a boot
  *               that leans on one fails here. Unset: everything is served (the
  *               iOS app's table).
+ *   o.ownerWords the BIP-39 phrase a card's owner key is derived from while a
+ *               seed is saved (default: abandon … about, the first case of the
+ *               iOS card-owner vectors); o.nowMs the phone's clock for cardTime
+ *               (default: Date.now)
  *   o.unknown   a Set of later-phase actions with no stub that this host answers
  *               "Unknown action: …" without a violation, as the Kotlin bridge
  *               answers them today: for a flow about something else that has to
@@ -113,6 +118,7 @@ function makeHost(o) {
   const SEED = crypto.createHash('sha256').update('conformance seed').digest();
   const derive = (keysetId, counter, what) =>
     crypto.createHmac('sha256', SEED).update(keysetId + '|' + counter + '|' + what).digest('hex');
+  const OWNER_SEED = CardOwner.seedOf(opts.ownerWords || 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about');
   const pubOf = (i) => '02' + crypto.createHmac('sha256', SEED).update('p2pk|' + i).digest('hex');
 
   const host = {
@@ -274,9 +280,12 @@ function makeHost(o) {
     cardSay: () => ['ok', null],
     cardAgain: () => NO('The card was taken away.'),
     cardEnd: () => ['ok', null],
-    cardOwnerKey: () => J({ pub: '04' + '11'.repeat(64) }),
-    cardOwnerSign: () => J({ sig: '3006020101020101' }),
-    cardTime: () => J({ time: Math.floor(Date.now() / 1000), sig: '3006020101020101' }),
+    /* As Android answers them since ENG-666 (lib/card-owner.js, CardOwner.kt, CardTime.kt):
+     * the owner key and signatures from the seed's words, "bad request" for anything but
+     * the six labels and their shapes, and the clock signed by the interim time key. */
+    cardOwnerKey: (m) => CardOwner.ownerKey(m, state.seed ? OWNER_SEED : null),
+    cardOwnerSign: (m) => CardOwner.ownerSign(m, state.seed ? OWNER_SEED : null),
+    cardTime: () => CardOwner.cardTime(opts.nowMs ? opts.nowMs() : Date.now()),
   };
   host.answerers = answer;
 

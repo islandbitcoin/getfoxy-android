@@ -5,7 +5,10 @@ import io.islandbitcoin.foxy.TestSupport.V00
 import io.islandbitcoin.foxy.TestSupport.V01
 import io.islandbitcoin.foxy.TestSupport.body
 import io.islandbitcoin.foxy.bridge.SeedBridge.Check
+import io.islandbitcoin.foxy.keychain.Bytes
+import io.islandbitcoin.foxy.keychain.CardOwner
 import io.islandbitcoin.foxy.keychain.SeedActions
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -190,5 +193,60 @@ class SeedBridgeTest {
         for (v in listOf<Any?>(1.5, Double.NaN, Double.POSITIVE_INFINITY, 9_007_199_254_740_992.0, true, "5", 5L, 5, null)) {
             assertEquals("$v", null, SeedBridge.exactInteger(v))
         }
+    }
+
+    /**
+     * cardOwnerKey {key}: a card's compressed public key as 66 hex characters. Anything
+     * else is refused before the seed is read (NativeSeedTests.swift
+     * `testCardOwnerKeyTakesACardsCompressedKeyAndNothingElse`, ENG-666).
+     */
+    @Test
+    fun cardOwnerKeyTakesACardsCompressedKeyAndNothingElse() {
+        val key = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+        val tail = key.drop(2)
+        val bytes = Bytes.fromHex(key)!!
+        assertEquals(33, bytes.size)
+        fun ok(b: Map<String, Any?>) = (SeedBridge.cardOwnerKeyCheck(b) as? Check.Ok)?.value
+        assertArrayEquals(bytes, ok(body("key" to key)))
+        assertArrayEquals("either case is the same key, and what else the message carries is not looked at",
+            bytes, ok(body("key" to key.uppercase(), "action" to "cardOwnerKey", "id" to "1")))
+        assertArrayEquals(byteArrayOf(0x03) + ByteArray(32) { 0xAB.toByte() }, ok(body("key" to "03" + "Ab".repeat(32))))
+        val notKeys = listOf(
+            "", "02", key.dropLast(2), key + "00",
+            key.dropLast(1) + "g", key.dropLast(2) + "zz", // not hex
+            "04$tail", // the byte an uncompressed key starts with
+            "00$tail", "01$tail", "05$tail", "ff$tail",
+            "0x$tail", key + "\n", " " + key.drop(1),
+            "02" + "é".repeat(32), // 66 bytes of UTF-8, none of them hex
+            "02".repeat(64), // 128 characters
+            "0".repeat(66),
+        )
+        val notStrings = listOf<Any?>(5, null, true, listOf(key), mapOf("key" to key))
+        for (b in notKeys + notStrings) assertEquals("$b", bad, SeedBridge.cardOwnerKeyCheck(body("key" to b)))
+        assertEquals("no key", bad, SeedBridge.cardOwnerKeyCheck(body()))
+        assertEquals("another name", bad, SeedBridge.cardOwnerKeyCheck(body("pubkey" to key)))
+        assertEquals("64 characters", bad, SeedBridge.cardOwnerKeyCheck(body("key" to key.take(64))))
+        assertEquals("68 characters", bad, SeedBridge.cardOwnerKeyCheck(body("key" to key + "11")))
+    }
+
+    /** cardOwnerSign: CardOwner.signRequest's rules, through JSON as the page's bodies come (CardOwnerTest holds the rules one by one). */
+    @Test
+    fun cardOwnerSignTakesTheSixLabelsAndTheirShapesAndNothingElse() {
+        val key = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+        val nonce = "000102030405060708090a0b0c0d0e0f"
+        val got = SeedBridge.cardOwnerSignCheck(body("key" to key, "label" to "set-limit", "nonce" to nonce, "value" to "000186a0", "id" to "2"))
+        assertEquals(Check.Ok(CardOwner.SignRequest(Bytes.fromHex(key)!!, CardOwner.Label.SET_LIMIT, Bytes.fromHex(nonce)!!, byteArrayOf(0, 1, 0x86.toByte(), 0xA0.toByte()))), got)
+        assertTrue(SeedBridge.cardOwnerSignCheck(body("key" to key, "label" to "reset", "nonce" to nonce, "value" to "")) is Check.Ok)
+        for (b in listOf(
+            body("key" to key, "label" to "lock", "nonce" to nonce, "value" to ""),
+            body("key" to key, "label" to "tag", "nonce" to nonce, "value" to "01"),
+            body("key" to key, "label" to "time", "nonce" to nonce, "value" to "00000000"),
+            body("key" to key, "label" to "load", "nonce" to nonce),
+            body("key" to key, "label" to "load", "nonce" to nonce, "value" to "00"),
+            body("key" to key, "label" to "change-pin", "nonce" to nonce, "value" to 1234),
+            body("key" to key, "label" to "load", "nonce" to 5, "value" to ""),
+            body("key" to "04" + key.drop(2), "label" to "load", "nonce" to nonce, "value" to ""),
+            body("label" to "load", "nonce" to nonce, "value" to ""),
+        )) assertEquals("$b", bad, SeedBridge.cardOwnerSignCheck(b))
     }
 }

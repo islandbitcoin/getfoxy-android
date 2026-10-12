@@ -245,9 +245,72 @@ test('P3: a host serving P1, P2 and P3 actions answers every platform door the s
     await s.settle(800);
   });
   const p3 = CONTRACT.filter((e) => e.kind === 'action' && e.phase === 'P3').map((e) => e.name);
-  assert.equal(p3.length, 23);
-  assert.deepEqual(p3.filter((a) => !(s.host.asked.get(a) > 0)), [], 'every P3 action was asked of the P3 host');
+  assert.equal(p3.length, 26);
+  // The page asks a card's owner key and its signed time only inside a card session, which
+  // opens with cardBegin (LATER until the NFC link): they are asked of a P3 host, as the
+  // page's card code asks them, by the flow after this one (ENG-666).
+  const inACardSession = ['cardOwnerKey', 'cardOwnerSign', 'cardTime'];
+  assert.deepEqual(p3.filter((a) => !inACardSession.includes(a) && !(s.host.asked.get(a) > 0)), [], 'every other P3 action was asked of the P3 host');
   assert.ok(s.host.asked.get('haptic') > 0, 'and a haptic');
+});
+
+/* Ask native as the page's card code does (08a-flashcard.js `cardOwnerPub`, `cardProof`,
+ * `cardTold`: nativeJson over bridgeSeed): its own message shape, through the page's
+ * window.webkit.messageHandlers.foxy, answered through FoxyWallet._scanResult to a
+ * resolver kept in FoxyWallet._scans, as bridgeSeed keeps one. Not a flow of the page's,
+ * so the coverage list (NOT_EXERCISED) still says the page posts these only in a card session. */
+function askAsPage(s, action, extra) {
+  const w = s.window;
+  return new Promise((ok, no) => {
+    const id = 's' + Date.now() + Math.random().toString(36).slice(2, 7);
+    s.W._scans[id] = { ok: (t) => ok(String(t)), no: (e) => no(new Error(String((e && e.message) || e))) };
+    w.webkit.messageHandlers.foxy.postMessage(Object.assign({ action, id }, extra));
+  });
+}
+
+test('P3 (ENG-666): a card\'s owner key, its proofs and the signed time are answered as the page\'s card code takes them', async () => {
+  // The fake phone holds abandon … about, the first case of the iOS vectors; its card key is secp256k1's G.
+  const V = require('../../app/src/test/resources/fixtures/card-owner-vectors.json');
+  const CardOwner = require('../lib/card-owner');
+  const c = V.cases[0];
+  const nonce = '000102030405060708090a0b0c0d0e0f';
+  const s = await boot({ seed: true, tor: 'up', phase: 'P3', nowMs: () => 1800000000250 });
+  try {
+    await s.until(() => s.W.connected === true, 30000, 'the page to connect to its default mint');
+    // cardOwnerPub: { key } → { pub }, which the page takes only as 04 and 128 hex
+    const pub = JSON.parse(await askAsPage(s, 'cardOwnerKey', { key: c.cardKey })).pub;
+    assert.match(pub, /^04[0-9a-f]{128}$/);
+    assert.equal(pub, c.pub, 'the iPhone\'s owner key for the same words and card');
+    // cardProof: { key, label, nonce, value } → { sig }, which the page takes as 8 to 72 bytes of hex
+    for (const [label, value] of [['change-pin', '31323334'], ['set-limit', '000186a0'], ['set-owner', '04' + 'ab'.repeat(64)], ['load', ''], ['reset', '']]) {
+      const sig = JSON.parse(await askAsPage(s, 'cardOwnerSign', { key: c.cardKey, label, nonce, value: String(value || '') })).sig;
+      assert.match(sig, /^(?:[0-9a-f]{2}){8,72}$/);
+      assert.ok(CardOwner.verify(pub, CardOwner.message(label, Buffer.from(nonce, 'hex'), Buffer.from(value, 'hex')), sig), label + ' verifies against the owner key');
+    }
+    await assert.rejects(askAsPage(s, 'cardOwnerSign', { key: c.cardKey, label: 'lock', nonce, value: '' }), /^Error: bad request$/, 'LOCK_CARD is never signed');
+    // cardTold: {} → { time, sig }, a whole number of seconds the card checks against the page's own time key
+    const told = JSON.parse(await askAsPage(s, 'cardTime', {}));
+    assert.equal(told.time, 1800000000);
+    assert.match(told.sig, /^(?:[0-9a-f]{2}){8,72}$/);
+    assert.ok(CardOwner.verify(s.W.cardTimeKey, CardOwner.timeMessage(told.time), told.sig), 'the page\'s CARD_TIME_KEY takes it');
+    for (const a of ['cardOwnerKey', 'cardOwnerSign', 'cardTime']) assert.ok(s.host.asked.get(a) > 0, a + ' asked of the P3 host');
+    await s.settle(300);
+  } finally {
+    const violations = s.violations();
+    s.close();
+    assert.deepEqual(violations, [], 'violations');
+    assert.deepEqual(s.host.replyProblems, [], 'the fake host answered outside the contract');
+  }
+});
+
+test('the card actions on a P2 host are a violation: Android serves them from P3 (ENG-666)', async () => {
+  const s = await boot({ seed: true, tor: 'up', phase: 'P2' });
+  try {
+    await assert.rejects(askAsPage(s, 'cardTime', {}), /Unknown action: cardTime/);
+    assert.ok(s.host.violations.some((v) => v.kind === 'unserved' && v.detail.includes('cardTime')));
+  } finally {
+    s.close();
+  }
 });
 
 test('P3: APPROVE on the first-install Bluetooth screen closes it, answered "unsupported" and pushed (ENG-656)', async () => {
