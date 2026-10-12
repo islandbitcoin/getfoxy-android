@@ -219,8 +219,10 @@ As built in P2 (ENG-648). Kotlin paths are under
   is thrown from the socket's `connect`, before OkHttp writes a byte of the
   request; that, and only that, is retried, once, after 0.4 s, on Tor's port
   as it is then (`FoxyBridge.swift:1447-1460`), within the time the first try
-  left: a mint request is answered within 60 s of being sent however it went,
-  and a retry with under 5 s left is not sent. The 60 s start when the request
+  left (iOS's retry, `FoxyBridge.swift:1460`, is a new task with its own
+  60 s; Android shares the first try's time so a mint request is answered
+  within 60 s of being sent, inside the page's 65 s wait): a mint request is
+  answered within 60 s of being sent however it went, and a retry with under 5 s left is not sent. The 60 s start when the request
   is sent, after any host-approval alert; the page's 65 s wait
   (`foxy-wallet.js` `bridgeAsk('mintRequest', ..., 65000)`) starts when it
   asked, so an alert left open for more than 5 s can outlast the page's wait,
