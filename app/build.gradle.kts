@@ -223,6 +223,8 @@ dependencies {
     implementation(libs.camera.lifecycle)
     implementation(libs.camera.view)
     implementation(libs.zxing.cpp)
+    // tap to pay's X25519 (tap/TapCrypto.kt): the platform has XDH only from API 33, minSdk is 28
+    implementation(libs.tink.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.secp256k1.jni.jvm)
