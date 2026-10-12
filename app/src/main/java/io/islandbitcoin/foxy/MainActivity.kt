@@ -94,7 +94,8 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         host = webHost
         webHost.create()
 
-        val away = PutAway({ host }, services.vault)
+        // Settings' screen-lock confirmation (API 28-29) stops this activity: Foxy's own question, not a put-away
+        val away = PutAway({ host }, services.vault, ownPrompt = { services.auth.confirming })
         putAway = away
         ProcessLifecycleOwner.get().lifecycle.addObserver(away)
 
@@ -154,7 +155,8 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
     }
 
     override fun onStop() {
-        // the camera light never stays on behind anything else
+        // the camera light never stays on behind anything else, Foxy's own screen-lock confirmation included:
+        // stopping it touches no seed, screen or door, so it is not skipped for that confirmation (PutAway's away is)
         host?.stopCamera()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             unregisterScreenCaptureCallback(screenshotTaken as Activity.ScreenCaptureCallback)
@@ -194,6 +196,11 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         val services = (application as FoxyApplication).services
         services.gone(this)
         if (services.frontActivity == null) services.auth.confirmCredential = null
+        // a confirmation whose answer can no longer come back here is a no (and no longer Foxy's own prompt)
+        confirmed?.let {
+            confirmed = null
+            it(false)
+        }
         putAway?.let {
             it.cancel()
             ProcessLifecycleOwner.get().lifecycle.removeObserver(it)

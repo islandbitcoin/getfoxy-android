@@ -215,8 +215,8 @@ class SeedVault(
             creating.delete()
         }
 
-        /** The three-way read of this copy; [present] has been asked. */
-        fun read(reason: String, credential: Boolean): Answer {
+        /** The three-way read of this copy; [present] has been asked. `fresh`: see [SeedGate.open]. */
+        fun read(reason: String, credential: Boolean, fresh: Boolean = false): Answer {
             val hasFile: Boolean
             val hasKey: Boolean
             try {
@@ -248,7 +248,7 @@ class SeedVault(
                         init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, sealed, 2, IV_BYTES))
                     }
                 }
-                val cipher = if (!gated) make() else when (val a = gate.open(reason, credential, make)) {
+                val cipher = if (!gated) make() else when (val a = gate.open(reason, credential, fresh, make)) {
                     is SeedGate.Answer.Opened -> a.cipher
                     SeedGate.Answer.No -> return Answer.Failed(DECLINED)
                     SeedGate.Answer.Unavailable -> return Answer.Failed(UNAVAILABLE)
@@ -288,7 +288,7 @@ class SeedVault(
                     storeKeys.create()
                 }
                 val make = { Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key) } }
-                val cipher = if (!gated) make() else when (val a = gate.open(reason, true, make)) {
+                val cipher = if (!gated) make() else when (val a = gate.open(reason, true, false, make)) {
                     is SeedGate.Answer.Opened -> a.cipher
                     SeedGate.Answer.No -> {
                         dropMadeKey(created)
@@ -418,7 +418,7 @@ class SeedVault(
         return readHere(reason, credential = true)
     }
 
-    private fun readHere(reason: String, credential: Boolean): Answer {
+    private fun readHere(reason: String, credential: Boolean, fresh: Boolean = false): Answer {
         val devicePresent: Boolean
         try {
             deviceStore?.clearCutOff()
@@ -427,7 +427,7 @@ class SeedVault(
         } catch (e: Exception) {
             return Answer.Failed("the keystore did not answer (${e.javaClass.simpleName})")
         }
-        if (devicePresent) return deviceStore!!.read(reason, credential)
+        if (devicePresent) return deviceStore!!.read(reason, credential, fresh)
         return plainStore.read(reason, credential)
     }
 
@@ -585,7 +585,7 @@ class SeedVault(
         onSeedThread()
         require(mode == DEVICE || mode == NONE) { "not a protection" }
         val current = protection()
-        if (mode == NONE && current == NONE) return null
+        if (mode == NONE && current == NONE) return leftBehindLock()
         val device = deviceStore ?: return "this phone cannot keep the seed behind its screen lock"
         if (mode == DEVICE && !passcodeSet()) return NO_PASSCODE
         if (mode == DEVICE && current == DEVICE) {
@@ -598,7 +598,8 @@ class SeedVault(
             if (!outside) return null
         }
         val reason = if (mode == NONE) GUARD_OFF_REASON else GUARD_ON_REASON
-        val words = when (val saved = readHere(reason, credential = true)) {
+        // to none: asked now, never through an earlier unlock (API 28-29's time-bound key)
+        val words = when (val saved = readHere(reason, credential = true, fresh = mode == NONE)) {
             is Answer.Found -> saved.words
             // nothing saved yet: the choice still stands for the seed to come
             Answer.Absent -> return recordProtection(mode)
@@ -616,12 +617,61 @@ class SeedVault(
             afterWriteBeforeDelete?.invoke()
             recordProtection(NONE)?.let { return it }
             if (!device.delete()) {
-                // the same words in both places: harmless until a write, which removes it (writePlain)
+                // the same words in both places: read believes the device copy and would go on asking,
+                // so the next seedProtect none removes it (leftBehindLock), as a write does (writePlain)
                 Log.line("[foxy] seed: the copy behind the screen lock could not be removed; it holds the same words")
             }
         }
         forgetNativeSeed()
         Log.line("[foxy] seed: now kept with protection $mode")
+        return null
+    }
+
+    /**
+     * Protection none, and still a copy behind the screen lock: a move to none
+     * whose delete failed. Read believes that copy first, so every read would
+     * go on asking while protection says none. The copy outside the lock is
+     * read back and compared with it (asked fresh, as any move to none is),
+     * and only when they hold the same words is the one behind the lock
+     * deleted. Null when nothing is left behind the lock.
+     */
+    private fun leftBehindLock(): String? {
+        val device = deviceStore ?: return null
+        val there = try {
+            device.clearCutOff()
+            device.present()
+        } catch (e: Exception) {
+            return "the keystore did not answer (${e.javaClass.simpleName})"
+        }
+        if (!there) return null
+        val behind = when (val saved = device.read(GUARD_OFF_REASON, credential = true, fresh = true)) {
+            is Answer.Found -> saved.words
+            Answer.Absent -> return null
+            is Answer.Failed -> return saved.why
+        }
+        val outside = try {
+            plainStore.clearCutOff()
+            plainStore.read(GUARD_OFF_REASON, credential = true)
+        } catch (e: Exception) {
+            Answer.Failed("the keystore did not answer (${e.javaClass.simpleName})")
+        }
+        when (outside) {
+            is Answer.Found -> if (outside.words != behind) {
+                // two different seeds: nothing is deleted blind (SeedStore.swift:320-327)
+                Log.line("[foxy] seed: the copies inside and outside the screen lock differ; neither is removed")
+                return "the copy outside the screen lock does not match, so nothing was changed"
+            }
+            // only behind the lock: written out first, so the guard really comes off
+            Answer.Absent -> plainStore.seal(behind, GUARD_OFF_REASON)?.let { return it }
+            is Answer.Failed -> return outside.why
+        }
+        afterWriteBeforeDelete?.invoke()
+        if (!device.delete()) {
+            Log.line("[foxy] seed: the copy behind the screen lock could still not be removed")
+            return "the copy behind the screen lock could not be removed"
+        }
+        forgetNativeSeed()
+        Log.line("[foxy] seed: the copy left behind the screen lock is removed; protection none")
         return null
     }
 
@@ -655,7 +705,8 @@ class SeedVault(
                 "yes"
             }
             Answer.Absent -> null
-            is Answer.Failed -> if (answer.why == UNAVAILABLE) "unavailable" else "no"
+            // nothing to ask with at the seed's own strength (say a weak-only face unlock): the bridge's prompt asks
+            is Answer.Failed -> if (answer.why == UNAVAILABLE) null else "no"
         }
     }
 

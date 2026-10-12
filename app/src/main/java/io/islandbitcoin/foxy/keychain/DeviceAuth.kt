@@ -50,9 +50,21 @@ class DeviceAuth(private val app: Context, private val front: () -> Activity?) :
 
     val passcodeSet: Boolean get() = keyguard?.isDeviceSecure ?: false
 
+    /**
+     * True from the moment the screen-lock confirmation is started until its
+     * answer is back (API 28-29). That confirmation is Settings' activity, in
+     * another process, over Foxy: MainActivity stops and ProcessLifecycleOwner
+     * sees Foxy put away. It is Foxy's own question, not the person leaving, so
+     * PutAway and MainActivity.onStop let the seed, the screens and the door be
+     * while it is set (a put-away would forget the seed being read and close
+     * the seed screen about to open).
+     */
+    @Volatile var confirming: Boolean = false
+        private set
+
     // MARK: SeedGate (the seed executor)
 
-    override fun open(reason: String, credential: Boolean, cipher: () -> Cipher): SeedGate.Answer {
+    override fun open(reason: String, credential: Boolean, fresh: Boolean, cipher: () -> Cipher): SeedGate.Answer {
         check(Looper.myLooper() != Looper.getMainLooper()) { "the seed's key is never asked for on the main thread" }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val c = try {
@@ -67,14 +79,16 @@ class DeviceAuth(private val app: Context, private val front: () -> Activity?) :
                 Result.NO -> SeedGate.Answer.No
             }
         }
-        // API 28-29: a time-bound key; a confirmation in the last 10 s opens it
-        try {
-            return SeedGate.Answer.Opened(cipher())
-        } catch (e: UserNotAuthenticatedException) {
-            // asked below
-        } catch (e: GeneralSecurityException) {
-            Log.line("[foxy] seed: the key would not start (${e.javaClass.simpleName})")
-            return SeedGate.Answer.No
+        // API 28-29: a time-bound key; a confirmation in the last 10 s opens it, unless this use must ask now
+        if (!fresh) {
+            try {
+                return SeedGate.Answer.Opened(cipher())
+            } catch (e: UserNotAuthenticatedException) {
+                // asked below
+            } catch (e: GeneralSecurityException) {
+                Log.line("[foxy] seed: the key would not start (${e.javaClass.simpleName})")
+                return SeedGate.Answer.No
+            }
         }
         return when (waitFor { done -> confirm(reason, done) }) {
             Result.YES -> try {
@@ -215,7 +229,18 @@ class DeviceAuth(private val app: Context, private val front: () -> Activity?) :
         when {
             intent == null -> done(Result.UNAVAILABLE)
             start == null -> done(Result.NO)
-            !start(intent) { yes -> done(if (yes) Result.YES else Result.NO) } -> done(Result.NO)
+            else -> {
+                // set before the activity starts: its stop of MainActivity is this question's, not a put-away
+                confirming = true
+                val started = start(intent) { yes ->
+                    confirming = false
+                    done(if (yes) Result.YES else Result.NO)
+                }
+                if (!started) {
+                    confirming = false
+                    done(Result.NO)
+                }
+            }
         }
         return null
     }

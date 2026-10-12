@@ -60,9 +60,12 @@ class SeedProtectTest {
         } else {
             assertEquals(KeystoreSeedKeys.TIME_BOUND_SECONDS, info.userAuthenticationValidityDurationSeconds)
         }
-        // the key is no use without the person: an encryption straight through it is refused
-        val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding").apply { init(javax.crypto.Cipher.ENCRYPT_MODE, key) }
-        val refused = runCatching { cipher.doFinal(ByteArray(16)) }.isFailure
+        // the key is no use without the person: an encryption straight through it is refused, at init on
+        // API 28-29 (a time-bound key throws UserNotAuthenticatedException there), at use on API 30+
+        val refused = runCatching {
+            val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding").apply { init(javax.crypto.Cipher.ENCRYPT_MODE, key) }
+            cipher.doFinal(ByteArray(16))
+        }.isFailure
         assertTrue("used with no one asked, it refuses", refused)
     }
 
@@ -73,7 +76,7 @@ class SeedProtectTest {
         val vault = SeedVault(
             dir, KeystoreSeedKeys(context, plainAlias),
             deviceKeys = KeystoreSeedKeys(context, deviceAlias, authenticated = true),
-            gate = SeedGate { _, _, _ -> SeedGate.Answer.No },
+            gate = SeedGate { _, _, _, _ -> SeedGate.Answer.No },
             passcodeSet = { true },
         )
         assertNull(vault.write(words))

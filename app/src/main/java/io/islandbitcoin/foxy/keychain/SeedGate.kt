@@ -30,12 +30,15 @@ fun interface SeedGate {
      * Ask, with `reason` (one of native's fixed wordings), for the cipher
      * [cipher] makes. `credential`: the screen lock may stand in for a
      * biometric (the vault always allows it; the PIN lock's `biometric` with
-     * `passcode: false` does not).
+     * `passcode: false` does not). `fresh`: the person is asked now, never
+     * let through on an earlier yes (on API 28-29 a confirmation in the last
+     * 10 s opens the time-bound key without asking; taking the guard off must
+     * not ride on it, ENG-649 plan "Moving to `none` always prompts").
      */
-    fun open(reason: String, credential: Boolean, cipher: () -> Cipher): Answer
+    fun open(reason: String, credential: Boolean, fresh: Boolean, cipher: () -> Cipher): Answer
 
     companion object {
         /** No one is asked: the key needs no one (the JVM tests). */
-        val DIRECT = SeedGate { _, _, cipher -> Answer.Opened(cipher()) }
+        val DIRECT = SeedGate { _, _, _, cipher -> Answer.Opened(cipher()) }
     }
 }

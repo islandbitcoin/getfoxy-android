@@ -31,6 +31,10 @@ class PutAwayLeavingTest {
         override var moneyInFlight = 0
         val evaluated = mutableListOf<String>()
         var reads = 0
+        var letGo = 0
+        override fun letGo() {
+            letGo++
+        }
         override fun keepAwake(on: Boolean) {}
         override fun evaluate(js: String) {
             evaluated.add(js)
@@ -43,7 +47,8 @@ class PutAwayLeavingTest {
     }
 
     private val page = FakePage()
-    private val away = PutAway({ page }, vault, parkTor = { parks++ }, torBack = { backs.add(it) }, sched = sched)
+    private var confirming = false
+    private val away = PutAway({ page }, vault, parkTor = { parks++ }, torBack = { backs.add(it) }, sched = sched, ownPrompt = { confirming })
 
     @After
     fun clean() {
@@ -135,5 +140,54 @@ class PutAwayLeavingTest {
         assertTrue("the door is open again", !Route.shut())
         sched.advance(60_000)
         assertEquals("no park after the return, from a look or a read timeout", 0, parks)
+    }
+
+    /**
+     * API 28-29: Foxy's own screen-lock confirmation is Settings' activity over
+     * Foxy, which stops it (DeviceAuth.confirming). That stop is not a put-away:
+     * the vault's epoch is not moved (a seed read under the prompt is kept), the
+     * page's screens are not let go (SeedBridge.closeScreens would bump the
+     * screen generation, and a seedShow would answer verified:false without
+     * opening), the door stays open and nothing comes back on the return.
+     */
+    @Test
+    fun aStopUnderFoxysOwnConfirmationPutsNothingAway() {
+        away.back()
+        val epoch = vault.epochNow
+        confirming = true
+        away.away()
+        assertEquals("the seed being read under the prompt is still kept after", epoch, vault.epochNow)
+        assertEquals("no screen is let go: the screen generation does not move", 0, page.letGo)
+        assertTrue("no _putAway pushed", page.evaluated.none { it.contains("_putAway") })
+        sched.advance(30_000)
+        assertTrue("the door stays open", !Route.shut())
+        assertEquals(0, parks)
+        assertEquals("no _tidying look", 0, page.reads)
+        confirming = false
+        away.back()
+        assertEquals("nothing was put away, so nothing comes back", emptyList<Long>(), backs)
+        assertTrue(page.evaluated.none { it.contains("_resumed") })
+        // a real put-away afterwards is one
+        away.away()
+        assertEquals(epoch + 1, vault.epochNow)
+        assertEquals(1, page.letGo)
+    }
+
+    @Test
+    fun aConfirmationLeftUpForTwoMinutesIsAPutAwayAfterAll() {
+        away.back()
+        val epoch = vault.epochNow
+        confirming = true
+        away.away()
+        sched.advance(PutAway.PROMPT_AT_MOST_MS - 1)
+        assertEquals(epoch, vault.epochNow)
+        sched.advance(1)
+        assertEquals("the person left from the prompt: put away", epoch + 1, vault.epochNow)
+        assertEquals(1, page.letGo)
+        sched.advance(PutAway.FIRST_LOOK_MS + 1_000)
+        assertEquals(1, parks)
+        confirming = false
+        away.back()
+        assertEquals("a return after it is a return", 1, backs.size)
     }
 }

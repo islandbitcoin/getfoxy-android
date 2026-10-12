@@ -25,8 +25,12 @@ class SeedVaultProtectionTest {
     class FakeGate : SeedGate {
         var answer = "yes"
         val asked = ArrayList<Pair<String, Boolean>>()
-        override fun open(reason: String, credential: Boolean, cipher: () -> Cipher): SeedGate.Answer {
+
+        /** The reasons asked with `fresh`: never let through on an earlier yes. */
+        val fresh = ArrayList<String>()
+        override fun open(reason: String, credential: Boolean, fresh: Boolean, cipher: () -> Cipher): SeedGate.Answer {
             asked.add(reason to credential)
+            if (fresh) this.fresh.add(reason)
             return when (answer) {
                 "yes" -> SeedGate.Answer.Opened(cipher())
                 "no" -> SeedGate.Answer.No
@@ -259,8 +263,10 @@ class SeedVaultProtectionTest {
         vault.forgetNativeSeed()
         gate.answer = "no"
         assertEquals("no", vault.unlock("Leave POS mode", true))
+        // nothing to ask with at the seed key's strength (a phone whose only biometric is a weak face unlock):
+        // not "unavailable", which would turn the biometric off for choosing more protection; the bridge asks its own
         gate.answer = "unavailable"
-        assertEquals("unavailable", vault.unlock("Unlock Foxy", false))
+        assertEquals(null, vault.unlock("Unlock Foxy", false))
         assertNull(vault.kept())
     }
 
@@ -286,5 +292,82 @@ class SeedVaultProtectionTest {
         vault.pageWillLoad()
         assertNull(vault.write(words, keepCandidate = "c2"))
         assertEquals(listOf(null, "c1", null, null, "c2", "c2"), kept)
+    }
+
+    @Test
+    fun takingTheGuardOffAlwaysAsksFreshNeverOnAnEarlierUnlock() {
+        assertNull(vault.write(words))
+        assertNull(vault.setProtection(SeedVault.DEVICE))
+        assertEquals("putting the guard on may use an earlier yes", emptyList<String>(), gate.fresh)
+        assertEquals(SeedVault.Answer.Found(words), vault.read())
+        assertEquals("yes", vault.unlock("Unlock Foxy", true))
+        assertEquals("ordinary reads and the PIN lock's biometric may", emptyList<String>(), gate.fresh)
+        assertNull(vault.setProtection(SeedVault.NONE))
+        assertEquals("plan: moving to none always prompts, never on an earlier unlock", listOf(SeedVault.GUARD_OFF_REASON), gate.fresh)
+    }
+
+    /**
+     * A device -> none move whose delete of the copy behind the lock failed
+     * leaves protection none, the same words outside the lock, and the copy
+     * behind it, which read believes first and so keeps asking. The next
+     * seedProtect none removes it (it used to answer at once).
+     */
+    @Test
+    fun aCopyLeftBehindTheLockByAFailedDeleteIsRemovedByTheNextNone() {
+        assertNull(vault.write(words))
+        assertNull(vault.setProtection(SeedVault.DEVICE))
+        val sealed = deviceFile.readBytes()
+        val key = deviceKeys.key
+        assertNull(vault.setProtection(SeedVault.NONE))
+        // what a delete that did not happen leaves behind
+        deviceFile.writeBytes(sealed)
+        deviceKeys.key = key
+        assertEquals(SeedVault.NONE, vault.protection())
+        gate.asked.clear()
+        assertEquals(SeedVault.Answer.Found(words), vault.read())
+        assertEquals("the copy left behind the lock answers, and asks", listOf(SeedVault.OPEN_REASON to true), gate.asked)
+
+        gate.asked.clear()
+        gate.fresh.clear()
+        assertNull(vault.setProtection(SeedVault.NONE))
+        assertEquals("the guard comes off with a fresh ask", listOf(SeedVault.GUARD_OFF_REASON), gate.fresh)
+        assertFalse(deviceFile.exists())
+        assertNull(deviceKeys.key)
+        assertTrue(plainFile.exists())
+        gate.asked.clear()
+        assertEquals(SeedVault.Answer.Found(words), vault.read())
+        assertTrue("and no read asks any more", gate.asked.isEmpty())
+        assertNull("a further none has nothing to do", vault.setProtection(SeedVault.NONE))
+        assertTrue(gate.asked.isEmpty())
+    }
+
+    @Test
+    fun aCopyLeftBehindTheLockThatDiffersIsNotRemovedBlind() {
+        assertNull(vault.write(words))
+        assertNull(vault.setProtection(SeedVault.DEVICE))
+        val sealed = deviceFile.readBytes()
+        val key = deviceKeys.key
+        assertNull(vault.setProtection(SeedVault.NONE))
+        assertNull(vault.write(other, replace = true) { true })
+        deviceFile.writeBytes(sealed)
+        deviceKeys.key = key
+        assertNotNull(vault.setProtection(SeedVault.NONE))
+        assertTrue("neither copy is removed", deviceFile.exists() && plainFile.exists())
+        assertEquals(SeedVault.NONE, vault.protection())
+    }
+
+    @Test
+    fun aDeclinedAskLeavesTheCopyBehindTheLockWhereItIs() {
+        assertNull(vault.write(words))
+        assertNull(vault.setProtection(SeedVault.DEVICE))
+        val sealed = deviceFile.readBytes()
+        val key = deviceKeys.key
+        assertNull(vault.setProtection(SeedVault.NONE))
+        deviceFile.writeBytes(sealed)
+        deviceKeys.key = key
+        gate.answer = "no"
+        assertEquals(SeedVault.DECLINED, vault.setProtection(SeedVault.NONE))
+        assertTrue(deviceFile.exists())
+        assertTrue(plainFile.exists())
     }
 }

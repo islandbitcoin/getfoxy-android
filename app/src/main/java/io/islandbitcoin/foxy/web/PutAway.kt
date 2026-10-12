@@ -47,6 +47,13 @@ class PutAway(
     /** Tor back, after this many seconds away. */
     private val torBack: (Long) -> Unit = { Tor.resumed(it) },
     private val sched: TorScheduler = MainLooper,
+    /**
+     * True while Foxy's own screen-lock confirmation is up (DeviceAuth.confirming,
+     * API 28-29): Settings' activity over Foxy stops it, and that stop is not a
+     * put-away. The seed being read, the seed screen about to open, a candidate
+     * and the door are let be, for [PROMPT_AT_MOST_MS] at most.
+     */
+    private val ownPrompt: () -> Boolean = { false },
 ) : DefaultLifecycleObserver {
     /** What putting away needs of the page (WebHost). */
     interface Page {
@@ -70,6 +77,13 @@ class PutAway(
 
         /** A read of `_tidying` not answered by then counts as not tidying. */
         const val READ_AT_MOST_MS = 1_000L
+
+        /**
+         * A stop under Foxy's own confirmation still away after this long (the
+         * person left from the prompt) is put away after all: the confirmation's
+         * own wait, after which its answer is a no (DeviceAuth.ANSWER_WAIT_MS).
+         */
+        const val PROMPT_AT_MOST_MS = 120_000L
     }
 
     /** The main looper, as [TorScheduler]: every timer cancellable. */
@@ -91,6 +105,9 @@ class PutAway(
     private var parkRun = 0
     private var startedOnce = false
 
+    /** The last stop was under Foxy's own confirmation, and nothing was put away for it. */
+    private var promptStop = false
+
     private fun after(ms: Long, r: () -> Unit) {
         timers.add(sched.after(ms, r))
     }
@@ -104,8 +121,26 @@ class PutAway(
 
     override fun onStart(owner: LifecycleOwner) = back()
 
-    /** Foxy is put away (ProcessLifecycleOwner's stop). */
+    /** Foxy is put away (ProcessLifecycleOwner's stop), unless the stop is Foxy's own confirmation. */
     fun away() {
+        if (ownPrompt()) {
+            Log.line("[foxy] put away: the screen lock's confirmation is over Foxy; nothing is put away for it")
+            promptStop = true
+            parkRun += 1
+            val run = parkRun
+            after(PROMPT_AT_MOST_MS) {
+                if (run == parkRun && promptStop) {
+                    Log.line("[foxy] put away: still away ${PROMPT_AT_MOST_MS / 1000}s after the confirmation; putting away")
+                    promptStop = false
+                    awayNow()
+                }
+            }
+            return
+        }
+        awayNow()
+    }
+
+    private fun awayNow() {
         backgroundedAt = sched.now()
         vault.putAway()
         FieldLog.saveForNextRun()
@@ -175,6 +210,13 @@ class PutAway(
     fun back() {
         val first = !startedOnce
         startedOnce = true
+        if (promptStop) {
+            // back from Foxy's own confirmation: nothing was put away, so nothing comes back
+            promptStop = false
+            parkRun += 1
+            cancelTimers()
+            return
+        }
         // back: a putting-away still waiting stops here, and requests may leave again
         parkRun += 1
         cancelTimers()
