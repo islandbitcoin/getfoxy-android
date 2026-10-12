@@ -155,6 +155,18 @@ class WebHost(
     /** The share sheet is up: a second share is refused until Foxy is in front again. */
     private var sharing = false
 
+    /**
+     * ENG-668: the page finished loading, its process ended, and reader mode went off
+     * at a card session's end. MainActivity passes them to its CardTapDelivery and
+     * CardTapIntake (FoxyWebView.swift `pageLoaded`, `webViewWebContentProcessDidTerminate`).
+     */
+    var onPageLoaded: () -> Unit = {}
+    var onPageGone: () -> Unit = {}
+    var onReaderOff: () -> Unit = {}
+
+    /** Whether the page has a card session open (CardTapIntake: a card being read is not a tap). */
+    val cardSessionOpen: Boolean get() = bridge?.cardSessionOpen == true
+
     /** DEBUG builds only: a deep link's hash, waiting for a loaded page. */
     private var pendingDeepLink: String? = null
 
@@ -385,7 +397,7 @@ class WebHost(
             Log.line("[card] this session goes to the card simulator on loopback")
             return CardSim.link(cardMain)
         }
-        val r = ReaderModeRadio(activity)
+        val r = ReaderModeRadio(activity) { onReaderOff() }
         radio = r
         val sheet = cardSheet ?: CardSheetView(activity, container, activity.onBackPressedDispatcher).also { cardSheet = it }
         val io = cardIo ?: java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "foxy-card") }.also { cardIo = it }
@@ -573,6 +585,7 @@ class WebHost(
     /** The page's process ended: drop what native held for it, and load it again in a new WebView. */
     private fun recreate() {
         Log.line("[foxy] webview: the page's process ended; loading it again")
+        onPageGone()
         destroy()
         create()
     }
@@ -594,6 +607,8 @@ class WebHost(
             pushUptime()
             pageFinished = true
             flushDeepLink()
+            // a card's address that launched Foxy has been waiting for this, and for the page to boot after it
+            onPageLoaded()
         }
 
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
