@@ -157,6 +157,14 @@ test('a port Foxy holds on loopback is not Foxy\'s on the outside', () => {
   assert.equal(r.others.length, 1);
 });
 
+test('a UDP socket bound to every address is Foxy\'s on the outside (WebRTC, Snowflake\'s volunteer)', () => {
+  const wild = 'udp   313: 00000000:' + port(53351) + ' 00000000:0000 07 00000000:00000000 00:00000000 00000000 ' + UID + '        0 32877 2 0000000000000000 0';
+  const r = run('direct', [[1, udp(GUEST, 53351, '83.135.243.222', 17551, Buffer.alloc(40))]], [wild]);
+  assert.equal(r.flows.length, 1, 'attributed to Foxy');
+  assert.equal(r.leaks.length, 1, 'and outside snowflake mode, a leak');
+  assert.deepEqual(run('snowflake', [[1, udp(GUEST, 53351, '83.135.243.222', 17551, Buffer.alloc(40))]], [wild]).leaks, [], 'in it, by design');
+});
+
 test('another uid\'s flows are not Foxy\'s, unless they go where one of Foxy\'s names resolved', () => {
   const other = run('direct', [[1, tcp(GUEST, 50000, '142.250.1.1', 443, true)]], [row('tcp', 50000, '142.250.1.1', 443, 1000)]);
   assert.deepEqual(other.leaks, []);

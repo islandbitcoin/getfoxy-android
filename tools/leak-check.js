@@ -290,7 +290,8 @@ function check(opts) {
   // number is free on the outside, and another process using it there is that process's flow.
   const ours = new Map(); // proto:port -> Set(local address)
   for (const s of sockets) {
-    if (loopback(s.local)) continue;
+    // 127/8 and ::1 only: a socket bound to 0.0.0.0 or :: (an unconnected UDP one, WebRTC's) is the outside's too
+    if (s.local.startsWith('127.') || s.local === '::1') continue;
     const k = s.proto + ':' + s.lport;
     if (!ours.has(k)) ours.set(k, new Set());
     ours.get(k).add(s.local);
