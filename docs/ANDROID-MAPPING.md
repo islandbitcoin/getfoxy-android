@@ -105,6 +105,24 @@ phone), **LATER** (onion inbox, Nostr, Bluetooth tap, NFC card).
 6. **Clipboard sync.** Android has no device-only flag like iOS's `.localOnly`;
    some vendors sync the clipboard across devices. `EXTRA_IS_SENSITIVE` keeps a
    copy out of previews and keyboard suggestions; the 120 s clear is Foxy's own.
+7. **The phone's font size and display size (ENG-661).** Android's WebView
+   scales page text by the system font scale (`WebSettings.textZoom` starts at
+   fontScale × 100); WKWebView does not apply Dynamic Type to the page, so the
+   pinned page's fixed-size buttons were only ever laid out at 100 %. At
+   font_scale 1.3 the backup sheet's button text overflowed its buttons.
+   **Decided: `textZoom = 100`** (`WebHost.PAGE_TEXT_ZOOM`, `TextZoomTest`),
+   the page laid out as on iOS. The trade-off: a person who raised the font
+   size for legibility gets no larger text in the page, as on iOS today; the
+   native screens (SHOW WORDS, ENTER WORDS, the dialogs) still follow it, and
+   pinch zoom is not offered by the page. Larger text in the page would be an
+   upstream change (a large-text mode in `core/web` whose layout holds it),
+   not a host setting. Display size is left alone: it changes the density, and
+   a CSS px is one dp, so it narrows the page's viewport as iOS's Display Zoom
+   does (the Pixel 8 Pro's 1344 px are 448 CSS px at 480 dpi and about 395 at
+   544, inside the widths the page meets on iPhones, 375 to 440); on a phone
+   whose largest display size takes the width below 375 CSS px the page lays
+   out narrower than on any iPhone. Checked by arithmetic here; the look on a
+   phone is DEVICE-TESTS' P3 check 9.
 
 ## The seven High audit findings, closed by design
 

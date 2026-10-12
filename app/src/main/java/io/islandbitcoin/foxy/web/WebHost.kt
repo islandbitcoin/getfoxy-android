@@ -106,6 +106,16 @@ class WebHost(
             url.scheme == "https" && url.host == DOMAIN && url.port == -1 &&
                 (url.path ?: "").startsWith(SERVED_PREFIX) && !(url.path ?: "").contains("..")
 
+        /**
+         * The page's text zoom, whatever the phone's font size (ENG-661).
+         * Android's WebView scales page text by the system font scale
+         * (`textZoom` starts at fontScale × 100, 130 at 1.3); WKWebView does
+         * not apply Dynamic Type to the page, so the pinned page's fixed-size
+         * buttons were only ever laid out at 100 % and overflow at 130 %.
+         * The accessibility cost is the same as on iOS (docs/ANDROID-MAPPING.md).
+         */
+        const val PAGE_TEXT_ZOOM = 100
+
         fun refusal(): WebResourceResponse =
             WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", emptyMap(), ByteArrayInputStream(ByteArray(0)))
     }
@@ -430,6 +440,8 @@ class WebHost(
         s.setSupportMultipleWindows(false)
         s.javaScriptCanOpenWindowsAutomatically = false
         s.mediaPlaybackRequiresUserGesture = false
+        // the page lays out as on iOS, not at the phone's font scale (ENG-661)
+        s.textZoom = PAGE_TEXT_ZOOM
         if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
             WebSettingsCompat.setSafeBrowsingEnabled(s, false)
         }
