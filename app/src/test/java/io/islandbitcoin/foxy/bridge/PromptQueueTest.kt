@@ -125,4 +125,14 @@ class PromptQueueTest {
         answers.getValue("B")(true)
         assertEquals(listOf("tor false", "B true"), heard)
     }
+
+    @Test
+    fun aDangerousYesIsRedAndEveryOtherButtonTheOrange() {
+        // ENG-665: the dialog is the page's card (Theme.Foxy.Dialog); the yes of a replace or a delete is the page's red, as iOS's `.destructive`
+        assertEquals(io.islandbitcoin.foxy.R.style.Theme_Foxy_Dialog, PromptQueue.THEME)
+        val delete = Prompt("Delete all data?", "m", "Cancel", "Delete", destructive = true)
+        val allow = Prompt("Allow a new host?", "m", "Cancel", "Allow", destructive = false)
+        assertEquals(io.islandbitcoin.foxy.R.color.danger, PromptQueue.yesColour(delete))
+        assertEquals(io.islandbitcoin.foxy.R.color.accent, PromptQueue.yesColour(allow))
+    }
 }

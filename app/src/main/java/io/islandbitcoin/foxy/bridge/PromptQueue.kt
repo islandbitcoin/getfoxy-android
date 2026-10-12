@@ -2,7 +2,9 @@ package io.islandbitcoin.foxy.bridge
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.DialogInterface
 import android.view.WindowManager
+import io.islandbitcoin.foxy.R
 import io.islandbitcoin.foxy.debug.Log
 
 /** One yes-or-no question in a dialog Android draws (NativePrompts.swift `NativePrompt`). */
@@ -86,6 +88,12 @@ class PromptQueue(private val show: Show) {
     }
 
     companion object {
+        /** How each dialog is drawn (ENG-665): the page's card, heavy spaced capitals, the orange (themes.xml). */
+        val THEME: Int = R.style.Theme_Foxy_Dialog
+
+        /** The yes button's colour: the page's red for a dangerous yes (iOS `.destructive`), else the orange. The no is always the orange. */
+        fun yesColour(prompt: Prompt): Int = if (prompt.destructive) R.color.danger else R.color.accent
+
         /**
          * The dialog on screen now, for the instrumented tests, which press its
          * buttons as a person would (TorRouteTest). Main thread.
@@ -102,7 +110,7 @@ class PromptQueue(private val show: Show) {
             val a = activity()
             if (a == null || a.isFinishing || a.isDestroyed) return@Show null
             var said = false
-            val dialog = AlertDialog.Builder(a)
+            val dialog = AlertDialog.Builder(a, THEME)
                 .setTitle(prompt.title)
                 .setMessage(prompt.message)
                 .setNegativeButton(prompt.no) { _, _ -> said = true; answer(false) }
@@ -121,6 +129,8 @@ class PromptQueue(private val show: Show) {
             }
             try {
                 dialog.show()
+                // the buttons exist once it is shown; no on the left, yes on the right, as iOS's Cancel and its yes
+                dialog.getButton(DialogInterface.BUTTON_POSITIVE)?.setTextColor(a.getColor(yesColour(prompt)))
                 showing = dialog
             } catch (e: RuntimeException) {
                 // the window it was to sit on is gone

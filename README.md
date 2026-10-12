@@ -30,6 +30,7 @@ dialog, to continue without Tor for the session.
 | `tools/leak-test.sh`, `tools/leak-check.js` | the P2 leak test: an emulator capture through each transport, and the analysis that holds every flow of the app's to Tor (with its tests, `tools/leak-check.test.js`) |
 | `tools/cdp-eval.js`, `tools/real-money.js`, `tools/fake-invoice.js` | drive the page of a debug build over WebView debugging; the money rules of a leg on a real mint (the person's go, 100 sats or less, the person's own invoice: docs/DEVICE-TESTS.md "Real money"); an invoice that pays no one, for the scanner check only, never paid |
 | `docs/DEVICE-TESTS.md` | what is checked on a phone: the instrumented tests and the checks by hand |
+| `app/art/NOTICE.md`, `tools/make-art.py` | the app's icons and splash, cut from the iOS art at `core/PIN`'s commit: each source, its sha256 and the upstream licence; the script that cuts them (Pillow, by hand) |
 
 ## Checks
 

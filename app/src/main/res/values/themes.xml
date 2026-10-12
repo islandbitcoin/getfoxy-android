@@ -13,10 +13,47 @@
         <item name="android:navigationBarColor">@color/seed_background</item>
     </style>
 
-    <!-- AndroidX SplashScreen, held until the page says `covered` or 8 s pass -->
+    <!-- AndroidX SplashScreen (ENG-665): the sleeping fox, cut pixel for pixel from the
+         intro's first frame (app/art/NOTICE.md), on black; it fades into the still
+         itself full screen (SplashCover), which the page's intro starts from -->
     <style name="Theme.Foxy.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_fox</item>
         <item name="postSplashScreenTheme">@style/Theme.Foxy</item>
+    </style>
+
+    <!-- A native question (PromptQueue), drawn as the page draws its own: the
+         near-black tile with a hairline, warm white, heavy spaced capitals and the
+         orange on the buttons, no on the left and yes on the right (ENG-665) -->
+    <style name="Theme.Foxy.Dialog" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_background</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:textColorPrimary">@color/ink</item>
+        <item name="android:textColorSecondary">@color/ink_body</item>
+        <item name="android:windowTitleStyle">@style/Foxy.DialogTitle</item>
+        <item name="android:buttonBarButtonStyle">@style/Foxy.DialogButton</item>
+        <item name="android:backgroundDimAmount">0.6</item>
+    </style>
+
+    <!-- the title wraps, as iOS's alert title does -->
+    <style name="Foxy.DialogTitle" parent="">
+        <item name="android:textAppearance">@style/Foxy.DialogTitleText</item>
+    </style>
+
+    <!-- SeedType.TITLE's weight and spacing, at a dialog's size: 1.4 pt of kern at 20 sp -->
+    <style name="Foxy.DialogTitleText" parent="android:TextAppearance.Material.DialogWindowTitle">
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:textFontWeight">800</item>
+        <item name="android:letterSpacing">0.07</item>
+    </style>
+
+    <!-- SeedType.BUTTON's weight and spacing: 1.2 pt of kern at 16 sp; the orange (a dangerous yes is red, PromptQueue) -->
+    <style name="Foxy.DialogButton" parent="android:Widget.Material.Button.Borderless.Colored">
+        <item name="android:textColor">@color/accent</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textFontWeight">800</item>
+        <item name="android:letterSpacing">0.075</item>
+        <item name="android:textAllCaps">true</item>
     </style>
 </resources>

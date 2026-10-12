@@ -16,18 +16,43 @@ import io.islandbitcoin.foxy.debug.Log
  * titled "Foxy", never an amount; private on the lock screen, where the public
  * version says only "Foxy" (iOS's `hiddenPreviewsBodyPlaceholder`). No tap
  * action: iOS's has none. Shown only while Foxy runs: nothing wakes it.
+ *
+ * ENG-665: iOS shows it as a banner with a sound in the foreground
+ * (`[.banner, .sound]`), so the channel is IMPORTANCE_HIGH, Android's heads-up.
+ * Android keeps a channel's importance from the day it was made, whatever a
+ * later app asks, so the high channel has a new id and the default-importance
+ * one an earlier Foxy made is deleted. The small icon is the iOS app icon's
+ * fox head in white (app/art/NOTICE.md), tinted the page's orange.
  */
 object Notifier {
-    const val CHANNEL = "payments"
+    const val CHANNEL = "payments_heads_up"
+    const val IMPORTANCE = NotificationManager.IMPORTANCE_HIGH
 
-    /** The channel, once per process (Application.onCreate). */
+    /** Channels an earlier Foxy made: "payments" was IMPORTANCE_DEFAULT (P3). */
+    val RETIRED: List<String> = listOf("payments")
+
+    /**
+     * The new channel's importance: high, unless the person had turned the
+     * old one down in Settings. "payments" was made at IMPORTANCE_DEFAULT, so
+     * anything below that (LOW, MIN, or NONE, off) was the person's, and the
+     * lowest of those carries over: a new id is not a way round their no, and
+     * a quieter channel is a no to the sound and the heads-up.
+     */
+    fun importanceFor(retiredImportances: Collection<Int>): Int {
+        val lowered = retiredImportances.filter { it < NotificationManager.IMPORTANCE_DEFAULT }
+        return if (lowered.isEmpty()) IMPORTANCE else lowered.min()
+    }
+
+    /** The channel, once per process (Application.onCreate), and the retired ones deleted. */
     fun createChannel(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        val channel = NotificationChannel(CHANNEL, context.getString(R.string.notify_channel), NotificationManager.IMPORTANCE_DEFAULT)
+        val retired = RETIRED.mapNotNull { manager.getNotificationChannel(it) }
+        val channel = NotificationChannel(CHANNEL, context.getString(R.string.notify_channel), importanceFor(retired.map { it.importance }))
         channel.description = context.getString(R.string.notify_channel_description)
         channel.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
         channel.setShowBadge(false)
         manager.createNotificationChannel(channel)
+        for (old in retired) manager.deleteNotificationChannel(old.id)
     }
 
     /** Whether Android lets Foxy post one now (API 33+ asks POST_NOTIFICATIONS). */
@@ -42,12 +67,15 @@ object Notifier {
             return
         }
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        val colour = context.getColor(R.color.accent)
         val public = Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notify)
+            .setColor(colour)
             .setContentTitle(title)
             .build()
         val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notify)
+            .setColor(colour)
             .setContentTitle(title)
             .setContentText(text)
             .setVisibility(Notification.VISIBILITY_PRIVATE)
