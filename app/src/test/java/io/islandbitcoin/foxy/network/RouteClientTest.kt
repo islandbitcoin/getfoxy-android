@@ -212,6 +212,37 @@ class RouteClientTest {
         assertEquals(listOf("1111111111111111", "2222222222222222"), socks.handshakes.map { it.user })
     }
 
+    /**
+     * ENG-652: Tor's listener moved (a set-up, a put-away, the network going).
+     * The machine forgets the port and with it every pooled connection
+     * (`onPortForgotten`); the next request of the same label reads the port as
+     * it is now and dials the new listener, never a connection the old one
+     * accepted (which Tor no longer serves).
+     */
+    @Test
+    fun afterTheListenerMovesTheNextRequestDialsTheNewPortAndNoPooledConnectionIsReused() {
+        repeat(3) { mint.enqueue(MockResponse().setBody("x")) }
+        val moved = FakeSocks(mint.port)
+        try {
+            var port = socks.port
+            Route.tor = object : TorRoute {
+                override val isRunning = true
+                override val socksPort get() = port
+            }
+            send(RouteRequest(url("/1")))
+            send(RouteRequest(url("/2")))
+            assertEquals("one label, one listener: its connection is kept", 1, socks.connections.get())
+            port = moved.port
+            RouteHttp.forgetTorConnections()
+            val answer = send(RouteRequest(url("/3")))
+            assertTrue("answered", answer is RouteAnswer.Done)
+            assertEquals("the old listener saw nothing more", 1, socks.connections.get())
+            assertEquals("the new one took the request", 1, moved.handshakes.size)
+        } finally {
+            moved.close()
+        }
+    }
+
     @Test
     fun aPostThatReachedTheServerIsNeverSentAgainByTheClient() {
         mint.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
