@@ -28,6 +28,9 @@ The page never fetches. Everything it wants from outside goes over the bridge
 wallet polls the quote over `mintRequest` instead (`Web/foxy-wallet.js:16674`).
 The only WebSockets in the app are native ones to Nostr relays, over Tor
 (`Foxy/Network/Route.swift:248-259`, `startSocket`; LATER).
+**Android keeps this (ENG-648, decided):** no NUT-17 WebSocket. `core/web`
+stays pinned byte for byte and no bridge action is added for one; the wallet
+polls its quotes through `mintRequest`, as on iOS.
 
 **The page's own fetch paths are dead code in the app.** `rate()` and
 `candles()` fall back to `fetch` only when `window.webkit.messageHandlers.foxy`
@@ -133,9 +136,9 @@ One decision for every native request (`Foxy/Network/Route.swift:38-513`):
 | Tor relays and directory authorities | Tor itself | always, from launch | direct (that is Tor) | `Foxy/Tor/TorService.swift`, `Foxy/TorSeed/` |
 | 7 obfs4 bridges (fixed IPs) | Tor through obfs4 when direct fails | transport ladder | direct to the bridge | `Foxy/Tor/Bridges.swift:24-32` |
 | Snowflake broker via CDN front (`1098762253.rsc.cdn77.org`, fronts `app.datapacket.com`, `www.datapacket.com`), public STUN servers, a volunteer proxy | Tor through Snowflake, last resort | transport ladder | **outside Tor, by how Snowflake works** | `Bridges.swift:34-37` |
-| `127.0.0.1:15182` | Orbot's local API (is Orbot running, its bypass port) | at launch and every 15 s in the foreground | loopback | `Foxy/Network/OrbotLink.swift:26`, `:126` |
+| `127.0.0.1:15182` | Orbot's local API (is Orbot running, its bypass port) | at launch and every 15 s in the foreground | loopback | `Foxy/Network/OrbotLink.swift:26`, `:126`. **Android: never contacted** (Orbot is `none`, `orbotRefresh` and `orbotAccess` are LATER: ANDROID-MAPPING decision 3) |
 | `https://cash.app`, `https://strike.me`, `https://river.com`, `https://getflash.io` | GET DOLLARS links | `openCompany` | **the system browser, outside Foxy and Tor** | `FoxyBridge.swift:1042-1047` |
-| `https://check.torproject.org/api/ip` | resume diagnostics | **Debug builds only** | Tor | `Foxy/Debug/ResumeDiagnostics.swift:83` |
+| `https://check.torproject.org/api/ip` | resume diagnostics | **Debug builds only** | Tor | `Foxy/Debug/ResumeDiagnostics.swift:83`. Android has no resume diagnostics: never contacted |
 
 Nothing else. There is no server of Foxy's, no analytics, no crash reporter,
 no push service. Android must add none: no Firebase, no Play Services, no
@@ -179,48 +182,101 @@ iOS builds four walls (`Foxy/FoxyWebView.swift`):
 
 ## 5. Native requests on Android
 
-- **One HTTP client, built in one place.** `Route.kt` owns OkHttp and is the only
-  code that makes a network call. No `HttpURLConnection`, `URL.openStream`,
-  `DownloadManager`, Cronet, Volley, Ktor, `WebView.loadUrl` of a remote URL or
-  `InetAddress` lookup anywhere else, and no `java.net.URL` built or named
-  (`URL(u).readText()` is `openStream` by another name); a CI check (`tools/check-no-network.sh`,
-  P1) greps the Kotlin sources for each and fails the build.
-- **Through Tor's SOCKS port, with Tor resolving names.** OkHttp with
-  `Proxy(Proxy.Type.SOCKS, 127.0.0.1:<port read from Tor's control port>)`, so
-  OkHttp passes the hostname unresolved and Tor resolves it; `SafeSocks 1` makes
-  Tor refuse any request that arrives with an IP. Port 9 while Tor's port is
-  unknown. A client per request (or per circuit label), made with the port as it
-  is now, as iOS does.
-- **Per-job circuits.** iOS puts the circuit label in the SOCKS5
-  username/password. Java's built-in SOCKS client takes credentials only from
-  the process-wide `java.net.Authenticator`, which cannot carry a per-request
-  label safely across threads. Proposed for P2: a small SOCKS5 client
-  (`SocketFactory` that performs the handshake with the domain name and the
-  label as username), with OkHttp given a `Dns` that never resolves (returns a
-  placeholder address the SOCKS factory ignores). This is listed for the
-  architect in `ANDROID-MAPPING.md`.
+As built in P2 (ENG-648). Kotlin paths are under
+`app/src/main/java/io/islandbitcoin/foxy/`.
+
+- **One HTTP client, built in one place.** `network/` owns OkHttp
+  (`network/Route.kt` decides, `network/RouteHttp.kt` builds the two clients
+  and runs the calls) and is the only code that makes a network call; the
+  bridge carries a parsed URL as `RouteUrl` and never names OkHttp. No
+  `HttpURLConnection`, `URL.openStream`, `DownloadManager`, Cronet, Volley,
+  Ktor, `WebView.loadUrl` of a remote URL or `InetAddress` lookup anywhere else,
+  no `getByName`/`getAllByName` anywhere at all, and no `java.net.URL` built or
+  named; a socket is opened, and an `InetAddress` made, only in
+  `network/Socks5SocketFactory.kt`. `tools/check-no-network.sh` greps the
+  sources for each and fails the build (its self-test plants every case).
+- **Through Tor's SOCKS port, with Tor resolving names.** OkHttp is given no
+  proxy of Java's, a `Dns` that never resolves (`TorDns`: the name kept on a
+  0.0.0.0 placeholder, no lookup), and a SOCKS5 socket factory of Foxy's
+  (`Socks5SocketFactory`) that ignores the address and dials
+  `127.0.0.1:<Tor's port>` (IPv4 loopback by its bytes: Android's
+  `getLoopbackAddress()` is `::1`, where Tor does not listen). Port 9 while
+  Tor's port is unknown. The CONNECT carries ATYP `0x03` and the name as
+  OkHttp was given it (`InetSocketAddress.hostString`, never a reverse
+  lookup); an IP literal is never handed on, and Tor's `SafeSocks 1` would
+  refuse one. Tor's port is read from `net/listeners/socks` (loopback only, 20
+  tries a second apart, a generation guard) and forgotten before anything that
+  can move the listener (`tor/TorMachine.kt`).
+- **Per-job circuits (ANDROID-MAPPING decision 1, decided).** The circuit
+  label is the SOCKS5 username and password (RFC 1929), so Tor keeps each label
+  on its own circuit (`IsolateSOCKSAuth`). Each label has its own socket
+  factory and its own connection pool: OkHttp's `Address` does not compare
+  socket factories, so with one pool a request on one label rode a connection
+  another label had opened (`RouteClientTest`). The price's onion has one label
+  per run; requests the page did not label share one per run, as iOS's
+  unlabelled session did.
+- **One retry, and only before the request.** A failure of the SOCKS handshake
+  is thrown from the socket's `connect`, before OkHttp writes a byte of the
+  request; that, and only that, is retried, once, after 0.4 s, on Tor's port
+  as it is then (`FoxyBridge.swift:1447-1460`). OkHttp's own retry is off
+  (`retryOnConnectionFailure(false)`), and a failure on a redirect's later hop
+  is never "before the request". So a POST that reached the mint is never sent
+  twice (`MintRequestRetryTest`, `RouteClientTest`). Two failed handshakes are
+  "Foxy's private connection was rebuilt mid-request. Try again."; a refusal
+  Tor itself answered (host unreachable, an onion not found) is
+  "<host> could not be asked over Tor: <why>".
 - **No fallback.** When Tor is not running, `Route.start` returns no call and
   the caller answers the refusal. There is no "try direct". Unprotected uses a
-  separate client with the same rules, created only while `unprotected` is set.
+  separate client (the phone's resolver, `.onion` refused) with the same rules,
+  made only while `unprotected` is set and dropped when it is cleared.
 - **Cleartext off, except onions.** `network_security_config.xml`:
   `cleartextTrafficPermitted="false"` in `base-config`, and a `domain-config`
   with `<domain includeSubdomains="true">onion</domain>` permitting cleartext,
   because an onion speaks plain http over Tor (OkHttp consults this policy). No
-  user-added CAs (`<certificates src="system"/>` only).
-- **The same URL rules** (`hostProblem`, `urlProblem`, `redirectProblem`),
-  ported with their tests from `FoxyTests/RouteTests.swift`; redirects followed
-  by Route itself (`followRedirects(false)`), each hop checked.
-- **The same answer cap** (4 MB, while reading), headers, methods and host
-  approvals.
+  user-added CAs (`<certificates src="system"/>` only). Plain http to an onion
+  goes through the same SOCKS factory as every other request.
+- **The same URL rules** (`hostProblem` with a port of `inet_aton`'s grammar,
+  `urlProblem`, `redirectProblem`), ported with their tests from
+  `FoxyTests/RouteTests.swift`; redirects followed by Route itself
+  (`followRedirects(false)`), each hop checked, a 307/308 keeping its method
+  and body, anything else a GET.
+- **The same answer cap** (4 MB: refused up front by `Content-Length`, cut off
+  while reading), headers (Tor Browser's User-Agent and Accept-Language; only
+  the page's `content-type` and `accept`), methods (GET and POST), no cookies,
+  no cache, and host approvals (`network/HostApprovals.kt`, sealed with a
+  Keystore key in `noBackupFilesDir`).
+- **Tor itself** is tor-android's `TorService` in this process, bound from the
+  application context and never started, so never in the foreground (its
+  service is unexported, with no intent filter). tor-android fixes its data
+  directory (`app_TorService/data`, 0700) and cache directory
+  (`cache/TorService`) on its own command line, which a torrc cannot move, so
+  Tor's state is not in `noBackupFilesDir` as iOS's equivalent is; the app's
+  backup rules exclude every domain (S1), so neither leaves in a backup. The
+  torrc is `tor/TorConfig.kt`'s; obfs4 and Snowflake are IPtProxy's, in
+  process, with iOS's bridge lines byte for byte.
+- **What leaves outside Tor, by design.** Tor's own connections (relays and
+  directory authorities, or the seven obfs4 bridges), and for Snowflake its
+  broker's CDN front and the STUN servers (looked up with the phone's resolver)
+  and a volunteer proxy over UDP. The leak test (`tools/leak-test.sh`,
+  `tools/leak-check.js`, `docs/DEVICE-TESTS.md`) holds every flow of the app's
+  to exactly that, per transport, and to the mint only after the person chose
+  to continue without Tor.
 - **WebSockets** (Nostr relays, LATER): OkHttp `newWebSocket` on the Tor client
   only, `wss` only, host rules applied; never unprotected.
 - **The door and backgrounding.** `onStop` starts the putting-away sequence of
-  `BRIDGE.md` §2; Android gives no fixed background allowance, so Tor is parked
-  when the work is done or after 20 s, whichever first, and nothing new leaves
-  meanwhile. No `WorkManager` job, alarm or foreground service makes requests
-  while the app is away.
-- **P1, before Tor exists:** `Route.available` is always false, so `price`,
-  `candles` and `mintRequest` answer the refusal and nothing is contacted. The
-  unprotected path is not built until P2. Each answer P1 gives in place of a
-  later phase's is the `p1` stub on that entry in `conformance/contract.json`
-  (`BRIDGE.md` §2, *P1 answers*).
+  `BRIDGE.md` §2: it waits up to 20 s while a swap, melt, mint or restore is
+  out (the bridge's money in flight) or the change top-up runs, 3 s for any
+  other request, then shuts the door and parks Tor (`DisableNetwork 1`: Tor has
+  no connection to lose and holds nothing against its guards). Android gives
+  no fixed background allowance, so Tor is not held on the network past that.
+  A return sets Tor up again. No `WorkManager` job, alarm or foreground service
+  makes requests while the app is away.
+- **The phone's network.** `network/NetworkKind.kt` watches the default
+  network (wifi, cellular, wired, other, none; a VPN with nothing under it is
+  none); with none, Tor comes off the network after 1.5 s and the ladder learns
+  nothing until a network is back.
+- **P1, before Tor existed** (ENG-647): `Route.available` was always false, so
+  `price`, `candles` and `mintRequest` answered the refusal and nothing was
+  contacted. The answers P1 gave in place of a later phase's are the `p1`
+  stubs in `conformance/contract.json` (`BRIDGE.md` §2, *P1 answers*); a P2
+  host answers them only for P3 and LATER actions.

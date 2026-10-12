@@ -30,7 +30,7 @@ phone), **LATER** (onion inbox, Nostr, Bluetooth tap, NFC card).
 | `Foxy/Bridge/FoxyBridge.swift` | the action table, dispatch, frame gate, `_scanResult` replies, haptics, price/candles/mintRequest, clipboard/copy/share, biometric, notify, preview/paste controls, open settings/company, Orbot, privacy/torRetry/unprotected | `bridge/FoxyBridge.kt`: one `Map<String, Handler>` with the same 74 names; `WebMessageListener.onPostMessage` checks `sourceOrigin == https://appassets.androidplatform.net` and `isMainFrame`, parses JSON, dispatches as `dispatch` does (haptic / action+id / ignored); replies through one `resolve(id, text, error)` that JSON-quotes each argument and calls `evaluateJavascript` on the main thread. Each handler's argument checks are ported with its Swift tests | P1 transport and P1 actions; others by their phase |
 | `Foxy/Bridge/NativeSeedBridge.swift` | the seed, counter, P2PK and card-owner actions, argument checks, one serial seed queue, the seed screens' entry points | `bridge/SeedBridge.kt`: the same checks (`exactInteger`, `keyset`, ranges), one single-thread `Executor` for every seed action | P1 (screens P3, card LATER) |
 | `Foxy/Bridge/SeedScreens.swift` | native SHOW WORDS (with quiz) and ENTER WORDS screens; one at a time; closed on background; hidden while captured | two `ComponentActivity` screens (Compose), `FLAG_SECURE`, finished in `onStop`; one-at-a-time queue; 10 s pause after a cancelled read | P3 |
-| `Foxy/Bridge/NativePrompts.swift` | one queue of native alerts (host approval, seed replace/delete, continue without Tor) | `PromptQueue` of `AlertDialog`s on the activity; one at a time; dismissal without an answer is no | P2 (host/Tor), P3 (seed) |
+| `Foxy/Bridge/NativePrompts.swift` | one queue of native alerts (host approval, seed replace/delete, continue without Tor) | `bridge/PromptQueue.kt`: `AlertDialog`s on the activity in front, one at a time, `FLAG_SECURE` like the activity; any way a dialog goes down without a button is no; nothing in front is no (`PromptQueueTest`) | P2 (host/Tor, built), P3 (seed) |
 | `Foxy/Bridge/SeedPasteboard.swift` | a seed phrase on the clipboard reads as empty; remembers what Foxy itself copied | `ClipboardFilter`: the same BIP-39 phrase test on read; `ClipDescription.EXTRA_IS_SENSITIVE` on Foxy's own copies | P3 |
 | `Foxy/Bridge/PasteHost.swift` | a near-invisible `UIPasteControl` over the page's PASTE button, so iOS shows no paste prompt | no equivalent needed: Android lets a foreground app read the clipboard on a tap. See BRIDGE.md §4 item 4 for the decision (answer `"ok"` and do nothing, or a native button over the rect with the same rectangle checks) | P3 |
 | `Foxy/Bridge/ForegroundNotifications.swift` | show banners while in the foreground | `NotificationChannel` "Payments" (default importance), `NotificationCompat` with fixed text, `VISIBILITY_PRIVATE` with a public version that says only "Foxy"; `POST_NOTIFICATIONS` asked on first use | P3 |
@@ -48,19 +48,19 @@ phone), **LATER** (onion inbox, Nostr, Bluetooth tap, NFC card).
 | `Foxy/Keychain/CounterRules.swift`, `CounterStore.swift` | counter file: atomic, fsynced, never lowered, capped moves, 256 keysets, one entry per derivation index | `CounterStore.kt`: `AtomicFile` in `noBackupFilesDir` with `FileDescriptor.sync()` before the rename; the same rules ported with `CounterRulesTests`/`CounterStoreTests`/`CounterRangeCheckTests` | P1 |
 | `Foxy/Keychain/P2PK.swift` | P2PK lock keys at m/129373'/10'/0'/0'/i | secp256k1-kmp; `P2PKTests` vectors | P1 |
 | `Foxy/Keychain/SeedActions.swift`, `SeedCandidates.swift`, `SeedMigrationWindow.swift` | the seed and counter actions' logic, typed-word candidates, the one-time migration window | ported one to one with their tests (`SeedActionsTests`, `NativeSeedTests`, `SeedMigrationWindowTests`); candidates in memory only | P1 (candidates P3) |
-| `Foxy/Network/Route.swift` | the one route decision; URL/host/redirect rules; answer cap; headers; door; host approvals | `Route.kt` over OkHttp (ROUTE.md §5); `HostApprovals` stored encrypted with the Keystore key, never in backups; `RouteTests` ported | P2 (P1: refuse-all) |
-| `Foxy/Network/NetworkKind.swift` | path monitor: wifi/cellular/wired/other/none/unknown, tunnel with nothing under it | `ConnectivityManager.registerDefaultNetworkCallback`, `NetworkCapabilities` transports (VPN with no underlying network = none) | P2 |
-| `Foxy/Network/OrbotLink.swift`, `LoopbackHTTP.swift` | Orbot's local API on 127.0.0.1:15182 and its bypass port | Orbot for Android has a different integration (VPN mode with per-app bypass; `org.torproject.android.intent.action.START`). Proposed: report `orbot: "none"` in P2 and decide Orbot handling separately; Foxy's own Tor must not run inside Orbot's VPN (Tor over Tor) | P2 (decision) |
+| `Foxy/Network/Route.swift` | the one route decision; URL/host/redirect rules; answer cap; headers; door; host approvals | `network/Route.kt` (the decision, the rules, `inet_aton`'s grammar, the door), `network/RouteHttp.kt` (OkHttp: Tor's client per circuit label and the open connection's), `network/Socks5SocketFactory.kt` (SOCKS5 to Tor by name, the label as the login; `TorDns`), `network/HostApprovals.kt` (sealed with a Keystore key in `noBackupFilesDir`); `RouteTests` ported (`RouteTest`, `RouteClientTest`, `Socks5SocketFactoryTest`, `HostApprovalsTest`) | P2 (built) |
+| `Foxy/Network/NetworkKind.swift` | path monitor: wifi/cellular/wired/other/none/unknown, tunnel with nothing under it | `network/NetworkKind.kt`: `registerDefaultNetworkCallback`, `NetworkCapabilities` transports (a VPN with no other transport is none); feeds the snapshot's `network` and `vpn` and Tor's `networkWent` | P2 (built) |
+| `Foxy/Network/OrbotLink.swift`, `LoopbackHTTP.swift` | Orbot's local API on 127.0.0.1:15182 and its bypass port | Not ported (decision 3): Orbot is reported as `none`, and `orbotRefresh`/`orbotAccess` are LATER in `contract.json` and answer their stubs. Under Orbot's VPN, Foxy's Tor runs inside it: Tor over Tor, slower, no leak | LATER |
 | `Foxy/Network/OnionAddress.swift`, `OnionInbox.swift`, `OnionPost.swift` | v3 onion parsing, the inbox listener, posting to an onion through SOCKS | Kotlin port; listener on `127.0.0.1` with the same bounds; `OnionHTTPTests` ported | LATER |
 | `Foxy/Network/Locked.swift` | a lock-protected value | `AtomicReference` / `Mutex` | P1 |
 | `Foxy/Nostr/` | NIP-17/59 gift wrap, NIP-44, inbox | secp256k1-kmp Schnorr; NIP-44 with JCA `ChaCha20` (API 28+) and HMAC-SHA256; `NostrCryptoTests` vectors | LATER |
 | `Foxy/Scanner/QRScannerViewController.swift`, `LiveScanner.swift` | full-screen scanner; live preview laid over a page rectangle | CameraX `PreviewView` + `ImageAnalysis` with zxing-cpp (`io.github.zxing-cpp:android`, pinned); a full-screen scanner activity and an overlay `PreviewView` positioned at the page's CSS rect × density; the same rect checks | P3 |
 | `Foxy/Scanner/AnimatedQR.swift` | animated (UR fountain) QR assembly | Kotlin port with `AnimatedQRTests` | P3 |
-| `Foxy/Tor/TorService.swift`, `TorTransport.swift` | Tor in-process: start, ready (circuit + directory + SOCKS port read back), transport ladder (direct, obfs4, Snowflake), stuck detection, park/resume, restart | `TorService.kt` over `tor-android` (Guardian Project, pinned) with its control port: `SocksPort auto IsolateDestAddr`, `SafeSocks 1`, `ClientRejectInternalAddresses 1`, `ConfluxEnabled 0`, `Log err`; the same ladder and timings; data dir in `noBackupFilesDir`, mode 0700 | P2 |
-| `Foxy/Tor/Bridges.swift` | built-in obfs4 and Snowflake lines; IPtProxy controller | the IPtProxy AAR (pinned, hash-verified); the same lines, refreshed by the same script | P2 |
-| `Foxy/Tor/TorSeed.swift`, `Foxy/TorSeed/` | a bundled relay directory so a first start does not fetch the whole consensus | the same `tor-microdescs.xz` as an asset, unpacked into Tor's data dir on first run | P2 |
-| `Vendor/TorPod`, `Vendor/Tor.sha256` | Tor 0.4.9.12 built from signed sources | tor-android's AAR pinned by version and SHA-256 in Gradle dependency verification; a reproducible build of it is a follow-up | P2 |
-| `Vendor/IPtProxy.sha256` | IPtProxy built here, byte-identical twice | IPtProxy AAR pinned the same way | P2 |
+| `Foxy/Tor/TorService.swift`, `TorTransport.swift` | Tor in-process: start, ready (circuit + directory + SOCKS port read back), transport ladder (direct, obfs4, Snowflake), stuck detection, park/resume, restart | `tor/TorMachine.kt` (the state machine, ported: ready, the port and its generation guard, the ladder and its patience, the stall watch, stuck, park/resume, the phone's network) over `tor/Tor.kt` (tor-android's `TorService`, bound and never started, so never in the foreground; its jtorctl control link; the main looper), `tor/TorConfig.kt` (the torrc), `tor/TorTransport.kt` (order, patience, the day's bridge memory, `TorStuck`). Not ported, being iOS's: the control-link reconnects and the reclaimed-listener recovery (tor-android owns one Unix control socket) | P2 (built) |
+| `Foxy/Tor/Bridges.swift` | built-in obfs4 and Snowflake lines; IPtProxy controller | `tor/Bridges.kt`: the lines between the markers byte for byte (pinned by SHA-256 in `TorConfigTest`), and the IPtProxy controller wrapped as iOS wraps it (state dir 0700) | P2 (built) |
+| `Foxy/Tor/TorSeed.swift`, `Foxy/TorSeed/` | a bundled relay directory so a first start does not fetch the whole consensus | `app/tor-seed/tor-microdescs.xz` is iOS's file byte for byte; the build unpacks it (`gradle/tor-seed.gradle.kts`, pinned in `app/tor-seed/PIN`) and the APK carries the plain file, because a Kotlin xz decoder on the phone took 33-73 s in a debug build; `tor/TorSeed.kt` copies it into tor-android's cache directory on a first run, checking its SHA-256, with iOS's unproven marker | P2 (built) |
+| `Vendor/TorPod`, `Vendor/Tor.sha256` | Tor 0.4.9.12 built from signed sources | `info.guardianproject:tor-android:0.4.9.12` (and its `jtorctl` 0.4.5.7, declared too) pinned by version and SHA-256 in Gradle dependency verification; its AAR asks for compile SDK 37.1. A reproducible build of it is a follow-up | P2 (built) |
+| `Vendor/IPtProxy.sha256` | IPtProxy built here, byte-identical twice | `com.netzarchitekten:IPtProxy:5.5.0` pinned the same way (iOS builds 5.5 too) | P2 (built) |
 | `Vendor/secp256k1` | libsecp256k1 v0.8.0 | secp256k1-kmp (wraps libsecp256k1), pinned and verified | P1 |
 | `FoxyTests/` | 382 XCTest cases for the native rules | JVM unit tests (`src/test`) for every ported rule, using the same vectors and fixtures; instrumented tests (`src/androidTest`) for WebView, Keystore and backup behaviour; `conformance/` for the bridge | P1 onwards |
 
@@ -68,10 +68,13 @@ phone), **LATER** (onion inbox, Nostr, Bluetooth tap, NFC card).
 
 1. **Per-job Tor circuits from OkHttp.** iOS passes the circuit label as the
    SOCKS5 username. Java's SOCKS client reads credentials from the process-wide
-   `java.net.Authenticator`, which is not per request. Proposed: a small SOCKS5
-   `SocketFactory` in Kotlin (domain-name CONNECT, username = label) and a `Dns`
-   that never resolves. Needs its own tests, including that no `InetAddress`
-   lookup happens (ROUTE.md §5).
+   `java.net.Authenticator`, which is not per request. **Decided and built
+   (ENG-648):** a SOCKS5 `SocketFactory` of Foxy's (`network/Socks5SocketFactory.kt`:
+   domain-name CONNECT, username = password = label, 127.0.0.1 by its bytes)
+   and a `Dns` that never resolves, one factory and one connection pool per
+   label (OkHttp's `Address` does not compare socket factories). Tested against
+   a fake SOCKS server that records ATYP 0x03 and the exact name
+   (`Socks5SocketFactoryTest`, `RouteClientTest`; ROUTE.md §5).
 2. **`setBlockNetworkLoads(true)` with `WebViewAssetLoader`.** Checked on a
    device in P1 (ENG-647, 2026-10-11, Pixel 8 Pro, API 37, the debug build):
    with `setBlockNetworkLoads(true)`, the dead-end proxy (`127.0.0.1:9`, no
@@ -88,8 +91,11 @@ phone), **LATER** (onion inbox, Nostr, Bluetooth tap, NFC card).
    reached through `contentWindow`, through `window[n]` straight after the
    append, and one frame further down). The intro video with the network
    blocked is a manual check (`docs/DEVICE-TESTS.md`).
-3. **Orbot on Android.** Different API and VPN model from iOS; out of P2 unless
-   decided otherwise.
+3. **Orbot on Android.** Different API and VPN model from iOS. **Decided
+   (ENG-648): not in P2.** Orbot is reported as `none`; `orbotRefresh` and
+   `orbotAccess` are LATER in `contract.json` and keep answering their stubs.
+   Under Orbot's VPN, Foxy's own Tor runs inside it: Tor over Tor, slower, no
+   leak.
 4. **`pasteStart`.** See BRIDGE.md §4 item 4.
 5. **Screen capture.** `FLAG_SECURE` always; `captured` answers `"no"`;
    `_screenshot` from `Activity.ScreenCaptureCallback` on API 34+ only.

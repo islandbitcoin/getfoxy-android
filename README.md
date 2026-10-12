@@ -24,8 +24,11 @@ dialog, to continue without Tor for the session.
 | `docs/ANDROID-MAPPING.md` | each iOS component and its Android replacement, by phase; the audit findings closed by design |
 | `docs/SECURITY-INVARIANTS.md` | every host-dependent security claim, restated for Android with the test that proves it |
 | `conformance/` | `contract.json` and a node + jsdom suite that boots `core/web/index.html` against a fake native host built from it |
-| `app/` | the Kotlin app (P1): `MainActivity` and `web/WebHost` (the WebView and its walls), `bridge/` (the contract's table, the shim's other half, the seed actions' checks), `keychain/` (the seed vault, BIP-39, NUT-13, P2PK, the counter file), `network/Route.kt` (refuse-all in P1), `debug/` (the field log); JVM tests in `app/src/test`, phone tests in `app/src/androidTest` |
-| `tools/check-no-network.sh` | fail if anything under `app/src` can reach the network other than through `network/Route.kt` (with its self-test, `tools/check-no-network.test.sh`) |
+| `app/` | the Kotlin app (P2): `MainActivity` and `web/WebHost` (the WebView and its walls), `bridge/` (the contract's table, the shim's other half, the seed actions' checks, the P2 actions in `NetBridge`, the one queue of native dialogs), `keychain/` (the seed vault, BIP-39, NUT-13, P2PK, the counter file, sealed files), `network/` (`Route`, OkHttp through Tor's SOCKS port with a SOCKS5 factory per circuit label, host approvals, the phone's network), `tor/` (tor-android in process, the transport ladder, the bridges, the directory seed), `debug/` (the field log); JVM tests in `app/src/test`, phone tests in `app/src/androidTest` |
+| `app/tor-seed/` | iOS's relay directory seed (`tor-microdescs.xz`, byte for byte) and its pins; `gradle/tor-seed.gradle.kts` unpacks it into the APK |
+| `tools/check-no-network.sh` | fail if anything under `app/src` can reach the network other than through `network/` (with its self-test, `tools/check-no-network.test.sh`) |
+| `tools/leak-test.sh`, `tools/leak-check.js` | the P2 leak test: an emulator capture through each transport, and the analysis that holds every flow of the app's to Tor (with its tests, `tools/leak-check.test.js`) |
+| `tools/cdp-eval.js`, `tools/fake-invoice.js` | drive the page of a debug build over WebView debugging; a fake-money invoice for a test mint's melt (docs/DEVICE-TESTS.md) |
 | `docs/DEVICE-TESTS.md` | what is checked on a phone: the instrumented tests and the checks by hand |
 
 ## Checks
@@ -36,7 +39,10 @@ cd conformance && npm ci && npm test
 # with a clone of getfoxy/iOS, every iOS file:line in the contract and the docs is checked too:
 FOXY_IOS_REF=/path/to/ios-clone npm test
 
-# the app (JDK 17, Android SDK 36)
+# the leak test's analysis
+node --test tools/leak-check.test.js tools/fake-invoice.test.js
+
+# the app (JDK 17, Android SDK platform 37.1: tor-android's AAR asks for it)
 tools/check-no-network.sh && tools/check-no-network.test.sh
 ./gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest
 # on a phone (docs/DEVICE-TESTS.md)
@@ -56,8 +62,8 @@ on every push and pull request.
 
 | Phase | What lands |
 |---|---|
-| **P0** (this) | the contract, the pinned core, the conformance suite |
+| **P0** | the contract, the pinned core, the conformance suite |
 | **P1** shell | Kotlin app: WebView at the asset origin with no network, the bridge and shim, lifecycle, seed and counters in the Keystore, the field log; every network action refused |
-| **P2** Tor | tor-android + IPtProxy, `Route` over OkHttp through Tor's SOCKS port, mint/price/chart requests, the Tor gate, host approvals, continue-without-Tor |
+| **P2** Tor (this) | tor-android + IPtProxy, `Route` over OkHttp through Tor's SOCKS port, mint/price/chart requests, the Tor gate, host approvals, continue-without-Tor |
 | **P3** platform | scanner (CameraX + zxing-cpp), clipboard and share, notifications, haptics, biometrics, native seed screens: the first build for a phone |
 | **LATER** | onion inbox and post, Nostr, Bluetooth tap to pay, NFC card |
