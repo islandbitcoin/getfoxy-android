@@ -344,7 +344,7 @@ class WebHost(
 
     override fun closeSeedScreen() = SeedScreenHost.closeAll()
 
-    /** PutAway: no camera, paste button or seed screen is left for a page put away (FoxyWebView.swift:973-1104). */
+    /** PutAway: no camera, paste button or seed screen is left for a page put away (FoxyWebView.swift:999-1132). */
     override fun letGo() {
         bridge?.letGo()
     }

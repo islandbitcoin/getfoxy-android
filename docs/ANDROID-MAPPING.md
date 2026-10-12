@@ -1,6 +1,6 @@
 # ANDROID-MAPPING.md — each iOS component, and what it becomes
 
-The iOS app (getfoxy/iOS `5581c963dd29b28ebec547473ada532873d49a77`) is a
+The iOS app (getfoxy/iOS `8df0bb19992cceda44d04e947bce211e1415975e`) is a
 WKWebView host around the page plus a Swift bridge. The Android app is the same
 shape: a Kotlin host around an Android System WebView running `core/web`
 unchanged, and a Kotlin bridge implementing `docs/BRIDGE.md`. This table takes
@@ -138,10 +138,10 @@ closed on Android by construction, not by a later fix:
    leave the device. Proved by a manifest test and an instrumented
    `bmgr backupnow` check (SECURITY-INVARIANTS.md S1).
 2. **A Lightning-address invoice was paid without checking its amount.** This
-   is the JS core's, and it is **already fixed at 5581c96**: `payLnurl`
+   is the JS core's, and it is **already fixed at 5581c96** (and still at 8df0bb1): `payLnurl`
    refuses an invoice whose amount is not exactly the one asked, to the
    millisat, and one whose description hash does not match the metadata
-   (`Web/foxy-wallet.js:18100-18125`; iOS REVIEW.md row 64, `tests/run.js`).
+   (`Web/foxy-wallet.js:18696-18721`; iOS REVIEW.md row 64, `tests/run.js`).
    Android ships that code byte for byte (`tools/verify-core.sh`).
 3. **A failed Tor check left traffic flowing.** Android: there is no page-side
    switch to forget; `Route.available` is false unless Tor is running or the
@@ -149,9 +149,9 @@ closed on Android by construction, not by a later fix:
    `Route` (ROUTE.md §2, §5). When Tor fails, nothing has a route; nothing
    falls back to direct. Conformance proves the page asks for nothing that
    needs a route while Tor is connecting or failed (`flows.test.js`).
-4. **Background pollers and the NUT-17 socket were not gated.** At 5581c96 the
-   page opens no socket (`Web/foxy-wallet.js:16674`) and its sweeps check
-   `routeOpen()` first (`Web/foxy-wallet.js:16911`); and native refuses every
+4. **Background pollers and the NUT-17 socket were not gated.** At 5581c96 (and 8df0bb1) the
+   page opens no socket (`Web/foxy-wallet.js:17248`) and its sweeps check
+   `routeOpen()` first (`Web/foxy-wallet.js:17485`); and native refuses every
    request without a route, shuts the door while the app is put away, and runs
    no background job. Android adds no `WorkManager`, alarm or foreground service.
 5. **Native price, chart and Tor-check requests had no tunnel precondition.**

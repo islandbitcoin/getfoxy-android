@@ -181,7 +181,7 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
     }
 
     /**
-     * DEBUG BUILDS ONLY (FoxyWebView.swift:476-507): `foxy://receive?amt=50&unit=sat`,
+     * DEBUG BUILDS ONLY (FoxyWebView.swift:492-531): `foxy://receive?amt=50&unit=sat`,
      * rebuilt from a whitelist into the page's hash. A release build registers
      * no scheme (ManifestTest) and reads no link here.
      */

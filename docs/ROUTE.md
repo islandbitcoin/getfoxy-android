@@ -4,7 +4,7 @@
 Tor, or it is refused before a socket opens. The one exception is a choice the
 person makes in a native dialog, for the current session only: continue
 without Tor. The page itself has no network at all. This is the iOS app's
-design at getfoxy/iOS `5581c963dd29b28ebec547473ada532873d49a77`, and the
+design at getfoxy/iOS `8df0bb19992cceda44d04e947bce211e1415975e`, and the
 Android port keeps it unchanged. Line references are to that commit
 (`conformance/test/contract.test.js` checks each one).
 
@@ -15,17 +15,17 @@ The page never fetches. Everything it wants from outside goes over the bridge
 
 | What | How the page asks | Page code |
 |---|---|---|
-| every mint call (info, keysets, keys, quotes, mint, swap, melt, checkstate, restore) | cashu-ts `Mint` built with `customRequest: FoxyWallet.nativeRequest`, which posts `mintRequest` | `Web/foxy-wallet.js:3301-3322` (`newWallet`), `Web/foxy-wallet.js:25193` (`nativeRequest`), `Web/foxy-wallet.js:25222` (the post) |
-| a Lightning address / LNURL lookup and callback | `FoxyWallet.nativeRequest`, so `mintRequest` | `build/wallet/16-sending.js:422` |
+| every mint call (info, keysets, keys, quotes, mint, swap, melt, checkstate, restore) | cashu-ts `Mint` built with `customRequest: FoxyWallet.nativeRequest`, which posts `mintRequest` | `Web/foxy-wallet.js:3319-3340` (`newWallet`), `Web/foxy-wallet.js:25910` (`nativeRequest`), `Web/foxy-wallet.js:25939` (the post) |
+| a Lightning address / LNURL lookup and callback | `FoxyWallet.nativeRequest`, so `mintRequest` | `build/wallet/16-sending.js:442` |
 | the newest Bitcoin block header (a card's clock) | `nativeRequest` to two explorer onions, then their clearnet names | `build/wallet/08b-block-headers.js:45-57`, `:170` |
-| the BTC/USD price | `price` | `Web/foxy-wallet.js:15139` |
-| the price chart | `candles` | `Web/foxy-wallet.js:15215` |
-| a payment to another phone's onion | `onionPost` (LATER) | `Web/foxy-wallet.js:8637` |
-| a payment over Nostr | `nostrSend` (LATER) | `Web/foxy-wallet.js:8664` |
+| the BTC/USD price | `price` | `Web/foxy-wallet.js:15649` |
+| the price chart | `candles` | `Web/foxy-wallet.js:15728` |
+| a payment to another phone's onion | `onionPost` (LATER) | `Web/foxy-wallet.js:8873` |
+| a payment over Nostr | `nostrSend` (LATER) | `Web/foxy-wallet.js:8900` |
 
 **No WebSocket.** NUT-17 subscriptions are not used: cashu-ts would open
 `wss://<mint>/v1/ws` from the page, which no native route could carry, so the
-wallet polls the quote over `mintRequest` instead (`Web/foxy-wallet.js:16674`).
+wallet polls the quote over `mintRequest` instead (`Web/foxy-wallet.js:17248`).
 The only WebSockets in the app are native ones to Nostr relays, over Tor
 (`Foxy/Network/Route.swift:248-259`, `startSocket`; LATER).
 **Android keeps this (ENG-648, decided):** no NUT-17 WebSocket. `core/web`
@@ -34,8 +34,8 @@ polls its quotes through `mintRequest`, as on iOS.
 
 **The page's own fetch paths are dead code in the app.** `rate()` and
 `candles()` fall back to `fetch` only when `window.webkit.messageHandlers.foxy`
-does not exist, as in a desktop browser (`Web/foxy-wallet.js:15175`,
-`Web/foxy-wallet.js:15230`). On Android the shim defines it at document start,
+does not exist, as in a desktop browser (`Web/foxy-wallet.js:15685`,
+`Web/foxy-wallet.js:15743`). On Android the shim defines it at document start,
 before any page script, so those branches never run; and if they did, the
 WebView's network block below refuses them. The conformance suite fails on any
 `fetch`, XHR, WebSocket, EventSource, beacon, WebRTC, subresource or DOM URL
@@ -43,9 +43,9 @@ outside the asset origin (`conformance/lib/page.js`).
 
 **The page gates itself too, and the gate is not what holds.** The wallet
 checks the route before work that needs one (`routeOpen`,
-`Web/foxy-wallet.js:2146`; `assertRoute`, `Web/foxy-wallet.js:2225`), so its
+`Web/foxy-wallet.js:2164`; `assertRoute`, `Web/foxy-wallet.js:2243`), so its
 background sweeps and invoice watches ask nothing while there is no route
-(`sweepQuotes`, `Web/foxy-wallet.js:16911`). That only makes the screens
+(`sweepQuotes`, `Web/foxy-wallet.js:17485`). That only makes the screens
 friendlier. Native refuses regardless; the page is not trusted to have asked.
 Conformance proves the page's half: with Tor connecting, then failed, the page
 posts no `mintRequest`, `price` or `candles` until the person opts out
@@ -126,9 +126,9 @@ One decision for every native request (`Foxy/Network/Route.swift:38-513`):
 | `api.gemini.com` | price, source 5 | `price` | Tor or unprotected | `FoxyBridge.swift:640` |
 | `api.coinbase.com` | price, source 6 | `price` | Tor or unprotected | `FoxyBridge.swift:644` |
 | `api.kraken.com` `/0/public/OHLC` | chart | `candles` | Tor or unprotected | `FoxyBridge.swift:715` |
-| `mint.minibits.cash`, `mint.westernbtc.com`, `mint.macadamia.cash`, `nofee.testnut.cashu.space`, `testnut.cashu.space` | the default mints (no approval alert) | `mintRequest` | Tor or unprotected | `Foxy/Network/Route.swift:661-664`, `build/wallet/10-connection.js:14`, `build/app/06-wallet-boot-and-restore.js:579-591` |
+| `mint.minibits.cash`, `mint.westernbtc.com`, `mint.macadamia.cash`, `nofee.testnut.cashu.space`, `testnut.cashu.space` | the default mints (no approval alert) | `mintRequest` | Tor or unprotected | `Foxy/Network/Route.swift:661-664`, `build/wallet/10-connection.js:14`, `build/app/06-wallet-boot-and-restore.js:585-597` |
 | any mint the person adds | the wallet | `mintRequest` | Tor or unprotected, after an approval alert | `Route.swift:659-805` |
-| any Lightning-address / LNURL server and its callback host | paying an address | `mintRequest` | Tor or unprotected, after an approval alert | `build/wallet/16-sending.js:422` |
+| any Lightning-address / LNURL server and its callback host | paying an address | `mintRequest` | Tor or unprotected, after an approval alert | `build/wallet/16-sending.js:442` |
 | `mempoolhq…onion`, `explorerzydxu5ecjrkwceayqybizmpjjznk5izmitf2modhcusuqlid.onion`, then `mempool.space`, `blockstream.info` | a card's clock: the newest block header | `mintRequest` | Tor (onions), Tor or unprotected (names) | `Route.swift:672-678`, `build/wallet/08b-block-headers.js:45-57` |
 | `wss://relay.damus.io`, `wss://nos.lol`, `wss://relay.primal.net`, `wss://relay.minibits.cash`, or the relays a request names (at most five) | Nostr payment delivery and the Nostr inbox | `nostrSend`, `inboxOpen` (LATER) | Tor only | `Foxy/Nostr/NostrDelivery.swift:18-19` |
 | another phone's `.onion` | paying a request over Tor | `onionPost` (LATER) | Tor only | `Foxy/Bridge/FoxyBridge+Delivery.swift:292-323` |
@@ -150,8 +150,8 @@ off in the manifest and in `WebSettingsCompat`).
 iOS builds four walls (`Foxy/FoxyWebView.swift`):
 
 1. **A content rule list** blocking `http`, `https`, `ws`, `wss` and `ftp` for
-   every load the page's engine makes (`FoxyWebView.swift:354-360`); the page is
-   not loaded until it compiles (`FoxyWebView.swift:389-406`).
+   every load the page's engine makes (`FoxyWebView.swift:370-376`); the page is
+   not loaded until it compiles (`FoxyWebView.swift:405-422`).
 2. **A dead-end proxy** for the web view's own network process: SOCKS5 to
    `127.0.0.1:9` with no failover (`FoxyWebView.swift:89-103`), which catches
    what a rule list does not see (a `<link rel="preconnect">`).
@@ -163,7 +163,7 @@ iOS builds four walls (`Foxy/FoxyWebView.swift`):
    the policy keeps its meaning.
 4. **No WebRTC** in any frame, removed before the page runs
    (`FoxyWebView.swift:138-141`, `:434-442`), because its UDP is seen by none of
-   the above. And no navigation (`FoxyWebView.swift:1338-1359`), no link
+   the above. And no navigation (`FoxyWebView.swift:1371-1392`), no link
    previews (`:124`), no text-selection services (`:146-156`).
 
 ### What Android must do to keep it
@@ -178,7 +178,7 @@ iOS builds four walls (`Foxy/FoxyWebView.swift`):
 | No geolocation | `setGeolocationEnabled(false)`; `onGeolocationPermissionsShowPrompt` denies. |
 | No Google services in the WebView | manifest `android.webkit.WebView.EnableSafeBrowsing=false`, `android.webkit.WebView.MetricsOptOut=true`; `WebSettingsCompat.setSafeBrowsingEnabled(false)`. |
 | Bridge only from the page | `addWebMessageListener` with the allowed-origin rule `https://appassets.androidplatform.net` only; `isMainFrame` required. Never `addJavascriptInterface`. |
-| Prove it | a P1 instrumented test equivalent to iOS `-FoxyNetBlockTest` (`FoxyWebView.swift:529-585`): from the page, `fetch`, WebSocket, preconnect, DNS prefetch, prefetch, `<img>`, beacon and a Worker's fetch to a host whose listener records arrivals, with a local listener that must see nothing. |
+| Prove it | a P1 instrumented test equivalent to iOS `-FoxyNetBlockTest` (`FoxyWebView.swift:553-609`): from the page, `fetch`, WebSocket, preconnect, DNS prefetch, prefetch, `<img>`, beacon and a Worker's fetch to a host whose listener records arrivals, with a local listener that must see nothing. |
 
 ## 5. Native requests on Android
 

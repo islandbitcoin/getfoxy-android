@@ -27,8 +27,8 @@
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:362@\"covered\"",
       "Foxy/Bridge/FoxyBridge.swift:542-545@handleCovered",
-      "Foxy/FoxyWebView.swift:293@FoxyBridge.pageCovered",
-      "Foxy/FoxyWebView.swift:300@+ 8"
+      "Foxy/FoxyWebView.swift:302@FoxyBridge.pageCovered",
+      "Foxy/FoxyWebView.swift:309@+ 8"
     ]
   },
   {
@@ -89,7 +89,7 @@
     },
     "behaviour": "The ERRORS (bad=true) and LOGS screens: native and page lines, redacted, newest last.",
     "pageRef": [
-      "Web/foxy-wallet.js:24960@'fieldLog'"
+      "Web/foxy-wallet.js:25677@'fieldLog'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:360@\"fieldLog\"",
@@ -119,7 +119,7 @@
     },
     "behaviour": "Forgets every FieldLog line.",
     "pageRef": [
-      "Web/foxy-wallet.js:24966@'fieldLogClear'"
+      "Web/foxy-wallet.js:25683@'fieldLogClear'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:361@\"fieldLogClear\"",
@@ -177,7 +177,7 @@
     },
     "behaviour": "Hold the screen lit while a screen is looked at rather than touched (an invoice held up, the gate). Released by native whenever the app leaves the foreground.",
     "pageRef": [
-      "Web/foxy-wallet.js:23473@'awake'"
+      "Web/foxy-wallet.js:24143@'awake'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:443@\"awake\"",
@@ -213,7 +213,7 @@
     },
     "behaviour": "Whether the screen is being recorded or mirrored right now, for a page that starts while it already is; changes are pushed with _captured.",
     "pageRef": [
-      "Web/foxy-wallet.js:25621@'captured'"
+      "Web/foxy-wallet.js:26338@'captured'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:395@\"captured\"",
@@ -258,7 +258,7 @@
     },
     "behaviour": "Reads the route snapshot (Route.snapshot). The same object is pushed with _privacy on every change.",
     "pageRef": [
-      "Web/foxy-wallet.js:14685@'privacy'"
+      "Web/foxy-wallet.js:15195@'privacy'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:394@\"privacy\"",
@@ -304,7 +304,7 @@
     },
     "behaviour": "RETRY / RESTART TOR: a full Tor restart (TorService.restart), answered with the snapshot.",
     "pageRef": [
-      "Web/foxy-wallet.js:14691@'torRetry'"
+      "Web/foxy-wallet.js:15201@'torRetry'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:396@\"torRetry\"",
@@ -351,7 +351,7 @@
     "behaviour": "CONTINUE WITHOUT TOR. on=true asks a native alert (\"Continue without Tor?\") that no script can answer, and is ignored while Tor is running; on=false clears it with no question. Session only; Tor connecting clears it. Pushes _privacy and answers the snapshot.",
     "timing": "The page waits up to 600 s for an on=true answer (a person is reading an alert).",
     "pageRef": [
-      "Web/foxy-wallet.js:14708@'unprotected'"
+      "Web/foxy-wallet.js:15218@'unprotected'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:397@\"unprotected\"",
@@ -389,7 +389,7 @@
     },
     "behaviour": "Poll Orbot now instead of on its 15 s timer; answers OrbotLink.name.",
     "pageRef": [
-      "Web/foxy-wallet.js:14700@'orbotRefresh'"
+      "Web/foxy-wallet.js:15210@'orbotRefresh'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:393@\"orbotRefresh\"",
@@ -425,7 +425,7 @@
     },
     "behaviour": "Opens Orbot's own permission flow for a key with bypass.",
     "pageRef": [
-      "Web/foxy-wallet.js:14704@'orbotAccess'"
+      "Web/foxy-wallet.js:15214@'orbotAccess'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:392@\"orbotAccess\"",
@@ -471,7 +471,7 @@
     "behaviour": "Every mint, LNURL / lightning-address and block-explorer request the page makes (cashu-ts customRequest, nativeRequest). In order: url parses; Route.urlProblem (https, or http to .onion; no localhost, IP literal, single label, .local family; .onion needs Tor); method GET or POST only; Route.available or the refusal; HostApprovals (an unknown host is asked about in a native alert first); then sent on the Tor circuit labelled `circuit` (16-64 lowercase hex, else a fresh one). Only content-type and accept headers are passed; generic Tor-Browser User-Agent. Plain http to an .onion goes through Tor SOCKS by hand (GET only). Answer capped at 4 MB. Redirects re-checked and never to another host. NSURLErrorBadURL retried once after 0.4 s.",
     "timing": "The page waits 65 s. A swap/melt/mint/restore POST is counted in moneyInFlight so backgrounding waits up to 20 s for it.",
     "pageRef": [
-      "Web/foxy-wallet.js:25222@'mintRequest'"
+      "Web/foxy-wallet.js:25939@'mintRequest'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:398@\"mintRequest\"",
@@ -516,7 +516,7 @@
     "behaviour": "BTC/USD from six operators in order (mempool onion, Kraken, Bitstamp, blockchain.info, Gemini, Coinbase), two at a time, first usable answer wins; agree=true needs two within 2% (a payment typed in dollars). 4 s per source direct, 20 s on a bridge, 10/25 s for the onion; whole walk 12/30 s (25/45 s with agree).",
     "timing": "Page waits 14 s (34 s bridged; 29/49 s with agree).",
     "pageRef": [
-      "Web/foxy-wallet.js:15139@'price'"
+      "Web/foxy-wallet.js:15649@'price'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:363@\"price\"",
@@ -556,7 +556,7 @@
     "behaviour": "Chart history from Kraken OHLC, interval chosen from the fixed set so the range fits 720 candles. g clamped to 60..86400 s, span to 3600 s..4 years.",
     "timing": "Page waits 16 s; native times the request out at 12 s.",
     "pageRef": [
-      "Web/foxy-wallet.js:15215@'candles'"
+      "Web/foxy-wallet.js:15728@'candles'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:364@\"candles\"",
@@ -592,7 +592,7 @@
     },
     "behaviour": "Once, the first time a version with host approvals runs: the mints and contact domains the wallet already used are carried over as approved (each approves only itself). Later calls change nothing.",
     "pageRef": [
-      "Web/foxy-wallet.js:26068@'hostsKnown'"
+      "Web/foxy-wallet.js:26785@'hostsKnown'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:399@\"hostsKnown\"",
@@ -628,8 +628,8 @@
     },
     "behaviour": "Whether a seed is saved. quiet=true answers from presence alone (no biometric prompt); without it the seed is read (may prompt). \"passcode\": false only on a phone with no device credential. Finding a seed closes the seedMigrate window.",
     "pageRef": [
-      "Web/foxy-wallet.js:2463@'seedStatus'",
-      "Web/foxy-wallet.js:21574@'seedStatus'"
+      "Web/foxy-wallet.js:2481@'seedStatus'",
+      "Web/foxy-wallet.js:22228@'seedStatus'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:371@\"seedStatus\"",
@@ -667,7 +667,7 @@
     },
     "behaviour": "Twelve words made natively (128 bits from the platform CSPRNG, the bundled wordlist used only if its SHA-256 is pinned) and saved; never replaces a saved seed; counters left from a gone seed are moved aside first. One seed change at a time.",
     "pageRef": [
-      "Web/foxy-wallet.js:2470@'seedCreate'"
+      "Web/foxy-wallet.js:2488@'seedCreate'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:372@\"seedCreate\"",
@@ -708,7 +708,7 @@
     },
     "behaviour": "The one-time move of words a pre-keychain page still holds (localStorage foxy.seed.v1). Only a valid BIP-39 phrase (<=1000 bytes, or <=24 words), written only inside the one-time window and only where no seed is saved; otherwise same/different, changing nothing. Never answers words.",
     "pageRef": [
-      "Web/foxy-wallet.js:2564@'seedMigrate'"
+      "Web/foxy-wallet.js:2582@'seedMigrate'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:373@\"seedMigrate\"",
@@ -746,7 +746,7 @@
     },
     "behaviour": "Once per install: the page's old NUT-13 counters ({keysetId: next}) raised into the native file (max of each). At most 256 keysets.",
     "pageRef": [
-      "Web/foxy-wallet.js:2662@'countersImport'"
+      "Web/foxy-wallet.js:2680@'countersImport'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:374@\"countersImport\"",
@@ -789,9 +789,9 @@
     },
     "behaviour": "Reserve `count` (0..1000) counters for a 00/01 keyset and answer their NUT-13 secrets and blinding factors (hex). The range is written to the counter file BEFORE the secrets are answered. count=0 is a peek: answers start=next with empty lists and needs no seed.",
     "pageRef": [
-      "Web/foxy-wallet.js:2983@'counterReserve'",
-      "Web/foxy-wallet.js:2992@'counterReserve'",
-      "Web/foxy-wallet.js:3071@'counterReserve'"
+      "Web/foxy-wallet.js:3001@'counterReserve'",
+      "Web/foxy-wallet.js:3010@'counterReserve'",
+      "Web/foxy-wallet.js:3089@'counterReserve'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:375@\"counterReserve\"",
@@ -837,7 +837,7 @@
     },
     "behaviour": "Reserve an explicit range: refused if it starts below next (already issued) or more than 100 past it.",
     "pageRef": [
-      "Web/foxy-wallet.js:2992@'counterReserveAt'"
+      "Web/foxy-wallet.js:3010@'counterReserveAt'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:376@\"counterReserveAt\"",
@@ -875,8 +875,8 @@
     },
     "behaviour": "Move a counter up, never down; at most 100 past next, or to the end of a range restoreSecrets served this session.",
     "pageRef": [
-      "Web/foxy-wallet.js:2986@'counterAdvance'",
-      "Web/foxy-wallet.js:3035@'counterAdvance'"
+      "Web/foxy-wallet.js:3004@'counterAdvance'",
+      "Web/foxy-wallet.js:3053@'counterAdvance'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:377@\"counterAdvance\"",
@@ -908,7 +908,7 @@
     },
     "behaviour": "Reads every keyset's next counter; moves nothing; needs no seed.",
     "pageRef": [
-      "Web/foxy-wallet.js:3016@'counterSnapshot'"
+      "Web/foxy-wallet.js:3034@'counterSnapshot'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:378@\"counterSnapshot\"",
@@ -952,9 +952,9 @@
     },
     "behaviour": "Secrets for a restore scan, moving no counter: for the saved seed only ranges ending at most 1000 past next; for a typed-words candidate (seedEnter) contiguously from 0 up to 20000. Notes the furthest range served (counterAdvance may reach it; seedAdopt raises counters to 1000 short of it).",
     "pageRef": [
-      "Web/foxy-wallet.js:2721@'restoreSecrets'",
-      "Web/foxy-wallet.js:3179@'restoreSecrets'",
-      "Web/foxy-wallet.js:3180@'restoreSecrets'"
+      "Web/foxy-wallet.js:2739@'restoreSecrets'",
+      "Web/foxy-wallet.js:3197@'restoreSecrets'",
+      "Web/foxy-wallet.js:3198@'restoreSecrets'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:379@\"restoreSecrets\"",
@@ -994,7 +994,7 @@
     },
     "behaviour": "Reserve 0..64 lock-key indexes on NUT-13's P2PK path m/129373'/10'/0'/0'/i (last level normal) and answer their compressed PUBLIC keys; the index is written first. count=0 is a peek.",
     "pageRef": [
-      "Web/foxy-wallet.js:6694@'p2pkReserve'"
+      "Web/foxy-wallet.js:6930@'p2pkReserve'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:382@\"p2pkReserve\"",
@@ -1035,8 +1035,8 @@
     },
     "behaviour": "Public keys only, 1..300 at a time, no index past 20000; moves nothing but notes the scan's reach (which p2pkKey may then answer).",
     "pageRef": [
-      "Web/foxy-wallet.js:6667@'p2pkPubkeys'",
-      "Web/foxy-wallet.js:8307@'p2pkPubkeys'"
+      "Web/foxy-wallet.js:6903@'p2pkPubkeys'",
+      "Web/foxy-wallet.js:8543@'p2pkPubkeys'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:383@\"p2pkPubkeys\"",
@@ -1076,9 +1076,9 @@
     },
     "behaviour": "One lock key's private half, only within 1000 of the last index reserved or inside a range this session's scan served. The chain code is never answered.",
     "pageRef": [
-      "Web/foxy-wallet.js:6782@'p2pkKey'",
-      "Web/foxy-wallet.js:8320@'p2pkKey'",
-      "Web/foxy-wallet.js:24229@'p2pkKey'"
+      "Web/foxy-wallet.js:7018@'p2pkKey'",
+      "Web/foxy-wallet.js:8556@'p2pkKey'",
+      "Web/foxy-wallet.js:24899@'p2pkKey'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:384@\"p2pkKey\"",
@@ -1121,7 +1121,7 @@
     "behaviour": "Native screen showing the words (behind biometric/device credential), with the verify quiz when verify=true. Answers only whether the quiz was finished, whether delete was asked, whether the words were revealed. One seed screen at a time; none within 10 s of a cancelled read. A cancelled/closed screen answers {\"verified\": false}.",
     "timing": "Page waits 30 min (PERSON_MS).",
     "pageRef": [
-      "Web/foxy-wallet.js:18903@'seedShow'"
+      "Web/foxy-wallet.js:19547@'seedShow'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:385@\"seedShow\"",
@@ -1160,7 +1160,7 @@
     "behaviour": "Native screen where the person types words to restore. Answers a random 128-bit candidate id, never the words. Two candidates at most, dropped on unlock-forget, page reload or background.",
     "timing": "Page waits 30 min.",
     "pageRef": [
-      "Web/foxy-wallet.js:18919@'seedEnter'"
+      "Web/foxy-wallet.js:19563@'seedEnter'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:386@\"seedEnter\"",
@@ -1199,7 +1199,7 @@
     "behaviour": "Replace the saved seed with a candidate: native alert \"Replace this wallet's seed?\" (gives up after 120 s as no), then device credential; counters set aside and raised to 1000 short of the furthest range served.",
     "timing": "Page waits 30 min.",
     "pageRef": [
-      "Web/foxy-wallet.js:3097@'seedAdopt'"
+      "Web/foxy-wallet.js:3115@'seedAdopt'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:387@\"seedAdopt\"",
@@ -1234,7 +1234,7 @@
     },
     "behaviour": "Forget a candidate id.",
     "pageRef": [
-      "Web/foxy-wallet.js:18939@'seedCandidateForget'"
+      "Web/foxy-wallet.js:19583@'seedCandidateForget'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:388@\"seedCandidateForget\"",
@@ -1270,8 +1270,8 @@
     "behaviour": "Native alert \"Delete this wallet's seed?\", then device credential; the seed is checked gone before counters move, and a new seed is always made.",
     "timing": "Page waits 30 min.",
     "pageRef": [
-      "Web/foxy-wallet.js:14490@'seedWipe'",
-      "Web/foxy-wallet.js:25159@'seedWipe'"
+      "Web/foxy-wallet.js:15000@'seedWipe'",
+      "Web/foxy-wallet.js:25876@'seedWipe'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:389@\"seedWipe\"",
@@ -1309,7 +1309,7 @@
     },
     "behaviour": "Which protection the person chose: \"device\" (behind biometric/credential) or \"none\".",
     "pageRef": [
-      "Web/foxy-wallet.js:25133@'seedProtection'"
+      "Web/foxy-wallet.js:25850@'seedProtection'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:390@\"seedProtection\"",
@@ -1346,7 +1346,7 @@
     "behaviour": "Move the seed between the two protections. Taking protection off reads the seed from behind it first; written and read back where it is going before the old copy is deleted.",
     "timing": "Page waits 30 min.",
     "pageRef": [
-      "Web/foxy-wallet.js:25140@'seedProtect'"
+      "Web/foxy-wallet.js:25857@'seedProtect'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:391@\"seedProtect\"",
@@ -1378,7 +1378,7 @@
     },
     "behaviour": "Full-screen camera scanner. The prompt is shown only if it is one of native's fixed prompts (\"Scan an ecash token\", \"Scan the mint address\"), else blank.",
     "pageRef": [
-      "Web/foxy-wallet.js:23407@action: 'scan'"
+      "Web/foxy-wallet.js:24077@action: 'scan'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:358@\"scan\"",
@@ -1417,7 +1417,7 @@
     },
     "behaviour": "Live camera laid over the page at a rectangle (CSS px) the page measured: finite, larger than 40x40, inside the web view. Each decoded code is pushed with _liveScan; a refusal is also pushed with _previewRefused.",
     "pageRef": [
-      "Web/foxy-wallet.js:25643@action: 'previewStart'"
+      "Web/foxy-wallet.js:26360@action: 'previewStart'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:401@\"previewStart\"",
@@ -1446,7 +1446,7 @@
     },
     "behaviour": "Stops the live preview.",
     "pageRef": [
-      "Web/foxy-wallet.js:25653@action: 'previewStop'"
+      "Web/foxy-wallet.js:26370@action: 'previewStop'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:402@\"previewStop\"",
@@ -1487,7 +1487,7 @@
     },
     "behaviour": "iOS: a near-invisible UIPasteControl over the page's PASTE button (paste with no system prompt). Rect must be >30x20, <=90% width, <=50% height, inside the view, below its top third. The pasted text (never a seed phrase) is pushed with _pasted.",
     "pageRef": [
-      "Web/foxy-wallet.js:25683@action: 'pasteStart'"
+      "Web/foxy-wallet.js:26400@action: 'pasteStart'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:403@\"pasteStart\"",
@@ -1521,7 +1521,7 @@
     },
     "behaviour": "Removes the paste control (kept a moment longer, not taking touches, while a paste prompt is up).",
     "pageRef": [
-      "Web/foxy-wallet.js:25693@action: 'pasteStop'"
+      "Web/foxy-wallet.js:26410@action: 'pasteStop'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:404@\"pasteStop\"",
@@ -1549,7 +1549,7 @@
     "behaviour": "Reads the clipboard, text only; a seed phrase reads as empty (SeedPasteboard.forPage).",
     "timing": "Page gives up after 4 s with \"\".",
     "pageRef": [
-      "Web/foxy-wallet.js:25550@action: 'clipboard'"
+      "Web/foxy-wallet.js:26267@action: 'clipboard'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:365@\"clipboard\"",
@@ -1616,7 +1616,7 @@
     },
     "behaviour": "System share sheet with plain text only (no URL item, no link preview fetched).",
     "pageRef": [
-      "Web/foxy-wallet.js:25575@action: 'share'"
+      "Web/foxy-wallet.js:26292@action: 'share'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:406@\"share\"",
@@ -1650,7 +1650,7 @@
     },
     "behaviour": "A local notification. kind is \"sent\" or \"received\"; the words are native's (\"Payment sent\"/\"Payment received\", titled \"Foxy\"), no amount. At most one every 3 s.",
     "pageRef": [
-      "Web/foxy-wallet.js:25632@action: 'notify'"
+      "Web/foxy-wallet.js:26349@action: 'notify'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:405@\"notify\"",
@@ -1685,7 +1685,7 @@
     "behaviour": "Biometric (or device credential when passcode=true, the screen lock only) for the PIN lock. The reason shown is one of native's (\"Unlock Foxy\", \"Leave POS mode\"); anything else shows \"Unlock Foxy\". A yes is remembered so the following seed read does not ask again.",
     "timing": "Page treats no answer in 60 s as \"no\".",
     "pageRef": [
-      "Web/foxy-wallet.js:25390@action: 'biometric'"
+      "Web/foxy-wallet.js:26107@action: 'biometric'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:367@\"biometric\"",
@@ -1718,7 +1718,7 @@
     },
     "behaviour": "Opens this app's own system settings page and no other URL (a camera or Bluetooth permission refused once).",
     "pageRef": [
-      "Web/foxy-wallet.js:25563@'openSettings'"
+      "Web/foxy-wallet.js:26280@'openSettings'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:407@\"openSettings\"",
@@ -1751,7 +1751,7 @@
     },
     "behaviour": "Opens one of four fixed sites by name (cashapp, strike, river, flash) in the system browser, outside Foxy and outside Tor. The page never supplies a URL.",
     "pageRef": [
-      "Web/foxy-wallet.js:25569@'openCompany'"
+      "Web/foxy-wallet.js:26286@'openCompany'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:408@\"openCompany\"",
@@ -1837,7 +1837,7 @@
     },
     "behaviour": "An ephemeral v3 onion address (key made and discarded by Tor) forwarding to a 127.0.0.1 listener, plus a Nostr nprofile listening on up to four relays over Tor, for the payment request on screen. A spare is kept warm.",
     "pageRef": [
-      "Web/foxy-wallet.js:21860@'inboxOpen'"
+      "Web/foxy-wallet.js:22514@'inboxOpen'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:410@\"inboxOpen\"",
@@ -1868,7 +1868,7 @@
     },
     "behaviour": "End the address (after `hold` seconds, 0..180, if a payment may be on its way) and the Nostr inbox.",
     "pageRef": [
-      "Web/foxy-wallet.js:21878@'inboxClose'"
+      "Web/foxy-wallet.js:22532@'inboxClose'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:411@\"inboxClose\"",
@@ -1902,7 +1902,7 @@
     },
     "behaviour": "Answer a payment that arrived (_requestPaid): status 200, 409 or 422 only, 300 characters of text.",
     "pageRef": [
-      "Web/foxy-wallet.js:22182@'inboxAnswer'"
+      "Web/foxy-wallet.js:22836@'inboxAnswer'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:412@\"inboxAnswer\"",
@@ -1934,7 +1934,7 @@
     },
     "behaviour": "POST a payment to another phone's onion: http:// v3 .onion only, no user/query/fragment, through Tor SOCKS, never the open connection; body <=256 kB, answer cut at 64 kB. timeout in ms, clamped to 3..120 s.",
     "pageRef": [
-      "Web/foxy-wallet.js:8637@'onionPost'"
+      "Web/foxy-wallet.js:8873@'onionPost'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:413@\"onionPost\"",
@@ -1968,7 +1968,7 @@
     },
     "behaviour": "NIP-17/59 gift-wrap the payment for the nprofile in a request and publish to at most five wss relays it names (fallback: damus, nos.lol, primal, minibits), each over Tor on its own circuit; never the open connection.",
     "pageRef": [
-      "Web/foxy-wallet.js:8664@'nostrSend'"
+      "Web/foxy-wallet.js:8900@'nostrSend'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:414@\"nostrSend\"",
@@ -2003,7 +2003,7 @@
     },
     "behaviour": "Advertise the invoice/payment request on screen over BLE (service UUID only). Payment, quote and stage events come back as _requestPaid(.., \"tap\"), _tapQuote, _tap. Android (ENG-656, until BLE tap to pay in ENG-650): nothing is advertised and no Bluetooth permission is declared or requested. A non-empty payload iOS would refuse (TapProtocol.isPayload) is refused with its words; otherwise native answers \"ok\" and, when this makes the receiver (none held since the last tapReceiveStop or the page going; putting Foxy away keeps it, as iOS keeps tapReceiver in the background), then pushes _tap({side:\"receive\",stage:\"unsupported\"}), in iOS order on an iPhone without Bluetooth (the reply, then the peripheral manager reporting its state). The page asks this by itself on every receive screen (auto-arm); an \"Unknown action\" reply put UNKNOWN ACTION: TAPRECEIVESTART in the TAP card and was retried every 1.2 s while the screen was up.",
     "pageRef": [
-      "Web/foxy-wallet.js:23489@'tapReceiveStart'"
+      "Web/foxy-wallet.js:24159@'tapReceiveStart'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:416@\"tapReceiveStart\"",
@@ -2034,7 +2034,7 @@
     },
     "behaviour": "Stop advertising. Android (ENG-656): lets go of the receiver tapReceiveStart made and answers \"ok\".",
     "pageRef": [
-      "Web/foxy-wallet.js:23492@'tapReceiveStop'"
+      "Web/foxy-wallet.js:24162@'tapReceiveStop'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:417@\"tapReceiveStop\"",
@@ -2079,8 +2079,8 @@
     "behaviour": "Search for a receiver close enough to be touching and answer its offer plus the four-digit code both phones show; now=true only nudges a search already running and answers \"ok\".",
     "timing": "Page waits 30 min for a payer to touch.",
     "pageRef": [
-      "Web/foxy-wallet.js:23508@'tapPayStart'",
-      "Web/foxy-wallet.js:23512@'tapPayStart'"
+      "Web/foxy-wallet.js:24178@'tapPayStart'",
+      "Web/foxy-wallet.js:24182@'tapPayStart'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:418@\"tapPayStart\"",
@@ -2111,7 +2111,7 @@
     },
     "behaviour": "The payment, over the link this tap already holds, <=64 KB.",
     "pageRef": [
-      "Web/foxy-wallet.js:23551@'tapSend'"
+      "Web/foxy-wallet.js:24221@'tapSend'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:427@\"tapSend\"",
@@ -2145,7 +2145,7 @@
     },
     "behaviour": "Change token back to the payer over the same link; resolves when the payer says it kept it (7 s), or late via _tapChangeKeptLate.",
     "pageRef": [
-      "Web/foxy-wallet.js:23603@'tapChange'"
+      "Web/foxy-wallet.js:24273@'tapChange'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:419@\"tapChange\"",
@@ -2177,7 +2177,7 @@
     },
     "behaviour": "The payer's page saying it wrote the change down (M8).",
     "pageRef": [
-      "Web/foxy-wallet.js:23700@'tapChangeKept'"
+      "Web/foxy-wallet.js:24370@'tapChangeKept'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:420@\"tapChangeKept\"",
@@ -2207,7 +2207,7 @@
     },
     "behaviour": "The receiver is asking its person about an offline payment (M9).",
     "pageRef": [
-      "Web/foxy-wallet.js:23615@'tapAsking'"
+      "Web/foxy-wallet.js:24285@'tapAsking'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:421@\"tapAsking\"",
@@ -2236,7 +2236,7 @@
     },
     "behaviour": "This payment owes change: keep the link.",
     "pageRef": [
-      "Web/foxy-wallet.js:23689@'tapChangeDue'"
+      "Web/foxy-wallet.js:24359@'tapChangeDue'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:422@\"tapChangeDue\"",
@@ -2268,7 +2268,7 @@
     },
     "behaviour": "Payer's price quote (M10).",
     "pageRef": [
-      "Web/foxy-wallet.js:23624@'tapQuote'"
+      "Web/foxy-wallet.js:24294@'tapQuote'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:423@\"tapQuote\"",
@@ -2300,7 +2300,7 @@
     },
     "behaviour": "Receiver agreeing the price (M11).",
     "pageRef": [
-      "Web/foxy-wallet.js:23629@'tapTerms'"
+      "Web/foxy-wallet.js:24299@'tapTerms'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:424@\"tapTerms\"",
@@ -2329,7 +2329,7 @@
     },
     "behaviour": "Stop searching/connecting; a waiting tapPayStart is answered with the error \"Stopped.\".",
     "pageRef": [
-      "Web/foxy-wallet.js:23762@'tapPayStop'"
+      "Web/foxy-wallet.js:24432@'tapPayStop'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:425@\"tapPayStop\"",
@@ -2391,7 +2391,7 @@
     },
     "behaviour": "While set, a shake is pushed as _tap({side:\"receive\",stage:\"shake\"}).",
     "pageRef": [
-      "Web/foxy-wallet.js:23480@'shakeStart'"
+      "Web/foxy-wallet.js:24150@'shakeStart'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:441@\"shakeStart\"",
@@ -2420,7 +2420,7 @@
     },
     "behaviour": "Clears the shake flag.",
     "pageRef": [
-      "Web/foxy-wallet.js:23480@'shakeStop'"
+      "Web/foxy-wallet.js:24150@'shakeStop'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:442@\"shakeStop\"",
@@ -2453,7 +2453,7 @@
     "behaviour": "Open the NFC session with one printable line (<=120 chars) of the page's text; answers when a card is there. One session at a time.",
     "timing": "Page waits 63 s.",
     "pageRef": [
-      "Web/foxy-wallet.js:24870@'cardBegin'"
+      "Web/foxy-wallet.js:25566@'cardBegin'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:429@\"cardBegin\"",
@@ -2485,7 +2485,7 @@
     },
     "behaviour": "One APDU (hex) and its answer. Only SELECT of Foxy's own applet AID, then only that applet's 27 instructions (CardGate). Never logged: one carries the PIN.",
     "pageRef": [
-      "Web/foxy-wallet.js:24795@'cardSend'"
+      "Web/foxy-wallet.js:25491@'cardSend'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:430@\"cardSend\"",
@@ -2515,7 +2515,7 @@
     },
     "behaviour": "Change the line on the NFC sheet.",
     "pageRef": [
-      "Web/foxy-wallet.js:24799@'cardSay'"
+      "Web/foxy-wallet.js:25495@'cardSay'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:431@\"cardSay\"",
@@ -2547,7 +2547,7 @@
     },
     "behaviour": "The card left part way: look for it again; the applet must be selected again.",
     "pageRef": [
-      "Web/foxy-wallet.js:24816@'cardAgain'"
+      "Web/foxy-wallet.js:25512@'cardAgain'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:432@\"cardAgain\"",
@@ -2578,8 +2578,8 @@
     },
     "behaviour": "Close the sheet with a word or a reason.",
     "pageRef": [
-      "Web/foxy-wallet.js:24777@'cardEnd'",
-      "Web/foxy-wallet.js:24808@'cardEnd'"
+      "Web/foxy-wallet.js:25473@'cardEnd'",
+      "Web/foxy-wallet.js:25504@'cardEnd'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:433@\"cardEnd\"",
@@ -2615,7 +2615,7 @@
     },
     "behaviour": "The P-256 owner PUBLIC key (04||X||Y hex) derived from the seed for one card (its 33-byte compressed key, hex).",
     "pageRef": [
-      "Web/foxy-wallet.js:9784@'cardOwnerKey'"
+      "Web/foxy-wallet.js:10044@'cardOwnerKey'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:436@\"cardOwnerKey\"",
@@ -2655,7 +2655,7 @@
     },
     "behaviour": "ECDSA P-256 DER signature over \"FoxyCard/\"+label, nonce, value for one of six labels (change-pin, set-limit, set-owner, set-card, load, reset), each with its value shape.",
     "pageRef": [
-      "Web/foxy-wallet.js:9808@'cardOwnerSign'"
+      "Web/foxy-wallet.js:10068@'cardOwnerSign'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:437@\"cardOwnerSign\"",
@@ -2690,7 +2690,7 @@
     },
     "behaviour": "The phone clock (u32 seconds) signed by the INTERIM time key built into the app, for cards of software <=1.14.",
     "pageRef": [
-      "Web/foxy-wallet.js:9931@'cardTime'"
+      "Web/foxy-wallet.js:10191@'cardTime'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:439@\"cardTime\"",
@@ -2720,7 +2720,7 @@
     "behaviour": "The one reply path for every action with an id. Exactly one of text/error is non-null. Each argument is a JSON string literal (JSONSerialization of [value], brackets dropped), so a scanned string cannot break out. An id the page no longer waits for is ignored by the page.",
     "timing": "Async, on the main thread. Late replies after the page's own timeout are dropped by the page.",
     "pageRef": [
-      "Web/foxy-wallet.js:23418@_scanResult"
+      "Web/foxy-wallet.js:24088@_scanResult"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:1488-1494@_scanResult",
@@ -2755,7 +2755,7 @@
     },
     "behaviour": "Route snapshot on every Tor, Orbot or network change (and once at start without Tor). The page whitelists these fields.",
     "pageRef": [
-      "Web/foxy-wallet.js:14545@_privacy"
+      "Web/foxy-wallet.js:15055@_privacy"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:157-160@_privacy",
@@ -2781,11 +2781,11 @@
     },
     "behaviour": "Screen recording/mirroring started or stopped: the page hides the seed and secrets while it lasts.",
     "pageRef": [
-      "Web/foxy-wallet.js:25591@_captured"
+      "Web/foxy-wallet.js:26308@_captured"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:142-145@_captured",
-      "Foxy/FoxyWebView.swift:961-963@captureChanged"
+      "Foxy/FoxyWebView.swift:987-989@captureChanged"
     ]
   },
   {
@@ -2805,11 +2805,11 @@
     },
     "behaviour": "A screenshot was taken (cannot be stopped on iOS).",
     "pageRef": [
-      "Web/foxy-wallet.js:25598@_screenshot"
+      "Web/foxy-wallet.js:26315@_screenshot"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:148-150@_screenshot",
-      "Foxy/FoxyWebView.swift:965-967@screenshotTaken"
+      "Foxy/FoxyWebView.swift:991-993@screenshotTaken"
     ]
   },
   {
@@ -2831,7 +2831,7 @@
     },
     "behaviour": "previewStart was refused (as well as its error reply).",
     "pageRef": [
-      "Web/foxy-wallet.js:25659@_previewRefused"
+      "Web/foxy-wallet.js:26376@_previewRefused"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:1107@_previewRefused"
@@ -2856,7 +2856,7 @@
     },
     "behaviour": "A code the live preview decoded.",
     "pageRef": [
-      "Web/foxy-wallet.js:25665@_liveScan"
+      "Web/foxy-wallet.js:26382@_liveScan"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:1135@_liveScan"
@@ -2881,7 +2881,7 @@
     },
     "behaviour": "Text pasted through the paste control; a seed phrase arrives as \"\".",
     "pageRef": [
-      "Web/foxy-wallet.js:25698@_pasted"
+      "Web/foxy-wallet.js:26415@_pasted"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:1225@_pasted"
@@ -2906,11 +2906,11 @@
     },
     "behaviour": "The app went to the background: the page starts its small-change top-up. Native then polls _tidying and Route.out every 0.25 s and keeps Tor up for up to 20 s while money moves, 3 s for other requests, then shuts the door.",
     "pageRef": [
-      "Web/foxy-wallet.js:25104@_putAway"
+      "Web/foxy-wallet.js:25821@_putAway"
     ],
     "iosRef": [
-      "Foxy/FoxyWebView.swift:1102@_putAway",
-      "Foxy/FoxyWebView.swift:973-1104@appEnteredBackground",
+      "Foxy/FoxyWebView.swift:1130@_putAway",
+      "Foxy/FoxyWebView.swift:999-1132@appEnteredBackground",
       "Foxy/Network/Route.swift:200-206@leaving"
     ]
   },
@@ -2931,10 +2931,10 @@
     },
     "behaviour": "Read by native (evaluateJavaScript with a result) while putting away: true while the change top-up is waiting or with the mint.",
     "pageRef": [
-      "Web/foxy-wallet.js:25105@_tidying"
+      "Web/foxy-wallet.js:25822@_tidying"
     ],
     "iosRef": [
-      "Foxy/FoxyWebView.swift:1068@_tidying"
+      "Foxy/FoxyWebView.swift:1096@_tidying"
     ]
   },
   {
@@ -2956,11 +2956,11 @@
     },
     "behaviour": "Back from the background after `away` whole seconds (0 for focus loss without backgrounding). Sent after Tor is told (torResumed) and __foxyUptime is pushed.",
     "pageRef": [
-      "Web/foxy-wallet.js:25712@_resumed"
+      "Web/foxy-wallet.js:26429@_resumed"
     ],
     "iosRef": [
-      "Foxy/FoxyWebView.swift:1146@_resumed",
-      "Foxy/FoxyWebView.swift:1106-1147@appBecameActive"
+      "Foxy/FoxyWebView.swift:1174@_resumed",
+      "Foxy/FoxyWebView.swift:1134-1179@appBecameActive"
     ]
   },
   {
@@ -2983,10 +2983,10 @@
     },
     "behaviour": "Monotonic device uptime, for the PIN back-off clock (22-screen-lock.js). Pushed on didFinish and on every return. Android: SystemClock.elapsedRealtime()/1000.",
     "pageRef": [
-      "Web/foxy-wallet.js:25451@__foxyUptime"
+      "Web/foxy-wallet.js:26168@__foxyUptime"
     ],
     "iosRef": [
-      "Foxy/FoxyWebView.swift:1166@__foxyUptime"
+      "Foxy/FoxyWebView.swift:1198@__foxyUptime"
     ]
   },
   {
@@ -3009,8 +3009,8 @@
     "behaviour": "DEBUG BUILDS ONLY: foxy://receive?amt=50&unit=sat&rail=cashu rebuilt from a whitelist into the page's own hash. Release registers no scheme and has no handler; the page reads it only where FOXY_DEBUG is set.",
     "pageRef": [],
     "iosRef": [
-      "Foxy/FoxyWebView.swift:476-507@receiveDeepLink",
-      "Foxy/FoxyWebView.swift:520@location.hash"
+      "Foxy/FoxyWebView.swift:492-531@receiveDeepLink",
+      "Foxy/FoxyWebView.swift:544@location.hash"
     ]
   },
   {
@@ -3034,7 +3034,7 @@
     },
     "behaviour": "A payment arrived for the request on screen (onion inbox, Nostr inbox with answerId \"\", or a tap with \"tap\"). The page redeems it and answers with inboxAnswer.",
     "pageRef": [
-      "Web/foxy-wallet.js:22169@_requestPaid"
+      "Web/foxy-wallet.js:22823@_requestPaid"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge+Delivery.swift:104@_requestPaid",
@@ -3061,7 +3061,7 @@
     },
     "behaviour": "M10 arrived on the receiver.",
     "pageRef": [
-      "Web/foxy-wallet.js:23635@_tapQuote"
+      "Web/foxy-wallet.js:24305@_tapQuote"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge+Tap.swift:130@_tapQuote"
@@ -3086,7 +3086,7 @@
     },
     "behaviour": "Change arrived on the payer; it answers with tapChangeKept.",
     "pageRef": [
-      "Web/foxy-wallet.js:23704@_tapChange"
+      "Web/foxy-wallet.js:24374@_tapChange"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge+Tap.swift:194@_tapChange"
@@ -3111,7 +3111,7 @@
     },
     "behaviour": "M11 arrived on the payer.",
     "pageRef": [
-      "Web/foxy-wallet.js:23672@_tapTerms"
+      "Web/foxy-wallet.js:24342@_tapTerms"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge+Tap.swift:200@_tapTerms"
@@ -3161,7 +3161,7 @@
     },
     "behaviour": "Device turned portrait/upside-down (the receive screen turns itself for the payer across the table).",
     "pageRef": [
-      "Web/foxy-wallet.js:23776@_turned"
+      "Web/foxy-wallet.js:24446@_turned"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge+Tap.swift:303-307@_turned",
@@ -3185,7 +3185,7 @@
     },
     "behaviour": "The payer said it kept the change after tapChange had already answered.",
     "pageRef": [
-      "Web/foxy-wallet.js:23578@_tapChangeKeptLate"
+      "Web/foxy-wallet.js:24248@_tapChangeKeptLate"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge+Tap.swift:380@_tapChangeKeptLate"
@@ -3214,7 +3214,7 @@
     },
     "behaviour": "Tap progress. side receive|pay; stage one of searching, far, connecting, linked, sending, receiving, code, asking, gone, shake, nearby, version, off, denied, unsupported. Android (ENG-656, until BLE tap to pay in ENG-650): pushed only as {side:\"receive\",stage:\"unsupported\"}, after the reply to a tapReceiveStart that made the receiver. At the pinned page a receive-side stage other than off and denied leaves tapRecvStage alone, so the TAP card says HOLD A PHONE HERE, as on an iPhone without Bluetooth.",
     "pageRef": [
-      "Web/foxy-wallet.js:23784@_tap"
+      "Web/foxy-wallet.js:24454@_tap"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge+Tap.swift:487-498@_tap",
@@ -3241,10 +3241,10 @@
     },
     "behaviour": "NFC session progress: stage connected|say|end|lost.",
     "pageRef": [
-      "Web/foxy-wallet.js:24750@_card"
+      "Web/foxy-wallet.js:25446@_card"
     ],
     "iosRef": [
-      "Foxy/Flashcard/CardGate.swift:143-149@_card"
+      "Foxy/Flashcard/CardGate.swift:144-150@_card"
     ]
   },
   {
@@ -3266,7 +3266,7 @@
     "pageRef": [],
     "iosRef": [
       "Foxy/FoxyWebView.swift:138-141@noWebRTC",
-      "Foxy/FoxyWebView.swift:434-442@noWebRTC"
+      "Foxy/FoxyWebView.swift:450-458@noWebRTC"
     ]
   },
   {
@@ -3402,8 +3402,8 @@
     "behaviour": "sha256 of the staged page manifest (= sha256(core/SHA256SUMS)); the drawer shows its first 12 characters so a person can compare with the reviewed commit.",
     "pageRef": [],
     "iosRef": [
-      "Foxy/FoxyWebView.swift:377-380@__foxyPageHash",
-      "Foxy/FoxyWebView.swift:852-874@manifestHash"
+      "Foxy/FoxyWebView.swift:393-396@__foxyPageHash",
+      "Foxy/FoxyWebView.swift:876-898@manifestHash"
     ]
   }
 ]

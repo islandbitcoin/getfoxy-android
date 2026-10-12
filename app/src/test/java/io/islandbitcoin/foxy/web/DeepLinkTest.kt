@@ -5,7 +5,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * The debug deep link's whitelist (FoxyWebView.swift:476-507): a screen from the
+ * The debug deep link's whitelist (FoxyWebView.swift:492-531): a screen from the
  * list, `amt`, `unit` and `rail` each checked, the hash rebuilt from what
  * matched and nothing else.
  */

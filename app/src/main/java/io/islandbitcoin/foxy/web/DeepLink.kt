@@ -4,7 +4,7 @@ import java.net.URLDecoder
 
 /**
  * DEBUG BUILDS ONLY: `foxy://receive?amt=50&unit=sat&rail=cashu`, rebuilt from
- * a whitelist into the page's own hash (FoxyWebView.swift:476-507; BRIDGE.md
+ * a whitelist into the page's own hash (FoxyWebView.swift:492-531; BRIDGE.md
  * `deepLink`). The scheme is registered only in the debug manifest
  * (`app/src/debug/AndroidManifest.xml`), MainActivity reads a link only in a
  * debug build, and the page reads the parameters only where `FOXY_DEBUG` is

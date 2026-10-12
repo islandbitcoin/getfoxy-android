@@ -5,7 +5,7 @@ The Android app runs the iOS app's page (`core/web/`, byte for byte, pinned in
 — the network, the seed, the camera, the clipboard, notifications, Bluetooth,
 NFC — it asks native for over one channel, and native answers or pushes back
 into the page. This document is that channel, exhaustively, as the iOS app
-implements it at getfoxy/iOS `5581c963dd29b28ebec547473ada532873d49a77`.
+implements it at getfoxy/iOS `8df0bb19992cceda44d04e947bce211e1415975e`.
 Android implements the same contract; nothing in `core/web` changes.
 
 `conformance/contract.json` is the machine-readable form, and it is the
@@ -191,7 +191,7 @@ allowlisted, plus the WebRTC removal in every frame.
 - **A reservation is written before it is answered.** `counterReserve`,
   `counterReserveAt` and `p2pkReserve` persist the new counter (fsync, rename)
   before the secrets or keys leave native.
-- **Going to the background** (`FoxyWebView.swift:973-1104`): cover the screen,
+- **Going to the background** (`FoxyWebView.swift:999-1132`): cover the screen,
   drop typed words and the unlock, close seed screens, save the field log,
   release `awake`, close the onion and Nostr inboxes, then push `_putAway(true)`;
   after 0.4 s poll `_tidying` and the requests in flight every 0.25 s; leave
@@ -205,12 +205,12 @@ allowlisted, plus the WebRTC removal in every frame.
   cancel, or no answer within 2 s of the return puts away what was skipped
   and is a return like any other below (`_resumed(secondsAway)`, so the page
   PIN-locks).
-- **Coming back** (`FoxyWebView.swift:1106-1147`): open the door, drop the
+- **Coming back** (`FoxyWebView.swift:1134-1179`): open the door, drop the
   seed kept for the putting-away, push `__foxyUptime`, tell Tor
   (`torResumed`), then push `_resumed(secondsAway)`. Take the cover off at once
   for an absence under a second, otherwise when the page says `covered` (4 s
   backstop).
-- **The page's process dies** (`FoxyWebView.swift:1319-1325`): forget the
+- **The page's process dies** (`FoxyWebView.swift:1351-1358`): forget the
   unlock, drop native state held for the page (camera, paste control, seed in
   memory, seed screens, tap), reload. Android: `onRenderProcessGone` returns true
   and recreates the WebView.
@@ -228,7 +228,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._scanResult(id, text, error)`
 - **Payload:** `text`: string|null, `error`: string|null
-- **Called from:** `Web/foxy-wallet.js:23418`
+- **Called from:** `Web/foxy-wallet.js:24088`
 - **Native:** The one reply path for every action with an id. Exactly one of text/error is non-null. Each argument is a JSON string literal (JSONSerialization of [value], brackets dropped), so a scanned string cannot break out. An id the page no longer waits for is ignored by the page.
 - **Timing:** Async, on the main thread. Late replies after the page's own timeout are dropped by the page.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:1488-1494`, `Foxy/Bridge/FoxyBridge.swift:1513-1519`
@@ -243,13 +243,13 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Native:** The page has the screen covered (launch intro, CONNECTING, gate screen): native takes the splash and the app-switcher cover down. Nothing is read from the message. Sent on every gate screen, twice per showing is normal.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Timing:** Before the 8 s splash backstop. Native treats a second one as no news.
-- **iOS:** `Foxy/Bridge/FoxyBridge.swift:362`, `Foxy/Bridge/FoxyBridge.swift:542-545`, `Foxy/FoxyWebView.swift:293`, `Foxy/FoxyWebView.swift:300`
+- **iOS:** `Foxy/Bridge/FoxyBridge.swift:362`, `Foxy/Bridge/FoxyBridge.swift:542-545`, `Foxy/FoxyWebView.swift:302`, `Foxy/FoxyWebView.swift:309`
 
 #### `awake` — P1
 
 - **Shape:** page → native, action: `{ action: "awake", id, on }`
 - **Payload:** `on`: boolean
-- **Called from:** `Web/foxy-wallet.js:23473`
+- **Called from:** `Web/foxy-wallet.js:24143`
 - **Native:** Hold the screen lit while a screen is looked at rather than touched (an invoice held up, the gate). Released by native whenever the app leaves the foreground.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:443`, `Foxy/Bridge/FoxyBridge.swift:519-530`, `Foxy/Bridge/FoxyBridge.swift:535-539`
@@ -258,7 +258,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "captured", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:25621`
+- **Called from:** `Web/foxy-wallet.js:26338`
 - **Native:** Whether the screen is being recorded or mirrored right now, for a page that starts while it already is; changes are pushed with _captured.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "yes" / "no"
 - **In P1:** `no`. No capture detection until P3.
@@ -276,49 +276,49 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._captured(bool)`
 - **Payload:** `on`: boolean
-- **Called from:** `Web/foxy-wallet.js:25591`
+- **Called from:** `Web/foxy-wallet.js:26308`
 - **Native:** Screen recording/mirroring started or stopped: the page hides the seed and secrets while it lasts.
-- **iOS:** `Foxy/Bridge/FoxyBridge.swift:142-145`, `Foxy/FoxyWebView.swift:961-963`
+- **iOS:** `Foxy/Bridge/FoxyBridge.swift:142-145`, `Foxy/FoxyWebView.swift:987-989`
 
 #### `_screenshot` — P3
 
 - **Shape:** native → page, push: `window.FoxyWallet._screenshot()`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:25598`
+- **Called from:** `Web/foxy-wallet.js:26315`
 - **Native:** A screenshot was taken (cannot be stopped on iOS).
-- **iOS:** `Foxy/Bridge/FoxyBridge.swift:148-150`, `Foxy/FoxyWebView.swift:965-967`
+- **iOS:** `Foxy/Bridge/FoxyBridge.swift:148-150`, `Foxy/FoxyWebView.swift:991-993`
 
 #### `_putAway` — P1
 
 - **Shape:** native → page, push: `window.FoxyWallet._putAway && window.FoxyWallet._putAway(true)`
 - **Payload:** `on`: boolean
-- **Called from:** `Web/foxy-wallet.js:25104`
+- **Called from:** `Web/foxy-wallet.js:25821`
 - **Native:** The app went to the background: the page starts its small-change top-up. Native then polls _tidying and Route.out every 0.25 s and keeps Tor up for up to 20 s while money moves, 3 s for other requests, then shuts the door.
-- **iOS:** `Foxy/FoxyWebView.swift:1102`, `Foxy/FoxyWebView.swift:973-1104`, `Foxy/Network/Route.swift:200-206`
+- **iOS:** `Foxy/FoxyWebView.swift:1130`, `Foxy/FoxyWebView.swift:999-1132`, `Foxy/Network/Route.swift:200-206`
 
 #### `_tidying` — P1
 
 - **Shape:** native → page, read: `!!(window.FoxyWallet && window.FoxyWallet._tidying)`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:25105`
+- **Called from:** `Web/foxy-wallet.js:25822`
 - **Native:** Read by native (evaluateJavaScript with a result) while putting away: true while the change top-up is waiting or with the mint.
-- **iOS:** `Foxy/FoxyWebView.swift:1068`
+- **iOS:** `Foxy/FoxyWebView.swift:1096`
 
 #### `_resumed` — P1
 
 - **Shape:** native → page, push: `window.FoxyWallet._resumed(secondsAway)`
 - **Payload:** `away`: integer
-- **Called from:** `Web/foxy-wallet.js:25712`
+- **Called from:** `Web/foxy-wallet.js:26429`
 - **Native:** Back from the background after `away` whole seconds (0 for focus loss without backgrounding). Sent after Tor is told (torResumed) and __foxyUptime is pushed.
-- **iOS:** `Foxy/FoxyWebView.swift:1146`, `Foxy/FoxyWebView.swift:1106-1147`
+- **iOS:** `Foxy/FoxyWebView.swift:1174`, `Foxy/FoxyWebView.swift:1134-1179`
 
 #### `__foxyUptime` — P1
 
 - **Shape:** native → page, global: `window.__foxyUptime = { s: systemUptimeSeconds, p: performance.now() }`
 - **Payload:** `s`: number, `p`: number
-- **Called from:** `Web/foxy-wallet.js:25451`
+- **Called from:** `Web/foxy-wallet.js:26168`
 - **Native:** Monotonic device uptime, for the PIN back-off clock (22-screen-lock.js). Pushed on didFinish and on every return. Android: SystemClock.elapsedRealtime()/1000.
-- **iOS:** `Foxy/FoxyWebView.swift:1166`
+- **iOS:** `Foxy/FoxyWebView.swift:1198`
 
 #### `deepLink` — P3
 
@@ -326,7 +326,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Payload:** `hash`: string
 - **Called from:** native
 - **Native:** DEBUG BUILDS ONLY: foxy://receive?amt=50&unit=sat&rail=cashu rebuilt from a whitelist into the page's own hash. Release registers no scheme and has no handler; the page reads it only where FOXY_DEBUG is set.
-- **iOS:** `Foxy/FoxyWebView.swift:476-507`, `Foxy/FoxyWebView.swift:520`
+- **iOS:** `Foxy/FoxyWebView.swift:492-531`, `Foxy/FoxyWebView.swift:544`
 
 #### `noCallout` — P1
 
@@ -349,7 +349,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Payload:** `value`: string
 - **Called from:** native
 - **Native:** sha256 of the staged page manifest (= sha256(core/SHA256SUMS)); the drawer shows its first 12 characters so a person can compare with the reviewed commit.
-- **iOS:** `Foxy/FoxyWebView.swift:377-380`, `Foxy/FoxyWebView.swift:852-874`
+- **iOS:** `Foxy/FoxyWebView.swift:393-396`, `Foxy/FoxyWebView.swift:876-898`
 
 ### Debug and the field log
 
@@ -366,7 +366,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "fieldLog", id, bad }`
 - **Payload:** `bad`: boolean
-- **Called from:** `Web/foxy-wallet.js:24960`
+- **Called from:** `Web/foxy-wallet.js:25677`
 - **Native:** The ERRORS (bad=true) and LOGS screens: native and page lines, redacted, newest last.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — JSON array of {at: integer, text: string, bad: boolean}
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:360`, `Foxy/Bridge/FoxyBridge.swift:568-570`, `Foxy/Debug/FieldLog.swift:214-221`
@@ -375,7 +375,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "fieldLogClear", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:24966`
+- **Called from:** `Web/foxy-wallet.js:25683`
 - **Native:** Forgets every FieldLog line.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:361`, `Foxy/Bridge/FoxyBridge.swift:572-576`
@@ -418,7 +418,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "privacy", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:14685`
+- **Called from:** `Web/foxy-wallet.js:15195`
 - **Native:** Reads the route snapshot (Route.snapshot). The same object is pushed with _privacy on every change.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {tor: string, progress: integer, everUp: boolean, unprotected: boolean, transport: string, orbot: string, firstSetup: boolean, vpn: boolean, orbotKey: boolean, network: string}
 - **In P1:** `{"tor":"none","progress":0,"everUp":false,"unprotected":false,"transport":"direct","orbot":"none","firstSetup":false,"vpn":false,"orbotKey":false,"network":"unknown"}`. No Tor in P1: the snapshot a build without Tor answers (Route.snapshot, the #else branch), so the gate shows CANNOT CONNECT TO TOR.
@@ -428,7 +428,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "torRetry", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:14691`
+- **Called from:** `Web/foxy-wallet.js:15201`
 - **Native:** RETRY / RESTART TOR: a full Tor restart (TorService.restart), answered with the snapshot.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {tor: string, progress: integer, everUp: boolean, unprotected: boolean, transport: string, orbot: string, firstSetup: boolean, vpn: boolean, orbotKey: boolean, network: string}
 - **In P1:** `{"tor":"none","progress":0,"everUp":false,"unprotected":false,"transport":"direct","orbot":"none","firstSetup":false,"vpn":false,"orbotKey":false,"network":"unknown"}`. Nothing to restart: the same no-Tor snapshot as privacy.
@@ -438,7 +438,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "unprotected", id, on }`
 - **Payload:** `on`: boolean
-- **Called from:** `Web/foxy-wallet.js:14708`
+- **Called from:** `Web/foxy-wallet.js:15218`
 - **Native:** CONTINUE WITHOUT TOR. on=true asks a native alert ("Continue without Tor?") that no script can answer, and is ignored while Tor is running; on=false clears it with no question. Session only; Tor connecting clears it. Pushes _privacy and answers the snapshot.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {tor: string, progress: integer, everUp: boolean, unprotected: boolean, transport: string, orbot: string, firstSetup: boolean, vpn: boolean, orbotKey: boolean, network: string}
 - **In P1:** `{"tor":"none","progress":0,"everUp":false,"unprotected":false,"transport":"direct","orbot":"none","firstSetup":false,"vpn":false,"orbotKey":false,"network":"unknown"}`. The unprotected path is not built until P2 (ROUTE.md): on is ignored, and the no-Tor snapshot answers.
@@ -449,7 +449,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "orbotRefresh", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:14700`
+- **Called from:** `Web/foxy-wallet.js:15210`
 - **Native:** Poll Orbot now instead of on its 15 s timer; answers OrbotLink.name.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "none" / "needs-access" / "bypass"
 - **In P1:** `none`. No Orbot link on Android yet (ANDROID-MAPPING decision 3): Orbot is reported as none.
@@ -459,7 +459,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "orbotAccess", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:14704`
+- **Called from:** `Web/foxy-wallet.js:15214`
 - **Native:** Opens Orbot's own permission flow for a key with bypass.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "opened" / "no"
 - **In P1:** `no`. No Orbot link on Android yet (ANDROID-MAPPING decision 3): nothing is opened.
@@ -469,7 +469,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._privacy(snapshot)`
 - **Payload:** `tor`: string, `progress`: integer, `everUp`: boolean, `unprotected`: boolean, `transport`: string, `orbot`: string, `firstSetup`: boolean, `vpn`: boolean, `orbotKey`: boolean, `network`: string
-- **Called from:** `Web/foxy-wallet.js:14545`
+- **Called from:** `Web/foxy-wallet.js:15055`
 - **Native:** Route snapshot on every Tor, Orbot or network change (and once at start without Tor). The page whitelists these fields.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:157-160`, `Foxy/Bridge/FoxyBridge.swift:89-118`
 
@@ -479,7 +479,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "mintRequest", id, url, method, headers, circuit, body }`
 - **Payload:** `url`: string, `method`: string, `headers`: object|null, `circuit`: string, `body`: string
-- **Called from:** `Web/foxy-wallet.js:25222`
+- **Called from:** `Web/foxy-wallet.js:25939`
 - **Native:** Every mint, LNURL / lightning-address and block-explorer request the page makes (cashu-ts customRequest, nativeRequest). In order: url parses; Route.urlProblem (https, or http to .onion; no localhost, IP literal, single label, .local family; .onion needs Tor); method GET or POST only; Route.available or the refusal; HostApprovals (an unknown host is asked about in a native alert first); then sent on the Tor circuit labelled `circuit` (16-64 lowercase hex, else a fresh one). Only content-type and accept headers are passed; generic Tor-Browser User-Agent. Plain http to an .onion goes through Tor SOCKS by hand (GET only). Answer capped at 4 MB. Redirects re-checked and never to another host. NSURLErrorBadURL retried once after 0.4 s.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "<HTTP status>\n<body>"
 - **Errors:** "That is not a mint address Foxy will use."; "That is not a request Foxy will send."; "Foxy is not connected to Tor."; "You did not allow Foxy to contact <host>."; "The answer from <host> was too large."; "An .onion address needs Tor, and Foxy is not connected to Tor."; "<host> could not be asked over Tor: <why>"; "Foxy's private connection was rebuilt mid-request. Try again."
@@ -491,7 +491,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "price", id, agree }`
 - **Payload:** `agree`: boolean?
-- **Called from:** `Web/foxy-wallet.js:15139`
+- **Called from:** `Web/foxy-wallet.js:15649`
 - **Native:** BTC/USD from six operators in order (mempool onion, Kraken, Bitstamp, blockchain.info, Gemini, Coinbase), two at a time, first usable answer wins; agree=true needs two within 2% (a payment typed in dollars). 4 s per source direct, 20 s on a bridge, 10/25 s for the onion; whole walk 12/30 s (25/45 s with agree).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — text (USD per BTC as a decimal string; "" with an error when none answered)
   The text is USD per BTC as a decimal string; "" with an error when none answered.
@@ -504,7 +504,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "candles", id, g, span }`
 - **Payload:** `g`: integer, `span`: integer
-- **Called from:** `Web/foxy-wallet.js:15215`
+- **Called from:** `Web/foxy-wallet.js:15728`
 - **Native:** Chart history from Kraken OHLC, interval chosen from the fixed set so the range fits 720 candles. g clamped to 60..86400 s, span to 3600 s..4 years.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — JSON array of array of [unixSeconds, close] number pairs, oldest first
 - **Errors:** "Foxy is not connected to Tor."; "unreadable candles"; "could not encode candles"
@@ -516,7 +516,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "hostsKnown", id, hosts }`
 - **Payload:** `hosts`: string[]
-- **Called from:** `Web/foxy-wallet.js:26068`
+- **Called from:** `Web/foxy-wallet.js:26785`
 - **Native:** Once, the first time a version with host approvals runs: the mints and contact domains the wallet already used are carried over as approved (each approves only itself). Later calls change nothing.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **In P1:** `ok`. No host approvals until P2, so nothing to carry over.
@@ -527,7 +527,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Shape:** native → page, script: `every RTC* constructor defined as undefined, non-writable, non-configurable; document start, ALL frames`
 - **Called from:** native
 - **Native:** WebRTC STUN is UDP no request block sees; it is removed before any page script so it cannot leak the IP.
-- **iOS:** `Foxy/FoxyWebView.swift:138-141`, `Foxy/FoxyWebView.swift:434-442`
+- **iOS:** `Foxy/FoxyWebView.swift:138-141`, `Foxy/FoxyWebView.swift:450-458`
 
 ### Seed and keychain
 
@@ -535,7 +535,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "seedStatus", id, quiet }`
 - **Payload:** `quiet`: boolean?
-- **Called from:** `Web/foxy-wallet.js:2463`, `Web/foxy-wallet.js:21574`
+- **Called from:** `Web/foxy-wallet.js:2481`, `Web/foxy-wallet.js:22228`
 - **Native:** Whether a seed is saved. quiet=true answers from presence alone (no biometric prompt); without it the seed is read (may prompt). "passcode": false only on a phone with no device credential. Finding a seed closes the seedMigrate window.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {exists: boolean, passcode: boolean?}
 - **Errors:** "the seed could not be read"
@@ -545,7 +545,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "seedCreate", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:2470`
+- **Called from:** `Web/foxy-wallet.js:2488`
 - **Native:** Twelve words made natively (128 bits from the platform CSPRNG, the bundled wordlist used only if its SHA-256 is pinned) and saved; never replaces a saved seed; counters left from a gone seed are moved aside first. One seed change at a time.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {created: boolean}
 - **Errors:** "a seed already exists"; "the seed could not be read"; "the wordlist could not be checked"; "the seed could not be made"; "Another change to the seed is still waiting. Nothing was changed."
@@ -555,7 +555,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "seedMigrate", id, words }`
 - **Payload:** `words`: string|string[]
-- **Called from:** `Web/foxy-wallet.js:2564`
+- **Called from:** `Web/foxy-wallet.js:2582`
 - **Native:** The one-time move of words a pre-keychain page still holds (localStorage foxy.seed.v1). Only a valid BIP-39 phrase (<=1000 bytes, or <=24 words), written only inside the one-time window and only where no seed is saved; otherwise same/different, changing nothing. Never answers words.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {migrated: boolean, same: boolean?, different: boolean?}
 - **Errors:** "bad request"; "no migration here"; "the wordlist could not be checked"; "Another change to the seed is still waiting. Nothing was changed."
@@ -565,7 +565,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "seedShow", id, verify }`
 - **Payload:** `verify`: boolean
-- **Called from:** `Web/foxy-wallet.js:18903`
+- **Called from:** `Web/foxy-wallet.js:19547`
 - **Native:** Native screen showing the words (behind biometric/device credential), with the verify quiz when verify=true. Answers only whether the quiz was finished, whether delete was asked, whether the words were revealed. One seed screen at a time; none within 10 s of a cancelled read. A cancelled/closed screen answers {"verified": false}.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {verified: boolean, delete: boolean?, revealed: boolean?}
 - **Errors:** "a seed screen is already open"; "try again in a moment"; "no seed"; "the seed could not be read"; "Nothing to present the screen from."
@@ -576,7 +576,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "seedEnter", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:18919`
+- **Called from:** `Web/foxy-wallet.js:19563`
 - **Native:** Native screen where the person types words to restore. Answers a random 128-bit candidate id, never the words. Two candidates at most, dropped on unlock-forget, page reload or background.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {candidate: string}
 - **Errors:** "a seed screen is already open"; "too many candidates"; "cancelled"; "the words could not be read"; "the wordlist could not be checked"; "Nothing to present the screen from."
@@ -587,7 +587,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "seedAdopt", id, candidate }`
 - **Payload:** `candidate`: string
-- **Called from:** `Web/foxy-wallet.js:3097`
+- **Called from:** `Web/foxy-wallet.js:3115`
 - **Native:** Replace the saved seed with a candidate: native alert "Replace this wallet's seed?" (gives up after 120 s as no), then device credential; counters set aside and raised to 1000 short of the furthest range served.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {adopted: boolean, same: boolean?}
 - **Errors:** "bad request"; "unknown candidate"; "Nothing was changed."; "Another change to the seed is still waiting. Nothing was changed."
@@ -598,7 +598,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "seedCandidateForget", id, candidate }`
 - **Payload:** `candidate`: string
-- **Called from:** `Web/foxy-wallet.js:18939`
+- **Called from:** `Web/foxy-wallet.js:19583`
 - **Native:** Forget a candidate id.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {forgotten: boolean}
 - **Errors:** "bad request"
@@ -608,7 +608,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "seedWipe", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:14490`, `Web/foxy-wallet.js:25159`
+- **Called from:** `Web/foxy-wallet.js:15000`, `Web/foxy-wallet.js:25876`
 - **Native:** Native alert "Delete this wallet's seed?", then device credential; the seed is checked gone before counters move, and a new seed is always made.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {wiped: boolean, created: boolean}
 - **Errors:** "Nothing was erased."; "Another change to the seed is still waiting. Nothing was changed."
@@ -619,7 +619,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "seedProtection", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:25133`
+- **Called from:** `Web/foxy-wallet.js:25850`
 - **Native:** Which protection the person chose: "device" (behind biometric/credential) or "none".
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {mode: string, passcode: boolean}
 - **In P1:** `{"mode":"none","passcode":true}`. Before P3 the seed is kept under protection none only (SeedVault, P1); device protection and the passcode question come with BiometricPrompt in P3. Asked as the wallet's home screen opens, so a host that connects (P2) meets it.
@@ -629,7 +629,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "seedProtect", id, mode }`
 - **Payload:** `mode`: string
-- **Called from:** `Web/foxy-wallet.js:25140`
+- **Called from:** `Web/foxy-wallet.js:25857`
 - **Native:** Move the seed between the two protections. Taking protection off reads the seed from behind it first; written and read back where it is going before the old copy is deleted.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {mode: string}
 - **Errors:** "bad request"; "the seed could not be read"
@@ -640,7 +640,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "biometric", id, reason, passcode }`
 - **Payload:** `reason`: string, `passcode`: boolean
-- **Called from:** `Web/foxy-wallet.js:25390`
+- **Called from:** `Web/foxy-wallet.js:26107`
 - **Native:** Biometric (or device credential when passcode=true, the screen lock only) for the PIN lock. The reason shown is one of native's ("Unlock Foxy", "Leave POS mode"); anything else shows "Unlock Foxy". A yes is remembered so the following seed read does not ask again.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "yes" / "no" / "unavailable"
 - **Timing:** Page treats no answer in 60 s as "no".
@@ -652,7 +652,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "countersImport", id, counters }`
 - **Payload:** `counters`: object
-- **Called from:** `Web/foxy-wallet.js:2662`
+- **Called from:** `Web/foxy-wallet.js:2680`
 - **Native:** Once per install: the page's old NUT-13 counters ({keysetId: next}) raised into the native file (max of each). At most 256 keysets.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {counters: object}
 - **Errors:** "bad request"; "counters were already imported"; "too many keysets"
@@ -662,7 +662,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "counterReserve", id, keysetId, count }`
 - **Payload:** `keysetId`: string, `count`: integer
-- **Called from:** `Web/foxy-wallet.js:2983`, `Web/foxy-wallet.js:2992`, `Web/foxy-wallet.js:3071`
+- **Called from:** `Web/foxy-wallet.js:3001`, `Web/foxy-wallet.js:3010`, `Web/foxy-wallet.js:3089`
 - **Native:** Reserve `count` (0..1000) counters for a 00/01 keyset and answer their NUT-13 secrets and blinding factors (hex). The range is written to the counter file BEFORE the secrets are answered. count=0 is a peek: answers start=next with empty lists and needs no seed.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {keysetId: string, start: integer, secrets: string[], blindingFactors: string[]}
 - **Errors:** "bad request"; "no seed"; "the seed could not be read"; "too many keysets"; "outside the keyset's counters"
@@ -672,7 +672,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "counterReserveAt", id, keysetId, start, count }`
 - **Payload:** `keysetId`: string, `start`: integer, `count`: integer
-- **Called from:** `Web/foxy-wallet.js:2992`
+- **Called from:** `Web/foxy-wallet.js:3010`
 - **Native:** Reserve an explicit range: refused if it starts below next (already issued) or more than 100 past it.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {keysetId: string, start: integer, secrets: string[], blindingFactors: string[]}
 - **Errors:** "bad request"; "range already issued"; "too far ahead"; "no seed"; "the seed could not be read"
@@ -682,7 +682,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "counterAdvance", id, keysetId, next }`
 - **Payload:** `keysetId`: string, `next`: integer
-- **Called from:** `Web/foxy-wallet.js:2986`, `Web/foxy-wallet.js:3035`
+- **Called from:** `Web/foxy-wallet.js:3004`, `Web/foxy-wallet.js:3053`
 - **Native:** Move a counter up, never down; at most 100 past next, or to the end of a range restoreSecrets served this session.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {keysetId: string, next: integer}
 - **Errors:** "bad request"; "too far ahead"
@@ -692,7 +692,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "counterSnapshot", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:3016`
+- **Called from:** `Web/foxy-wallet.js:3034`
 - **Native:** Reads every keyset's next counter; moves nothing; needs no seed.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {counters: object}
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:378`, `Foxy/Bridge/NativeSeedBridge.swift:324-326`
@@ -701,7 +701,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "restoreSecrets", id, keysetId, start, count, candidate }`
 - **Payload:** `keysetId`: string, `start`: integer, `count`: integer, `candidate`: string?
-- **Called from:** `Web/foxy-wallet.js:2721`, `Web/foxy-wallet.js:3179`, `Web/foxy-wallet.js:3180`
+- **Called from:** `Web/foxy-wallet.js:2739`, `Web/foxy-wallet.js:3197`, `Web/foxy-wallet.js:3198`
 - **Native:** Secrets for a restore scan, moving no counter: for the saved seed only ranges ending at most 1000 past next; for a typed-words candidate (seedEnter) contiguously from 0 up to 20000. Notes the furthest range served (counterAdvance may reach it; seedAdopt raises counters to 1000 short of it).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {keysetId: string, start: integer, secrets: string[], blindingFactors: string[]}
 - **Errors:** "bad request"; "outside the restore window"; "unknown candidate"; "no seed"; "the seed could not be read"
@@ -711,7 +711,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "p2pkReserve", id, count }`
 - **Payload:** `count`: integer
-- **Called from:** `Web/foxy-wallet.js:6694`
+- **Called from:** `Web/foxy-wallet.js:6930`
 - **Native:** Reserve 0..64 lock-key indexes on NUT-13's P2PK path m/129373'/10'/0'/0'/i (last level normal) and answer their compressed PUBLIC keys; the index is written first. count=0 is a peek.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {start: integer, next: integer, pubkeys: string[]}
 - **Errors:** "bad request"; "no seed"; "the seed could not be read"
@@ -721,7 +721,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "p2pkPubkeys", id, start, count }`
 - **Payload:** `start`: integer, `count`: integer
-- **Called from:** `Web/foxy-wallet.js:6667`, `Web/foxy-wallet.js:8307`
+- **Called from:** `Web/foxy-wallet.js:6903`, `Web/foxy-wallet.js:8543`
 - **Native:** Public keys only, 1..300 at a time, no index past 20000; moves nothing but notes the scan's reach (which p2pkKey may then answer).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {start: integer, next: integer, pubkeys: string[]}
 - **Errors:** "bad request"; "no seed"; "the seed could not be read"
@@ -731,7 +731,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "p2pkKey", id, index }`
 - **Payload:** `index`: integer
-- **Called from:** `Web/foxy-wallet.js:6782`, `Web/foxy-wallet.js:8320`, `Web/foxy-wallet.js:24229`
+- **Called from:** `Web/foxy-wallet.js:7018`, `Web/foxy-wallet.js:8556`, `Web/foxy-wallet.js:24899`
 - **Native:** One lock key's private half, only within 1000 of the last index reserved or inside a range this session's scan served. The chain code is never answered.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {index: integer, privkey: string, pubkey: string}
 - **Errors:** "bad request"; "outside the lock-key window"; "no seed"; "the seed could not be read"
@@ -743,7 +743,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "pasteStart", id, x, y, w, h }`
 - **Payload:** `x`: integer, `y`: integer, `w`: integer, `h`: integer
-- **Called from:** `Web/foxy-wallet.js:25683`
+- **Called from:** `Web/foxy-wallet.js:26400`
 - **Native:** iOS: a near-invisible UIPasteControl over the page's PASTE button (paste with no system prompt). Rect must be >30x20, <=90% width, <=50% height, inside the view, below its top third. The pasted text (never a seed phrase) is pushed with _pasted.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "Nothing to attach the button to."; "That is not a place a paste button goes."
@@ -754,7 +754,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "pasteStop", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:25693`
+- **Called from:** `Web/foxy-wallet.js:26410`
 - **Native:** Removes the paste control (kept a moment longer, not taking touches, while a paste prompt is up).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — ""
 - **In P1:** ``. Nothing to take down before P3; posted without waiting on the answer, as pasteStart is.
@@ -764,7 +764,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "clipboard", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:25550`
+- **Called from:** `Web/foxy-wallet.js:26267`
 - **Native:** Reads the clipboard, text only; a seed phrase reads as empty (SeedPasteboard.forPage).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — text (the clipboard text, "" when empty or when it is a seed phrase)
   The text is the clipboard text, "" when empty or when it is a seed phrase.
@@ -785,7 +785,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "share", id, text }`
 - **Payload:** `text`: string
-- **Called from:** `Web/foxy-wallet.js:25575`
+- **Called from:** `Web/foxy-wallet.js:26292`
 - **Native:** System share sheet with plain text only (no URL item, no link preview fetched).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "Nothing to share."; "Something else is already open."
@@ -795,7 +795,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._pasted(text)`
 - **Payload:** `text`: string
-- **Called from:** `Web/foxy-wallet.js:25698`
+- **Called from:** `Web/foxy-wallet.js:26415`
 - **Native:** Text pasted through the paste control; a seed phrase arrives as "".
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:1225`
 
@@ -805,7 +805,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "scan", id, prompt }`
 - **Payload:** `prompt`: string
-- **Called from:** `Web/foxy-wallet.js:23407`
+- **Called from:** `Web/foxy-wallet.js:24077`
 - **Native:** Full-screen camera scanner. The prompt is shown only if it is one of native's fixed prompts ("Scan an ecash token", "Scan the mint address"), else blank.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — text (the decoded text)
   The text is the decoded text.
@@ -816,7 +816,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "previewStart", id, x, y, w, h }`
 - **Payload:** `x`: integer, `y`: integer, `w`: integer, `h`: integer
-- **Called from:** `Web/foxy-wallet.js:25643`
+- **Called from:** `Web/foxy-wallet.js:26360`
 - **Native:** Live camera laid over the page at a rectangle (CSS px) the page measured: finite, larger than 40x40, inside the web view. Each decoded code is pushed with _liveScan; a refusal is also pushed with _previewRefused.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "Nothing to show the camera in."; "That pane is too small for a camera (<w>x<h>)."; "The camera pane must be on screen (...)"
@@ -826,7 +826,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "previewStop", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:25653`
+- **Called from:** `Web/foxy-wallet.js:26370`
 - **Native:** Stops the live preview.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — ""
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:402`, `Foxy/Bridge/FoxyBridge.swift:973-976`
@@ -835,7 +835,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._previewRefused(why)`
 - **Payload:** `why`: string
-- **Called from:** `Web/foxy-wallet.js:25659`
+- **Called from:** `Web/foxy-wallet.js:26376`
 - **Native:** previewStart was refused (as well as its error reply).
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:1107`
 
@@ -843,7 +843,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._liveScan(text)`
 - **Payload:** `text`: string
-- **Called from:** `Web/foxy-wallet.js:25665`
+- **Called from:** `Web/foxy-wallet.js:26382`
 - **Native:** A code the live preview decoded.
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:1135`
 
@@ -863,7 +863,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "notify", id, kind }`
 - **Payload:** `kind`: string
-- **Called from:** `Web/foxy-wallet.js:25632`
+- **Called from:** `Web/foxy-wallet.js:26349`
 - **Native:** A local notification. kind is "sent" or "received"; the words are native's ("Payment sent"/"Payment received", titled "Foxy"), no amount. At most one every 3 s.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok" / "throttled"
 - **Errors:** "unknown notification kind"
@@ -875,7 +875,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "openSettings", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:25563`
+- **Called from:** `Web/foxy-wallet.js:26280`
 - **Native:** Opens this app's own system settings page and no other URL (a camera or Bluetooth permission refused once).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "No settings page to open."; "Settings would not open."
@@ -885,7 +885,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "openCompany", id, which }`
 - **Payload:** `which`: string
-- **Called from:** `Web/foxy-wallet.js:25569`
+- **Called from:** `Web/foxy-wallet.js:26286`
 - **Native:** Opens one of four fixed sites by name (cashapp, strike, river, flash) in the system browser, outside Foxy and outside Tor. The page never supplies a URL.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "Not one of the listed sites."; "The browser would not open."
@@ -897,7 +897,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "inboxOpen", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:21860`
+- **Called from:** `Web/foxy-wallet.js:22514`
 - **Native:** An ephemeral v3 onion address (key made and discarded by Tor) forwarding to a 127.0.0.1 listener, plus a Nostr nprofile listening on up to four relays over Tor, for the payment request on screen. A spare is kept warm.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {onion: string?, nostr: string?}
 - **Errors:** "No address: Tor is not ready."; "No onion address: Tor is not ready."
@@ -907,7 +907,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "inboxClose", id, hold }`
 - **Payload:** `hold`: number
-- **Called from:** `Web/foxy-wallet.js:21878`
+- **Called from:** `Web/foxy-wallet.js:22532`
 - **Native:** End the address (after `hold` seconds, 0..180, if a payment may be on its way) and the Nostr inbox.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:411`, `Foxy/Bridge/FoxyBridge+Delivery.swift:208-230`
@@ -916,7 +916,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "inboxAnswer", id, answer, status, text }`
 - **Payload:** `answer`: string, `status`: integer, `text`: string
-- **Called from:** `Web/foxy-wallet.js:22182`
+- **Called from:** `Web/foxy-wallet.js:22836`
 - **Native:** Answer a payment that arrived (_requestPaid): status 200, 409 or 422 only, 300 characters of text.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "No payment is waiting on that answer."
@@ -926,7 +926,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "onionPost", id, url, body, timeout }`
 - **Payload:** `url`: string, `body`: string, `timeout`: number
-- **Called from:** `Web/foxy-wallet.js:8637`
+- **Called from:** `Web/foxy-wallet.js:8873`
 - **Native:** POST a payment to another phone's onion: http:// v3 .onion only, no user/query/fragment, through Tor SOCKS, never the open connection; body <=256 kB, answer cut at 64 kB. timeout in ms, clamped to 3..120 s.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "<HTTP status>\n<body>"
 - **Errors:** "That payment is too large to send."; "<OnionPost failure text>"
@@ -936,7 +936,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._requestPaid(body, answerId[, "tap"])`
 - **Payload:** `body`: string, `answerId`: string, `via`: string?
-- **Called from:** `Web/foxy-wallet.js:22169`
+- **Called from:** `Web/foxy-wallet.js:22823`
 - **Native:** A payment arrived for the request on screen (onion inbox, Nostr inbox with answerId "", or a tap with "tap"). The page redeems it and answers with inboxAnswer.
 - **iOS:** `Foxy/Bridge/FoxyBridge+Delivery.swift:104`, `Foxy/Bridge/FoxyBridge+Delivery.swift:256`, `Foxy/Bridge/FoxyBridge+Tap.swift:121`
 
@@ -946,7 +946,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "nostrSend", id, target, body }`
 - **Payload:** `target`: string, `body`: string
-- **Called from:** `Web/foxy-wallet.js:8664`
+- **Called from:** `Web/foxy-wallet.js:8900`
 - **Native:** NIP-17/59 gift-wrap the payment for the nprofile in a request and publish to at most five wss relays it names (fallback: damus, nos.lol, primal, minibits), each over Tor on its own circuit; never the open connection.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — text (how many relays accepted it, as a decimal string)
   The text is how many relays accepted it, as a decimal string.
@@ -959,7 +959,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "tapReceiveStart", id, payload, early }`
 - **Payload:** `payload`: string, `early`: boolean
-- **Called from:** `Web/foxy-wallet.js:23489`
+- **Called from:** `Web/foxy-wallet.js:24159`
 - **Native:** Advertise the invoice/payment request on screen over BLE (service UUID only). Payment, quote and stage events come back as _requestPaid(.., "tap"), _tapQuote, _tap. Android (ENG-656, until BLE tap to pay in ENG-650): nothing is advertised and no Bluetooth permission is declared or requested. A non-empty payload iOS would refuse (TapProtocol.isPayload) is refused with its words; otherwise native answers "ok" and, when this makes the receiver (none held since the last tapReceiveStop or the page going; putting Foxy away keeps it, as iOS keeps tapReceiver in the background), then pushes _tap({side:"receive",stage:"unsupported"}), in iOS order on an iPhone without Bluetooth (the reply, then the peripheral manager reporting its state). The page asks this by itself on every receive screen (auto-arm); an "Unknown action" reply put UNKNOWN ACTION: TAPRECEIVESTART in the TAP card and was retried every 1.2 s while the screen was up.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "Not something a payer could pay."; "That payment is still going through. A moment."
@@ -969,7 +969,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "tapReceiveStop", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:23492`
+- **Called from:** `Web/foxy-wallet.js:24162`
 - **Native:** Stop advertising. Android (ENG-656): lets go of the receiver tapReceiveStart made and answers "ok".
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:417`, `Foxy/Bridge/FoxyBridge+Tap.swift:149-165`
@@ -978,7 +978,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "tapPayStart", id, now }`
 - **Payload:** `now`: boolean?
-- **Called from:** `Web/foxy-wallet.js:23508`, `Web/foxy-wallet.js:23512`
+- **Called from:** `Web/foxy-wallet.js:24178`, `Web/foxy-wallet.js:24182`
 - **Native:** Search for a receiver close enough to be touching and answer its offer plus the four-digit code both phones show; now=true only nudges a search already running and answers "ok".
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json-or-text {payload: string, code: string} or "ok"
 - **Errors:** "Started again."; "Stopped."
@@ -990,7 +990,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "tapSend", id, body }`
 - **Payload:** `body`: string
-- **Called from:** `Web/foxy-wallet.js:23551`
+- **Called from:** `Web/foxy-wallet.js:24221`
 - **Native:** The payment, over the link this tap already holds, <=64 KB.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — text (the receiver's answer)
   The text is the receiver's answer.
@@ -1001,7 +1001,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "tapChange", id, body }`
 - **Payload:** `body`: string
-- **Called from:** `Web/foxy-wallet.js:23603`
+- **Called from:** `Web/foxy-wallet.js:24273`
 - **Native:** Change token back to the payer over the same link; resolves when the payer says it kept it (7 s), or late via _tapChangeKeptLate.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "There is no change to send."; "That phone is no longer connected."; "The payer's phone did not say it kept the change."
@@ -1011,7 +1011,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "tapChangeKept", id, kept }`
 - **Payload:** `kept`: boolean
-- **Called from:** `Web/foxy-wallet.js:23700`
+- **Called from:** `Web/foxy-wallet.js:24370`
 - **Native:** The payer's page saying it wrote the change down (M8).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "No change is waiting to be kept."
@@ -1021,7 +1021,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "tapAsking", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:23615`
+- **Called from:** `Web/foxy-wallet.js:24285`
 - **Native:** The receiver is asking its person about an offline payment (M9).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok" / "no link"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:421`, `Foxy/Bridge/FoxyBridge+Tap.swift:412-421`
@@ -1030,7 +1030,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "tapChangeDue", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:23689`
+- **Called from:** `Web/foxy-wallet.js:24359`
 - **Native:** This payment owes change: keep the link.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:422`, `Foxy/Bridge/FoxyBridge+Tap.swift:463-468`
@@ -1039,7 +1039,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "tapQuote", id, body }`
 - **Payload:** `body`: string
-- **Called from:** `Web/foxy-wallet.js:23624`
+- **Called from:** `Web/foxy-wallet.js:24294`
 - **Native:** Payer's price quote (M10).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "That phone is no longer connected."
@@ -1049,7 +1049,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "tapTerms", id, body }`
 - **Payload:** `body`: string
-- **Called from:** `Web/foxy-wallet.js:23629`
+- **Called from:** `Web/foxy-wallet.js:24299`
 - **Native:** Receiver agreeing the price (M11).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "That phone is no longer connected."
@@ -1059,7 +1059,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "tapPayStop", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:23762`
+- **Called from:** `Web/foxy-wallet.js:24432`
 - **Native:** Stop searching/connecting; a waiting tapPayStart is answered with the error "Stopped.".
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:425`, `Foxy/Bridge/FoxyBridge+Tap.swift:267-272`
@@ -1077,7 +1077,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "shakeStart", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:23480`
+- **Called from:** `Web/foxy-wallet.js:24150`
 - **Native:** While set, a shake is pushed as _tap({side:"receive",stage:"shake"}).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:441`, `Foxy/Bridge/FoxyBridge+Tap.swift:279-285`
@@ -1086,7 +1086,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "shakeStop", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:23480`
+- **Called from:** `Web/foxy-wallet.js:24150`
 - **Native:** Clears the shake flag.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:442`, `Foxy/Bridge/FoxyBridge+Tap.swift:287-293`
@@ -1095,7 +1095,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._tapQuote(text)`
 - **Payload:** `text`: string
-- **Called from:** `Web/foxy-wallet.js:23635`
+- **Called from:** `Web/foxy-wallet.js:24305`
 - **Native:** M10 arrived on the receiver.
 - **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:130`
 
@@ -1103,7 +1103,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._tapChange(token)`
 - **Payload:** `token`: string
-- **Called from:** `Web/foxy-wallet.js:23704`
+- **Called from:** `Web/foxy-wallet.js:24374`
 - **Native:** Change arrived on the payer; it answers with tapChangeKept.
 - **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:194`
 
@@ -1111,7 +1111,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._tapTerms(text)`
 - **Payload:** `text`: string
-- **Called from:** `Web/foxy-wallet.js:23672`
+- **Called from:** `Web/foxy-wallet.js:24342`
 - **Native:** M11 arrived on the payer.
 - **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:200`
 
@@ -1127,7 +1127,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._turned(upsideDown)`
 - **Payload:** `upsideDown`: boolean
-- **Called from:** `Web/foxy-wallet.js:23776`
+- **Called from:** `Web/foxy-wallet.js:24446`
 - **Native:** Device turned portrait/upside-down (the receive screen turns itself for the payer across the table).
 - **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:303-307`, `Foxy/FoxyWebView.swift:42`
 
@@ -1135,7 +1135,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._tapChangeKeptLate()`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:23578`
+- **Called from:** `Web/foxy-wallet.js:24248`
 - **Native:** The payer said it kept the change after tapChange had already answered.
 - **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:380`
 
@@ -1143,7 +1143,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._tap({side, stage, code?, edge?, pct?})`
 - **Payload:** `side`: string, `stage`: string, `code`: string?, `edge`: string?, `pct`: integer?
-- **Called from:** `Web/foxy-wallet.js:23784`
+- **Called from:** `Web/foxy-wallet.js:24454`
 - **Native:** Tap progress. side receive|pay; stage one of searching, far, connecting, linked, sending, receiving, code, asking, gone, shake, nearby, version, off, denied, unsupported. Android (ENG-656, until BLE tap to pay in ENG-650): pushed only as {side:"receive",stage:"unsupported"}, after the reply to a tapReceiveStart that made the receiver. At the pinned page a receive-side stage other than off and denied leaves tapRecvStage alone, so the TAP card says HOLD A PHONE HERE, as on an iPhone without Bluetooth.
 - **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:487-498`, `Foxy/Bluetooth/TapLink.swift:5-24`
 
@@ -1153,7 +1153,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "cardBegin", id, text }`
 - **Payload:** `text`: string
-- **Called from:** `Web/foxy-wallet.js:24870`
+- **Called from:** `Web/foxy-wallet.js:25566`
 - **Native:** Open the NFC session with one printable line (<=120 chars) of the page's text; answers when a card is there. One session at a time.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "<CardLinkError words>"
@@ -1164,7 +1164,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "cardSend", id, apdu }`
 - **Payload:** `apdu`: string
-- **Called from:** `Web/foxy-wallet.js:24795`
+- **Called from:** `Web/foxy-wallet.js:25491`
 - **Native:** One APDU (hex) and its answer. Only SELECT of Foxy's own applet AID, then only that applet's 27 instructions (CardGate). Never logged: one carries the PIN.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — text (the response APDU, hex)
   The text is the response APDU, hex.
@@ -1175,7 +1175,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "cardSay", id, text }`
 - **Payload:** `text`: string
-- **Called from:** `Web/foxy-wallet.js:24799`
+- **Called from:** `Web/foxy-wallet.js:25495`
 - **Native:** Change the line on the NFC sheet.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:431`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:122-128`
@@ -1184,7 +1184,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "cardAgain", id, text }`
 - **Payload:** `text`: string
-- **Called from:** `Web/foxy-wallet.js:24816`
+- **Called from:** `Web/foxy-wallet.js:25512`
 - **Native:** The card left part way: look for it again; the applet must be selected again.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "<CardLinkError words>"
@@ -1194,7 +1194,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "cardEnd", id, text, error }`
 - **Payload:** `text`: string?, `error`: string?
-- **Called from:** `Web/foxy-wallet.js:24777`, `Web/foxy-wallet.js:24808`
+- **Called from:** `Web/foxy-wallet.js:25473`, `Web/foxy-wallet.js:25504`
 - **Native:** Close the sheet with a word or a reason.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:433`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:133-145`
@@ -1203,7 +1203,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "cardOwnerKey", id, key }`
 - **Payload:** `key`: string
-- **Called from:** `Web/foxy-wallet.js:9784`
+- **Called from:** `Web/foxy-wallet.js:10044`
 - **Native:** The P-256 owner PUBLIC key (04||X||Y hex) derived from the seed for one card (its 33-byte compressed key, hex).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {pub: string}
 - **Errors:** "bad request"; "no seed"; "the seed could not be read"
@@ -1213,7 +1213,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "cardOwnerSign", id, key, label, nonce, value }`
 - **Payload:** `key`: string, `label`: string, `nonce`: string, `value`: string
-- **Called from:** `Web/foxy-wallet.js:9808`
+- **Called from:** `Web/foxy-wallet.js:10068`
 - **Native:** ECDSA P-256 DER signature over "FoxyCard/"+label, nonce, value for one of six labels (change-pin, set-limit, set-owner, set-card, load, reset), each with its value shape.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {sig: string}
 - **Errors:** "bad request"; "no seed"; "the seed could not be read"
@@ -1223,7 +1223,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** page → native, action: `{ action: "cardTime", id }`
 - **Payload:** —
-- **Called from:** `Web/foxy-wallet.js:9931`
+- **Called from:** `Web/foxy-wallet.js:10191`
 - **Native:** The phone clock (u32 seconds) signed by the INTERIM time key built into the app, for cards of software <=1.14.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {time: integer, sig: string}
 - **Errors:** "The clock on this phone is not a time a card can be told."
@@ -1233,9 +1233,9 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 
 - **Shape:** native → page, push: `window.FoxyWallet._card({stage, text})`
 - **Payload:** `stage`: string, `text`: string
-- **Called from:** `Web/foxy-wallet.js:24750`
+- **Called from:** `Web/foxy-wallet.js:25446`
 - **Native:** NFC session progress: stage connected|say|end|lost.
-- **iOS:** `Foxy/Flashcard/CardGate.swift:143-149`
+- **iOS:** `Foxy/Flashcard/CardGate.swift:144-150`
 <!-- contract-detail:end -->
 
 ## 4. What the contract leaves to the architect
@@ -1375,11 +1375,11 @@ kind, domain, phase, payloadSchema, reply, iosRef, pageRef, behaviour, timing? }
 | `_previewRefused` | native → page | push | P3 | `why`: string | none | Foxy/Bridge/FoxyBridge.swift:1107 |
 | `_liveScan` | native → page | push | P3 | `text`: string | none | Foxy/Bridge/FoxyBridge.swift:1135 |
 | `_pasted` | native → page | push | P3 | `text`: string | none | Foxy/Bridge/FoxyBridge.swift:1225 |
-| `_putAway` | native → page | push | P1 | `on`: boolean | none | Foxy/FoxyWebView.swift:1102 |
-| `_tidying` | native → page | read | P1 | — | none | Foxy/FoxyWebView.swift:1068 |
-| `_resumed` | native → page | push | P1 | `away`: integer | none | Foxy/FoxyWebView.swift:1146 |
-| `__foxyUptime` | native → page | global | P1 | `s`: number, `p`: number | none | Foxy/FoxyWebView.swift:1166 |
-| `deepLink` | native → page | global | P3 | `hash`: string | none | Foxy/FoxyWebView.swift:476-507 |
+| `_putAway` | native → page | push | P1 | `on`: boolean | none | Foxy/FoxyWebView.swift:1130 |
+| `_tidying` | native → page | read | P1 | — | none | Foxy/FoxyWebView.swift:1096 |
+| `_resumed` | native → page | push | P1 | `away`: integer | none | Foxy/FoxyWebView.swift:1174 |
+| `__foxyUptime` | native → page | global | P1 | `s`: number, `p`: number | none | Foxy/FoxyWebView.swift:1198 |
+| `deepLink` | native → page | global | P3 | `hash`: string | none | Foxy/FoxyWebView.swift:492-531 |
 | `_requestPaid` | native → page | push | LATER | `body`: string, `answerId`: string, `via`: string? | none | Foxy/Bridge/FoxyBridge+Delivery.swift:104 |
 | `_tapQuote` | native → page | push | LATER | `text`: string | none | Foxy/Bridge/FoxyBridge+Tap.swift:130 |
 | `_tapChange` | native → page | push | LATER | `token`: string | none | Foxy/Bridge/FoxyBridge+Tap.swift:194 |
@@ -1388,12 +1388,12 @@ kind, domain, phase, payloadSchema, reply, iosRef, pageRef, behaviour, timing? }
 | `_turned` | native → page | push | LATER | `upsideDown`: boolean | none | Foxy/Bridge/FoxyBridge+Tap.swift:303-307 |
 | `_tapChangeKeptLate` | native → page | push | LATER | — | none | Foxy/Bridge/FoxyBridge+Tap.swift:380 |
 | `_tap` | native → page | push | P3 | `side`: string, `stage`: string, `code`: string?, `edge`: string?, `pct`: integer? | none | Foxy/Bridge/FoxyBridge+Tap.swift:487-498 |
-| `_card` | native → page | push | LATER | `stage`: string, `text`: string | none | Foxy/Flashcard/CardGate.swift:143-149 |
+| `_card` | native → page | push | LATER | `stage`: string, `text`: string | none | Foxy/Flashcard/CardGate.swift:144-150 |
 | `noWebRTC` | native → page | script | P1 | — | none | Foxy/FoxyWebView.swift:138-141 |
 | `noCallout` | native → page | script | P1 | — | none | Foxy/FoxyWebView.swift:146-156 |
 | `__foxyClock24` | native → page | global | P1 | `value`: boolean | none | Foxy/FoxyWebView.swift:164 |
 | `FOXY_DEBUG` | native → page | global | P1 | `value`: boolean | none | Foxy/FoxyWebView.swift:173 |
 | `FOXY_SHOW_WARNING` | native → page | global | P1 | `value`: boolean | none | Foxy/FoxyWebView.swift:179 |
 | `consoleSilence` | native → page | script | P1 | — | none | Foxy/FoxyWebView.swift:191-204 |
-| `__foxyPageHash` | native → page | global | P1 | `value`: string | none | Foxy/FoxyWebView.swift:377-380 |
+| `__foxyPageHash` | native → page | global | P1 | `value`: string | none | Foxy/FoxyWebView.swift:393-396 |
 <!-- contract-table:end -->
