@@ -174,6 +174,8 @@ android {
                     .get().asFile.absolutePath)
             it.systemProperty("foxy.res", file("src/main/res").absolutePath)
             it.systemProperty("foxy.torSeed", torSeedAssets.get().asFile.resolve("tor/cached-microdescs").absolutePath)
+            // the card simulator's port (tools/cardsim-test.sh): CardSimEndToEndTest drives the real applet there, and is skipped without it
+            it.systemProperty("foxy.cardsimPort", providers.gradleProperty("foxy.cardsimPort").getOrElse(""))
         }
     }
 

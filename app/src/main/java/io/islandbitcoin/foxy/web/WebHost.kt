@@ -36,6 +36,7 @@ import io.islandbitcoin.foxy.debug.Log
 import io.islandbitcoin.foxy.flashcard.CardLink
 import io.islandbitcoin.foxy.flashcard.CardMain
 import io.islandbitcoin.foxy.flashcard.CardSheetView
+import io.islandbitcoin.foxy.flashcard.CardSim
 import io.islandbitcoin.foxy.flashcard.NfcCardLink
 import io.islandbitcoin.foxy.flashcard.ReaderModeRadio
 import io.islandbitcoin.foxy.notify.Notifier
@@ -94,6 +95,9 @@ class WebHost(
         const val PAGE_URL = "https://$DOMAIN/assets/web/index.html"
         private const val SERVED_PREFIX = "/assets/web/"
         val ALLOWED_ORIGINS = setOf(FoxyBridge.ORIGIN)
+
+        /** Debug builds only: card sessions go to the card simulator (SimCardLink) even on a phone with NFC. */
+        const val CARD_SIM = "FoxyCardSim"
 
         /** What a reply or push for a page that is gone leaves in the field log, instead of reaching a WebView. */
         const val DROPPED_LINE = "[foxy] webview: a script for a page that is gone was dropped"
@@ -368,9 +372,19 @@ class WebHost(
     private var radio: ReaderModeRadio? = null
     private var cardSheet: CardSheetView? = null
 
-    /** A link for one card session: the radio in reader mode and Foxy's card sheet over the page. */
+    /**
+     * A link for one card session: the radio in reader mode and Foxy's card
+     * sheet over the page; in a debug build, the card simulator instead on a
+     * device with no NFC (the emulator), or when started with [CARD_SIM].
+     */
     override fun cardLink(): CardLink? {
         if (!usable()) return null
+        val hasNfc = android.nfc.NfcAdapter.getDefaultAdapter(activity) != null
+        val simulated = CardSim.ENABLED && (!hasNfc || activity.intent?.getBooleanExtra(CARD_SIM, false) == true)
+        if (simulated) {
+            Log.line("[card] this session goes to the card simulator on loopback")
+            return CardSim.link(cardMain)
+        }
         val r = ReaderModeRadio(activity)
         radio = r
         val sheet = cardSheet ?: CardSheetView(activity, container, activity.onBackPressedDispatcher).also { cardSheet = it }
