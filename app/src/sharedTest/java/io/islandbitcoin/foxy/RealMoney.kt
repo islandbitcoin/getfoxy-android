@@ -37,6 +37,23 @@ object RealMoney {
      */
     fun feeMarginSats(mintSats: Long): Long = maxOf(2L, (mintSats + 99L) / 100L)
 
+    /**
+     * Why the melt of a leg did not go through, or null when it did: [result] is
+     * what DeviceExitTest's page script returned (Page.async), the JSON of the
+     * pay, `threw …` when FoxyWallet.pay rejected (the mint's reason is in it),
+     * or null when nothing came back. Read before the result is parsed, so a
+     * rejection is reported with its reason and not as a JSON error.
+     * FoxyWallet.pay resolves `{ pending: true }` when the mint answers PENDING
+     * or with no state: the outcome is unknown, so it is not a melt that went
+     * through, and Foxy holds the ecash until it settles.
+     */
+    fun meltFailure(result: String?): String? = when {
+        result == null || result.startsWith("threw ") -> "the melt failed: $result"
+        Regex("\"pending\"\\s*:\\s*true").containsMatchIn(result) ->
+            "the melt is still pending at the mint; Foxy holds the ecash until it settles: $result"
+        else -> null
+    }
+
     /** Why a leg does not run. Nothing has been launched or sent when this is thrown. */
     class Refused(message: String) : IllegalArgumentException(message)
 

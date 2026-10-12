@@ -55,8 +55,11 @@ pkg=io.islandbitcoin.foxy
 log() { echo "leak-test $mode: $*" >&2; }
 
 # an emulator already on this serial may be one a previous run LEFT RUNNING holding ecash:
-# starting another would fail on the port and the rest of this run would drive, and stop, that one
-if adb -s "$ANDROID_SERIAL" get-state > /dev/null 2>&1; then
+# starting another would fail on the port and the rest of this run would drive, and stop, that one.
+# `adb get-state` fails for an `offline` emulator, so the console port is probed directly, and
+# the serial in any adb state (device, offline, unauthorized, …) counts as up. The grep reads all
+# of adb's output (no -q): an early exit could SIGPIPE adb and, under pipefail, read as "not up".
+if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || adb devices 2>/dev/null | grep "^$ANDROID_SERIAL[[:space:]]" > /dev/null; then
   echo "leak-test $mode: $ANDROID_SERIAL is already running (it may hold ecash from a previous run): drain it and stop it first (docs/DEVICE-TESTS.md \"Leftover sats\")" >&2
   exit 4
 fi

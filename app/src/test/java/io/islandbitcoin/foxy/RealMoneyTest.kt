@@ -142,4 +142,24 @@ class RealMoneyTest {
         }
         for (bad in listOf("0", "29", "3601", "x")) assertThrows(bad, RealMoney.Refused::class.java) { RealMoney.leg(args(*good, "payTimeoutSeconds" to bad)) }
     }
+
+    @Test
+    fun aRejectedMeltIsReportedWithTheMintsReasonNotAsAJsonError() {
+        // Page.async's string when FoxyWallet.pay rejects: the reason must reach the failure as it is
+        val threw = "threw Error: Lightning payment failed: no route"
+        assertEquals("the melt failed: $threw", RealMoney.meltFailure(threw))
+        assertEquals("the melt failed: null", RealMoney.meltFailure(null))
+    }
+
+    @Test
+    fun aPendingMeltIsAFailure() {
+        val pending = "{\"unprotected\":true,\"tor\":\"connecting\",\"paid\":true,\"pending\":true}"
+        assertTrue(RealMoney.meltFailure(pending)!!.startsWith("the melt is still pending at the mint"))
+        assertTrue(RealMoney.meltFailure(pending)!!.endsWith(pending))
+    }
+
+    @Test
+    fun aMeltThatWentThroughIsNoFailure() {
+        assertEquals(null, RealMoney.meltFailure("{\"unprotected\":true,\"tor\":\"connecting\",\"paid\":true,\"pending\":false}"))
+    }
 }
