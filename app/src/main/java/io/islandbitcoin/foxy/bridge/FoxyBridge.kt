@@ -98,12 +98,12 @@ interface PageHost {
  *
  * One table: the 18 P1 actions, the 7 P2 actions ([NetBridge]: Tor's snapshot,
  * RETRY, CONTINUE WITHOUT TOR, and the three requests that leave through
- * Route), the 21 P3 actions ([SeedBridge]'s screens, adopting, wiping and
+ * Route), the 23 P3 actions ([SeedBridge]'s screens, adopting, wiping and
  * protection; [PlatformBridge]'s camera, clipboard, share, notifications,
- * biometric, the Bluetooth screen's fixed "unsupported" and the rest), and
- * the `p1` stubs of conformance/contract.json for the LATER phase
- * ([ContractStubs], generated from it), which answer the actions the page asks
- * before anything else. A P3 action's stub is never put in the table: every P3
+ * biometric, the Bluetooth screen's and the receive screen's TAP's fixed
+ * "unsupported" and the rest), and the `p1` stubs of conformance/contract.json
+ * for the LATER phase ([ContractStubs], generated from it), which answer the
+ * actions the page asks before anything else. A P3 action's stub is never put in the table: every P3
  * action is answered by its real handler. Every other action is answered
  * "Unknown action: <name>"; `{haptic}` buzzes and answers nothing; anything
  * else, `{username}` included, is ignored (S15). Only the staged page's main

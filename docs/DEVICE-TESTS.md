@@ -124,6 +124,19 @@ Grant the camera when asked (or `adb shell pm grant io.islandbitcoin.foxy androi
    quiz; HOME while it is up and back: the screen is gone. RESTORE: type twelve
    words; a phrase copied inside Foxy is refused when pasted.
 
+8. **The receive screen's TAP (ENG-656). Pending: the architect's on-device
+   check; no phone was used for this change.** RECEIVE → an amount → NEXT, and
+   press TAP on the invoice screen: the TAP HERE card says HOLD A PHONE HERE,
+   never UNKNOWN ACTION: TAPRECEIVESTART, and the TAP button keeps the accent
+   colour (not greyed). On a debug build,
+   `adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy)` shows
+   `[tap] receive: no tap to pay on Android yet; telling the page unsupported`
+   once as the receive screen arms itself (again after leaving it, or after
+   putting Foxy away), and never the page's `tap: not advertising` warning.
+   Nothing asks for a Bluetooth permission. The conformance flow *P3: the
+   receive screen's TAP …* and `TapReceiveTest` cover the same in jsdom and the
+   JVM; this is the check on the real WebView.
+
 ## The P2 device exit (ENG-648)
 
 On the phone, debug build, unlocked, online. The page is driven over WebView

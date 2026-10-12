@@ -96,13 +96,18 @@ function replyProblems(entry, text, error) {
  *               ("Unknown action: …") and is a violation ('unserved'), so a boot
  *               that leans on one fails here. Unset: everything is served (the
  *               iOS app's table).
+ *   o.unknown   a Set of later-phase actions with no stub that this host answers
+ *               "Unknown action: …" without a violation, as the Kotlin bridge
+ *               answers them today: for a flow about something else that has to
+ *               stand on a screen which also asks them. Naming an action the
+ *               host's phase serves, or one with a stub, is itself a violation.
  */
 function makeHost(o) {
   const opts = o || {};
   const state = {
     tor: opts.tor || 'up', progress: 0, everUp: (opts.tor || 'up') === 'up', unprotected: false,
     seed: opts.seed !== false, counters: new Map(), p2pkNext: 0, candidates: new Set(), migrated: false,
-    protection: 'none', imported: false, notifiedAt: 0,
+    protection: 'none', imported: false, notifiedAt: 0, receiverHeld: false,
   };
   const SEED = crypto.createHash('sha256').update('conformance seed').digest();
   const derive = (keysetId, counter, what) =>
@@ -121,6 +126,12 @@ function makeHost(o) {
     pushes: [],
   };
   const violate = (kind, detail) => host.violations.push({ kind, detail: String(detail).slice(0, 400) });
+  for (const name of (opts.unknown || [])) {
+    const e = ACTIONS.get(name);
+    if (!e || e.p1 || !opts.phase || !laterThan(e.phase, opts.phase)) {
+      violate('unknown', 'o.unknown names ' + name + ', which this host serves or stubs (or is no action)');
+    }
+  }
   const count = (name) => host.asked.set(name, (host.asked.get(name) || 0) + 1);
 
   function secrets(keysetId, start, n) {
@@ -226,8 +237,18 @@ function makeHost(o) {
     inboxAnswer: () => NO('No payment is waiting on that answer.'),
     onionPost: () => NO('That is not an onion address Foxy will post to.'),
     nostrSend: () => NO('The payment could not be sent over Nostr.'),
-    tapReceiveStart: () => ['ok', null],
-    tapReceiveStop: () => ['ok', null],
+    /* As an iPhone without Bluetooth answers, which is Android until BLE tap to pay
+     * (ENG-650, ENG-656; FoxyBridge+Tap.swift `handleTapReceiveStart`, TapLink.swift
+     * `cbState`): "ok", and the receiver this makes says `unsupported` after the
+     * reply; a receiver already held says nothing more. */
+    tapReceiveStart: () => {
+      if (!state.receiverHeld) {
+        state.receiverHeld = true;
+        host.afterReply(() => host.pushAs('_tap', { side: 'receive', stage: 'unsupported' }));
+      }
+      return ['ok', null];
+    },
+    tapReceiveStop: () => { state.receiverHeld = false; return ['ok', null]; },
     tapPayStart: (m) => (m.now ? ['ok', null] : NO('Stopped.')),
     tapSend: () => NO('That phone is no longer connected.'),
     tapChange: () => NO('That phone is no longer connected.'),
@@ -263,6 +284,25 @@ function makeHost(o) {
     const W = w && w.FoxyWallet;
     if (!W || typeof W[name] !== 'function') return undefined;
     return W[name](arg);
+  };
+
+  /* A push native makes after the reply it is answering (`afterReply`), as the
+   * contract's push: refused, like `global`, when its phase is later than the host's. */
+  let afterReplies = [];
+  host.afterReply = (fn) => { afterReplies.push(fn); };
+  host.pushAs = (name, arg) => {
+    const entry = BY_NAME.get(name);
+    if (!entry || entry.kind !== 'push') { violate('unknown', 'native pushes ' + name + ', which is not a push in contract.json'); return undefined; }
+    if (opts.phase && laterThan(entry.phase, opts.phase)) {
+      violate('unserved', opts.phase + ' pushes ' + entry.phase + ' push "' + name + '"');
+      return undefined;
+    }
+    // an object argument is the payload itself (`_tap({side, stage})`), and has the contract's shape
+    if (arg && typeof arg === 'object') {
+      const p = check(entry.payloadSchema, arg);
+      if (p.length) violate('payload', name + ': ' + p.join('; '));
+    }
+    return host.push(name, arg);
   };
 
   /* Call a window global native defines no member for (`__foxyBluetoothAnswer`), as
@@ -330,6 +370,10 @@ function makeHost(o) {
     // 4. the answer
     if (opts.silent && opts.silent.has(m.action)) return;
     if (opts.phase && laterThan(entry.phase, opts.phase)) {
+      if (!entry.p1 && opts.unknown && opts.unknown.has(m.action)) {
+        reply({ name: m.action, reply: { format: 'text' } }, m.id, null, 'Unknown action: ' + m.action);
+        return;
+      }
       if (!entry.p1) {
         violate('unserved', opts.phase + ' has no answer for ' + entry.phase + ' action "' + m.action + '" and the contract gives it no p1 stub');
         reply({ name: m.action, reply: { format: 'text' } }, m.id, null, 'Unknown action: ' + m.action);
@@ -339,8 +383,11 @@ function makeHost(o) {
       return;
     }
     const over = opts.answers && opts.answers[m.action];
+    afterReplies = [];
     const got = (over && over(m, host)) || answer[m.action](m, host);
     reply(entry, m.id, got[0], got[1]);
+    // scheduled after the reply's own turn, so the page hears the answer first
+    for (const fn of afterReplies.splice(0)) setTimeout(fn, 0);
   };
 
   return host;

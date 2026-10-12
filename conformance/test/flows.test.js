@@ -227,6 +227,9 @@ test('P3: a host serving P1, P2 and P3 actions answers every platform door the s
     W.stopPasteButton();
     await W.openSettings();
     await W.openCompany('strike');
+    // the receive screen's TAP (ENG-656): "ok", with no radio, and let go
+    await W.tapReceive('', true);
+    await W.tapReceiveStop();
     // the seed's own screens, typed words adopted and forgotten, the protection, and the wipe
     await W.showSeedNative({ verify: true });
     const candidate = await W.enterSeedNative();
@@ -242,7 +245,7 @@ test('P3: a host serving P1, P2 and P3 actions answers every platform door the s
     await s.settle(800);
   });
   const p3 = CONTRACT.filter((e) => e.kind === 'action' && e.phase === 'P3').map((e) => e.name);
-  assert.equal(p3.length, 21);
+  assert.equal(p3.length, 23);
   assert.deepEqual(p3.filter((a) => !(s.host.asked.get(a) > 0)), [], 'every P3 action was asked of the P3 host');
   assert.ok(s.host.asked.get('haptic') > 0, 'and a haptic');
 });
@@ -295,6 +298,73 @@ test('the Bluetooth screen: REJECT closes it with no native call', async () => {
     assert.match(s.window.localStorage.getItem('foxy.bt.asked'), /^rejected/);
   });
   assert.equal(s.host.asked.get('bluetoothAsk') || 0, 0);
+});
+
+/* The receive invoice screen, as a person reaches it, on a P3 host: through the
+ * first-install screens (the gate is up until then, and nothing arms under it),
+ * an invoice made, the screen up, and TAP pressed, which raises the TAP HERE card
+ * over the QR the screen armed for itself. The receive screen also asks the onion
+ * inbox and shake to TAP, both LATER and "Unknown action" on Android (`unknown`),
+ * neither part of what this counts. Returns the app. */
+const RECEIVE_ALSO_ASKS = new Set(['inboxOpen', 'inboxClose', 'shakeStart', 'shakeStop']);
+async function toReceiveScreenWithTapPressed(s) {
+  const W = s.W, w = s.window;
+  (await toBluetoothScreen(s)).click();
+  await s.until(() => W.connected === true && !w.FoxyGate.visible(), 30000, 'the wallet, with the gate gone');
+  const inv = await W.invoice(64, 'conformance tap');
+  const app = s.logic();
+  app.setState({ screen: 'confirm', flow: 'receive', invoice: inv.bolt11 });
+  await s.until(() => s.host.asked.get('tapReceiveStart') > 0, 10000, 'the screen to arm itself and ask tapReceiveStart');
+  app.tapArm();
+  await s.until(() => w.document.body.textContent.includes('TAP HERE'), 5000, 'the TAP HERE card');
+  return app;
+}
+
+/* tapReceiveStart asks over a window: long enough for the page's 1.2 s retry to
+ * have asked three more times if the first answer was a refusal.
+ *
+ * With a current price the offer carries the price and the second it was read
+ * (`rate`, `at`), so the page sends a new offer whenever the screen updates in a
+ * new second, on iOS as here: an offer refresh, not the retry. These flows hold
+ * the offer still by giving the page no price (`price` refused), so every ask
+ * after the first is the retry loop and nothing else. */
+const REARM_WINDOW_MS = 4000;
+const NO_PRICE = { price: () => [null, 'Foxy is not connected to Tor.'] };
+
+test('P3: the receive screen\'s TAP is answered "ok" then told "unsupported", with no UNKNOWN ACTION and no re-arm loop (ENG-656)', async () => {
+  // The flow to run against the Kotlin bridge in P3 (ENG-656): tapReceiveStart is served by a
+  // real handler that answers "ok" and, making the receiver, then pushes _tap receive/unsupported.
+  let app;
+  const s = await flow({ seed: true, tor: 'up', phase: 'P3', unknown: RECEIVE_ALSO_ASKS, answers: NO_PRICE }, async (s) => {
+    app = await toReceiveScreenWithTapPressed(s);
+    const before = s.host.asked.get('tapReceiveStart');
+    await s.settle(REARM_WINDOW_MS);
+    assert.equal(s.host.asked.get('tapReceiveStart'), before, 'nothing asked tapReceiveStart again: the 1.2 s re-arm loop is not running');
+    const text = s.window.document.body.textContent;
+    assert.equal(/UNKNOWN ACTION/i.test(text), false, 'no "Unknown action" anywhere on screen');
+    assert.ok(text.includes('TAP HERE'), 'the TAP HERE card is up');
+    assert.equal(app.state.tapNotYet || '', '', 'the page holds no refusal for the TAP card');
+    assert.equal(app.state.tapArmed, true, 'the screen stays armed, as on an iPhone without Bluetooth');
+    assert.ok(!app._tapRetryT, 'no retry was ever scheduled: only a refusal schedules one');
+    // the pinned page takes only off and denied from a receive-side _tap: no false "turn Bluetooth on"
+    assert.equal(['off', 'denied'].includes(app.state.tapRecvStage), false, 'the TAP button is not greyed for a radio that is off');
+  });
+  assert.equal(s.host.asked.get('tapReceiveStart'), 1, 'asked once for the whole screen');
+  assert.deepEqual(s.host.answered.filter((a) => a[0] === 'tapReceiveStart'), [['tapReceiveStart', 'ok', null]]);
+  assert.deepEqual(s.host.pushes.filter((p) => p === '_tap'), ['_tap'], 'the receiver said unsupported once');
+});
+
+test('the receive screen\'s TAP: an "Unknown action" reply shows UNKNOWN ACTION: TAPRECEIVESTART and re-arms every 1.2 s (the ENG-656 bug, as a control)', async () => {
+  // What main 570d049 did. The control that shows the flow above can fail.
+  const s = await flow({ seed: true, tor: 'up', phase: 'P3', unknown: RECEIVE_ALSO_ASKS,
+    answers: { ...NO_PRICE, tapReceiveStart: () => [null, 'Unknown action: tapReceiveStart'] } }, async (s) => {
+    await toReceiveScreenWithTapPressed(s);
+    await s.until(() => s.window.document.body.textContent.includes('UNKNOWN ACTION: TAPRECEIVESTART'), 5000, 'the error in the TAP card');
+    const before = s.host.asked.get('tapReceiveStart');
+    await s.settle(REARM_WINDOW_MS);
+    assert.ok(s.host.asked.get('tapReceiveStart') >= before + 2, 'asked again and again: ' + before + ' then ' + s.host.asked.get('tapReceiveStart'));
+  });
+  assert.equal(s.host.pushes.includes('_tap'), false);
 });
 
 test('screens: everything a screen asks native for, through the wallet', async () => {

@@ -1981,7 +1981,7 @@
     "kind": "action",
     "name": "tapReceiveStart",
     "domain": "bluetooth",
-    "phase": "LATER",
+    "phase": "P3",
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -2001,13 +2001,15 @@
         "That payment is still going through. A moment."
       ]
     },
-    "behaviour": "Advertise the invoice/payment request on screen over BLE (service UUID only). Payment, quote and stage events come back as _requestPaid(.., \"tap\"), _tapQuote, _tap.",
+    "behaviour": "Advertise the invoice/payment request on screen over BLE (service UUID only). Payment, quote and stage events come back as _requestPaid(.., \"tap\"), _tapQuote, _tap. Android (ENG-656, until BLE tap to pay in ENG-650): nothing is advertised and no Bluetooth permission is declared or requested. A non-empty payload iOS would refuse (TapProtocol.isPayload) is refused with its words; otherwise native answers \"ok\" and, when this makes the receiver (none held since the last tapReceiveStop or the page going), then pushes _tap({side:\"receive\",stage:\"unsupported\"}), in iOS order on an iPhone without Bluetooth (the reply, then the peripheral manager reporting its state). The page asks this by itself on every receive screen (auto-arm); an \"Unknown action\" reply put UNKNOWN ACTION: TAPRECEIVESTART in the TAP card and was retried every 1.2 s while the screen was up.",
     "pageRef": [
       "Web/foxy-wallet.js:23489@'tapReceiveStart'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:416@\"tapReceiveStart\"",
-      "Foxy/Bridge/FoxyBridge+Tap.swift:22-147@handleTapReceiveStart"
+      "Foxy/Bridge/FoxyBridge+Tap.swift:22-147@handleTapReceiveStart",
+      "Foxy/Bluetooth/TapLink.swift:26-33@cbState",
+      "Foxy/Bluetooth/TapLink.swift:506-509@peripheralManagerDidUpdateState"
     ]
   },
   {
@@ -2015,7 +2017,7 @@
     "kind": "action",
     "name": "tapReceiveStop",
     "domain": "bluetooth",
-    "phase": "LATER",
+    "phase": "P3",
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -2030,7 +2032,7 @@
       ],
       "errors": []
     },
-    "behaviour": "Stop advertising.",
+    "behaviour": "Stop advertising. Android (ENG-656): lets go of the receiver tapReceiveStart made and answers \"ok\".",
     "pageRef": [
       "Web/foxy-wallet.js:23492@'tapReceiveStop'"
     ],
@@ -3199,7 +3201,7 @@
     },
     "name": "_tap",
     "domain": "bluetooth",
-    "phase": "LATER",
+    "phase": "P3",
     "target": "window.FoxyWallet._tap({side, stage, code?, edge?, pct?})",
     "payloadSchema": {
       "fields": {
@@ -3210,7 +3212,7 @@
         "pct": "integer?"
       }
     },
-    "behaviour": "Tap progress. side receive|pay; stage one of searching, far, connecting, linked, sending, receiving, code, asking, gone, shake, nearby, version, off, denied, unsupported.",
+    "behaviour": "Tap progress. side receive|pay; stage one of searching, far, connecting, linked, sending, receiving, code, asking, gone, shake, nearby, version, off, denied, unsupported. Android (ENG-656, until BLE tap to pay in ENG-650): pushed only as {side:\"receive\",stage:\"unsupported\"}, after the reply to a tapReceiveStart that made the receiver. At the pinned page a receive-side stage other than off and denied leaves tapRecvStage alone, so the TAP card says HOLD A PHONE HERE, as on an iPhone without Bluetooth.",
     "pageRef": [
       "Web/foxy-wallet.js:23784@_tap"
     ],

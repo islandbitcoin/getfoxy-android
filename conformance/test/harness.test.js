@@ -220,6 +220,70 @@ test('host.global: a contract global, called on a later turn after nothing else,
   }
 });
 
+test('host.pushAs and o.unknown: a push after its reply, refused from too early a phase or off-shape; unknown only for an unserved, unstubbed action', async () => {
+  const s = await boot({ seed: true, tor: 'up', phase: 'P3' });
+  try {
+    await s.settle(300);
+    s.host.violations.length = 0;
+    const w = s.window;
+    // tapReceiveStart on a P3 host: the reply lands before the _tap push (iOS's order), and only the first makes a receiver
+    const order = [];
+    const realReply = w.FoxyWallet._scanResult;
+    const realTap = w.FoxyWallet._tap;
+    w.FoxyWallet._scanResult = function (id, text, error) { if (/^tr-/.test(id)) order.push('reply ' + id + ' ' + text); return realReply.apply(this, arguments); };
+    w.FoxyWallet._tap = function (ev) { order.push('push ' + ev.side + ' ' + ev.stage); return realTap.apply(this, arguments); };
+    const post = (m) => w.webkit.messageHandlers.foxy.postMessage(m);
+    post({ action: 'tapReceiveStart', id: 'tr-1', payload: '', early: true });
+    assert.deepEqual(order, [], 'nothing inside the call that asked');
+    await wait(50);
+    post({ action: 'tapReceiveStart', id: 'tr-2', payload: '', early: false });
+    await wait(50);
+    post({ action: 'tapReceiveStop', id: 'tr-3' });
+    post({ action: 'tapReceiveStart', id: 'tr-4', payload: '', early: true });
+    await wait(50);
+    w.FoxyWallet._scanResult = realReply;
+    w.FoxyWallet._tap = realTap;
+    assert.deepEqual(order, ['reply tr-1 ok', 'push receive unsupported', 'reply tr-2 ok', 'reply tr-3 ok', 'reply tr-4 ok', 'push receive unsupported']);
+    assert.deepEqual(s.host.violations, []);
+    // a name that is not a push of the contract, and a _tap the contract's schema does not allow
+    s.host.pushAs('__foxyBluetoothAnswer', 'x');
+    s.host.pushAs('_tap', { side: 'receive' });
+    assert.deepEqual(kinds(s.host.violations), ['payload', 'unknown']);
+  } finally {
+    s.close();
+  }
+  // a P2 host has no tap receive to answer: tapReceiveStart and _tap are P3
+  const p2 = await boot({ seed: true, tor: 'up', phase: 'P2', unknown: new Set(['tapReceiveStart']) });
+  try {
+    await p2.settle(300);
+    assert.deepEqual(kinds(p2.host.violations), [], 'naming a P3 action unknown on a P2 host is allowed: it is later than P2 and has no stub');
+    p2.host.pushAs('_tap', { side: 'receive', stage: 'unsupported' });
+    assert.deepEqual(kinds(p2.host.violations), ['unserved']);
+  } finally {
+    p2.close();
+  }
+  // o.unknown may not hide an action the host serves, or one with a stub
+  for (const [phase, name] of [['P3', 'tapReceiveStart'], ['P3', 'tapPayStart'], ['P3', 'nope']]) {
+    const h = await boot({ seed: true, tor: 'up', phase, unknown: new Set([name]) });
+    try {
+      assert.ok(h.host.violations.some((v) => v.kind === 'unknown' && v.detail.includes(name)), name + ' refused as unknown on ' + phase);
+    } finally {
+      h.close();
+    }
+  }
+  // and on a P3 host, an unknown action is answered as the Kotlin bridge answers it, with no violation
+  const p3 = await boot({ seed: true, tor: 'up', phase: 'P3', unknown: new Set(['shakeStart']) });
+  try {
+    await p3.settle(300);
+    p3.host.violations.length = 0;
+    await assert.doesNotReject(p3.W.shakeSense(true));
+    assert.deepEqual(p3.host.answered.filter((a) => a[0] === 'shakeStart').slice(-1), [['shakeStart', null, 'Unknown action: shakeStart']]);
+    assert.deepEqual(p3.host.violations, []);
+  } finally {
+    p3.close();
+  }
+});
+
 test('the asset origin serves core/web and nothing above it', async () => {
   const s = await boot({ seed: true, tor: 'up' });
   try {
