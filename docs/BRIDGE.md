@@ -17,8 +17,8 @@ they drift. Every `file:line` cited is checked against the pinned commit by
 which CI fetches).
 
 **Counts at the pinned commit:** 74 actions and 2 actionless messages the page
-posts; 21 pushes and reads native makes into the running page plus 7 scripts
-and globals it injects before the page runs (28 native → page items); 104
+posts; 22 pushes and reads native makes into the running page plus 7 scripts
+and globals it injects before the page runs (29 native → page items); 105
 contract entries in all.
 
 Phases: **P1** shell (WebView, bridge, lifecycle, seed and counters in the
@@ -325,8 +325,8 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Shape:** native → page, global: `location.hash = 'foxy=<screen>&amt=..&unit=..&rail=..'`
 - **Payload:** `hash`: string
 - **Called from:** native
-- **Native:** DEBUG BUILDS ONLY: foxy://receive?amt=50&unit=sat&rail=cashu rebuilt from a whitelist into the page's own hash. Release registers no scheme and has no handler; the page reads it only where FOXY_DEBUG is set.
-- **iOS:** `Foxy/FoxyWebView.swift:492-531`, `Foxy/FoxyWebView.swift:544`
+- **Native:** DEBUG BUILDS ONLY: foxy://receive?amt=50&unit=sat&rail=cashu rebuilt from a whitelist (home, receive, send, token, nfc, split) into the page's own hash. foxy://card (since getfoxy/iOS 9832f7d) sets no hash and takes no parameters: it is a card tap said by hand, delivered as `_cardTapped` (CardTapDelivery). Release registers no scheme and has no handler; the page reads the hash only where FOXY_DEBUG is set. Android (web/DeepLink.kt): foxy://card is recognised and, until card-tap delivery is built (ENG-668), logged and not passed to the page.
+- **iOS:** `Foxy/FoxyWebView.swift:492-531`, `Foxy/FoxyWebView.swift:544`, `Foxy/FoxyWebView.swift:497`, `Foxy/FoxyWebView.swift:504-508`
 
 #### `noCallout` — P1
 
@@ -1165,11 +1165,11 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Shape:** page → native, action: `{ action: "cardSend", id, apdu }`
 - **Payload:** `apdu`: string
 - **Called from:** `Web/foxy-wallet.js:25491`
-- **Native:** One APDU (hex) and its answer. Only SELECT of Foxy's own applet AID, then only that applet's 27 instructions (CardGate). Never logged: one carries the PIN.
+- **Native:** One APDU (hex) and its answer. Only SELECT of Foxy's own applet AID (F0 46 4F 58 59 43 41 52 44 01), then only that applet's 31 instructions (CardGate.instructions, CLA B0): 01, 10, 11, 13-1A, 20, 22-26, 30-32, 34-37, 40-45, 51. 1A (GET_DLEQ, card software 1.20) reads back the mint's NUT-12 proof a card keeps with an unspent piece, two places per command; 30 with P1 = 1 (LOAD_PROOF) writes a piece with its proof, 96 more bytes of data (e, s, r), still a short APDU. 12, 33 and 50, which the applet has, stay out. Never logged: one carries the PIN.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — text (the response APDU, hex)
   The text is the response APDU, hex.
 - **Errors:** "That is not a command for a card."; "That is not a command Foxy sends to a card."; "<CardLinkError words>"
-- **iOS:** `Foxy/Bridge/FoxyBridge.swift:430`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:69-95`
+- **iOS:** `Foxy/Bridge/FoxyBridge.swift:430`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:69-95`, `Foxy/Flashcard/CardGate.swift:23-51`
 
 #### `cardSay` — LATER
 
@@ -1236,6 +1236,15 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Called from:** `Web/foxy-wallet.js:25446`
 - **Native:** NFC session progress: stage connected|say|end|lost.
 - **iOS:** `Foxy/Flashcard/CardGate.swift:144-150`
+
+#### `_cardTapped` — LATER
+
+- **Shape:** native → page, push: `window.FoxyWallet && window.FoxyWallet._cardTapped && window.FoxyWallet._cardTapped()`
+- **Payload:** —
+- **Called from:** `Web/index.html:393`, `build/app/06-wallet-boot-and-restore.js:202`, `build/app/26f-flashcard.js:207`
+- **Native:** A Foxy card was held to the phone (its NDEF address https://getfoxy.io/card, CardAddress), or foxy://card in a debug build. Nothing of the address is passed. The page decides by its screen (`cardTapRule`): act on a home-like screen (opens the Flashcard screen and the card sheet), keep for up to 60 s while locked or starting, ignore anywhere a payment is in progress. The evaluated value is the page's answer: the JS value true once the app has registered it on the wallet (after the lock is decided), anything else means not yet. Native asks again every 0.3 s and gives up 60 s after the address arrived; never while the splash or app-switcher cover is up, never after a return before `_resumed` has been told; told once per tap. Set by the app (index.html), not declared in foxy-wallet.js. Android: not sent until card-tap delivery is built (ENG-668); the page boots and runs without it.
+- **Timing:** Retried every 0.3 s until the page answers true; given up 60 s after the address arrived (CardTapDelivery.retryAfter, lapse). The page keeps a tap it cannot act on yet for up to 60 s (CARD_TAP_KEEP_MS).
+- **iOS:** `Foxy/Flashcard/CardAddress.swift:64`, `Foxy/Flashcard/CardTapDelivery.swift:33`, `Foxy/Flashcard/CardTapDelivery.swift:35`, `Foxy/Flashcard/CardTapDelivery.swift:102-122`, `Foxy/FoxyWebView.swift:282-285`, `Foxy/FoxyWebView.swift:1178`, `Foxy/FoxyWebView.swift:1414`
 <!-- contract-detail:end -->
 
 ## 4. What the contract leaves to the architect
@@ -1273,7 +1282,11 @@ Found while writing this, and not decided here:
 8. **Debug-only deep links** (`foxy://receive?...`): iOS registers the scheme in
    Debug builds only. Android should register the intent filter only in the
    debug source set. **Built (ENG-649):** `app/src/debug/AndroidManifest.xml`;
-   the release manifest has no scheme (`ManifestTest`).
+   the release manifest has no scheme (`ManifestTest`). `foxy://card` (since
+   getfoxy/iOS `9832f7d`) names no screen: it is a card tap said by hand, which
+   iOS passes on as `_cardTapped`. Android reads it (`web/DeepLink.kt`,
+   `DeepLink.Link.CardTap`) and, until card taps are delivered (ENG-668), only
+   logs it.
 9. **`seedProtection` "device" vs "none".** iOS has two keychain items;
    Android's equivalent is two Keystore keys, one requiring user authentication
    (`setUserAuthenticationRequired`, StrongBox where available). The wording of
@@ -1389,6 +1402,7 @@ kind, domain, phase, payloadSchema, reply, iosRef, pageRef, behaviour, timing? }
 | `_tapChangeKeptLate` | native → page | push | LATER | — | none | Foxy/Bridge/FoxyBridge+Tap.swift:380 |
 | `_tap` | native → page | push | P3 | `side`: string, `stage`: string, `code`: string?, `edge`: string?, `pct`: integer? | none | Foxy/Bridge/FoxyBridge+Tap.swift:487-498 |
 | `_card` | native → page | push | LATER | `stage`: string, `text`: string | none | Foxy/Flashcard/CardGate.swift:144-150 |
+| `_cardTapped` | native → page | push | LATER | — | none | Foxy/Flashcard/CardAddress.swift:64 |
 | `noWebRTC` | native → page | script | P1 | — | none | Foxy/FoxyWebView.swift:138-141 |
 | `noCallout` | native → page | script | P1 | — | none | Foxy/FoxyWebView.swift:146-156 |
 | `__foxyClock24` | native → page | global | P1 | `value`: boolean | none | Foxy/FoxyWebView.swift:164 |

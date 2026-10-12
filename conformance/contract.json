@@ -2483,13 +2483,14 @@
       ],
       "note": "the response APDU, hex"
     },
-    "behaviour": "One APDU (hex) and its answer. Only SELECT of Foxy's own applet AID, then only that applet's 27 instructions (CardGate). Never logged: one carries the PIN.",
+    "behaviour": "One APDU (hex) and its answer. Only SELECT of Foxy's own applet AID (F0 46 4F 58 59 43 41 52 44 01), then only that applet's 31 instructions (CardGate.instructions, CLA B0): 01, 10, 11, 13-1A, 20, 22-26, 30-32, 34-37, 40-45, 51. 1A (GET_DLEQ, card software 1.20) reads back the mint's NUT-12 proof a card keeps with an unspent piece, two places per command; 30 with P1 = 1 (LOAD_PROOF) writes a piece with its proof, 96 more bytes of data (e, s, r), still a short APDU. 12, 33 and 50, which the applet has, stay out. Never logged: one carries the PIN.",
     "pageRef": [
       "Web/foxy-wallet.js:25491@'cardSend'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:430@\"cardSend\"",
-      "Foxy/Bridge/FoxyBridge+Flashcard.swift:69-95@handleCardSend"
+      "Foxy/Bridge/FoxyBridge+Flashcard.swift:69-95@handleCardSend",
+      "Foxy/Flashcard/CardGate.swift:23-51@0x1A"
     ]
   },
   {
@@ -3006,11 +3007,13 @@
         "hash": "string"
       }
     },
-    "behaviour": "DEBUG BUILDS ONLY: foxy://receive?amt=50&unit=sat&rail=cashu rebuilt from a whitelist into the page's own hash. Release registers no scheme and has no handler; the page reads it only where FOXY_DEBUG is set.",
+    "behaviour": "DEBUG BUILDS ONLY: foxy://receive?amt=50&unit=sat&rail=cashu rebuilt from a whitelist (home, receive, send, token, nfc, split) into the page's own hash. foxy://card (since getfoxy/iOS 9832f7d) sets no hash and takes no parameters: it is a card tap said by hand, delivered as `_cardTapped` (CardTapDelivery). Release registers no scheme and has no handler; the page reads the hash only where FOXY_DEBUG is set. Android (web/DeepLink.kt): foxy://card is recognised and, until card-tap delivery is built (ENG-668), logged and not passed to the page.",
     "pageRef": [],
     "iosRef": [
       "Foxy/FoxyWebView.swift:492-531@receiveDeepLink",
-      "Foxy/FoxyWebView.swift:544@location.hash"
+      "Foxy/FoxyWebView.swift:544@location.hash",
+      "Foxy/FoxyWebView.swift:497@\"card\"",
+      "Foxy/FoxyWebView.swift:504-508@CardTapDelivery.shared.cardTapped()"
     ]
   },
   {
@@ -3245,6 +3248,38 @@
     ],
     "iosRef": [
       "Foxy/Flashcard/CardGate.swift:144-150@_card"
+    ]
+  },
+  {
+    "direction": "native->page",
+    "kind": "push",
+    "reply": {
+      "via": "none",
+      "format": "none",
+      "errors": []
+    },
+    "name": "_cardTapped",
+    "domain": "card",
+    "phase": "LATER",
+    "target": "window.FoxyWallet && window.FoxyWallet._cardTapped && window.FoxyWallet._cardTapped()",
+    "payloadSchema": {
+      "fields": {}
+    },
+    "behaviour": "A Foxy card was held to the phone (its NDEF address https://getfoxy.io/card, CardAddress), or foxy://card in a debug build. Nothing of the address is passed. The page decides by its screen (`cardTapRule`): act on a home-like screen (opens the Flashcard screen and the card sheet), keep for up to 60 s while locked or starting, ignore anywhere a payment is in progress. The evaluated value is the page's answer: the JS value true once the app has registered it on the wallet (after the lock is decided), anything else means not yet. Native asks again every 0.3 s and gives up 60 s after the address arrived; never while the splash or app-switcher cover is up, never after a return before `_resumed` has been told; told once per tap. Set by the app (index.html), not declared in foxy-wallet.js. Android: not sent until card-tap delivery is built (ENG-668); the page boots and runs without it.",
+    "timing": "Retried every 0.3 s until the page answers true; given up 60 s after the address arrived (CardTapDelivery.retryAfter, lapse). The page keeps a tap it cannot act on yet for up to 60 s (CARD_TAP_KEEP_MS).",
+    "pageRef": [
+      "Web/index.html:393@W._cardTapped = () => this.cardTapped();",
+      "build/app/06-wallet-boot-and-restore.js:202@_cardTapped",
+      "build/app/26f-flashcard.js:207@cardTapped()"
+    ],
+    "iosRef": [
+      "Foxy/Flashcard/CardAddress.swift:64@_cardTapped",
+      "Foxy/Flashcard/CardTapDelivery.swift:33@lapse",
+      "Foxy/Flashcard/CardTapDelivery.swift:35@retryAfter",
+      "Foxy/Flashcard/CardTapDelivery.swift:102-122@attempt",
+      "Foxy/FoxyWebView.swift:282-285@CardAddress.pageCall",
+      "Foxy/FoxyWebView.swift:1178@cameBack",
+      "Foxy/FoxyWebView.swift:1414@pageLoaded"
     ]
   },
   {

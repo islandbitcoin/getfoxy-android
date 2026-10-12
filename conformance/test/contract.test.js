@@ -119,8 +119,20 @@ test('the two actionless messages are the ones the shipped page posts', () => {
 test('every push the contract names is defined by the shipped page', () => {
   const wallet = fs.readFileSync(path.join(WEB, 'foxy-wallet.js'), 'utf8');
   const gate = fs.readFileSync(path.join(WEB, 'foxy-tor-gate.js'), 'utf8');
+  const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
+  // Pushes the app puts on the wallet at boot rather than the wallet declaring them
+  // (build/app/06-wallet-boot-and-restore.js), each with the assignment index.html ships.
+  const SET_BY_APP = { _cardTapped: /W\._cardTapped = \(\) => this\.cardTapped\(\);/ };
   for (const e of CONTRACT.filter((x) => x.kind === 'push' || x.kind === 'read')) {
+    if (e.name in SET_BY_APP) {
+      assert.match(html, SET_BY_APP[e.name], e.name + ' is put on FoxyWallet by the app in index.html');
+      assert.ok(!new RegExp('\\n    ' + e.name + ': ').test(wallet), e.name + ' is not also a member in foxy-wallet.js: take it off SET_BY_APP');
+      continue;
+    }
     assert.ok(new RegExp('\\n    ' + e.name + ': ').test(wallet), e.name + ' is a FoxyWallet member in foxy-wallet.js');
+  }
+  for (const name of Object.keys(SET_BY_APP)) {
+    assert.ok(CONTRACT.some((e) => e.name === name && e.kind === 'push'), name + ' (SET_BY_APP) is a push in contract.json');
   }
   assert.match(gate, /window\.__foxyBluetoothAnswer = function/);
   assert.match(wallet, /window\.__foxyUptime/);

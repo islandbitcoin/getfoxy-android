@@ -474,6 +474,60 @@ test('tap to pay and the card: their doors, with no radio', async () => {
   });
 });
 
+/* A card held to the phone (getfoxy/iOS 9832f7d): native says so with `_cardTapped`, a LATER
+ * push Android does not send until card-tap delivery is built (ENG-668). Until then the page
+ * hears nothing of it, and must boot, connect and run as it did before the push existed. */
+const cardTapLines = (s) => s.page.logs.map((l) => l.join(' ')).filter((l) => l.includes('[foxy] card tap:'));
+
+test('the card tap (_cardTapped, LATER): a page never told boots and runs, puts the call on its wallet, and opens no card', async () => {
+  await flow({ seed: true, tor: 'up' }, async (s) => {
+    const W = s.W, app = s.logic();
+    await s.until(() => W.connected === true, 30000, 'the page to connect with no _cardTapped push');
+    await s.until(() => s.host.asked.get('covered') > 0 && s.host.asked.get('price') > 0, 30000, 'covered and price, as any boot');
+    // bootWallet puts it on the wallet once the lock is decided (06-wallet-boot-and-restore.js); native asks until it answers true
+    await s.until(() => typeof W._cardTapped === 'function', 30000, 'the app to put _cardTapped on the wallet');
+    await s.settle(1000);
+    assert.equal(app.state.screen, 'home', 'booted to home');
+    assert.ok(!s.host.pushes.includes('_cardTapped'), 'nothing pushed _cardTapped');
+    assert.deepEqual(cardTapLines(s), [], 'the page heard of no card tap');
+    assert.ok(!s.host.asked.has('cardBegin'), 'and opened no card session');
+  });
+});
+
+test('the card tap (_cardTapped, LATER): answered true, kept while the gate is up, acted on at home once it goes; a P3 host may not send it', async () => {
+  // the intro film never ends in jsdom, and the custody notice would sit over home: both as already seen
+  const storage = { 'foxy.intro.seen': '2026-10-12', 'foxy.custody.told': JSON.stringify({ Minibits: true }) };
+  await flow({ seed: true, tor: 'up', storage }, async (s) => {
+    const W = s.W, d = s.window.document;
+    await s.until(() => W.connected === true && typeof W._cardTapped === 'function', 30000, 'connected, with _cardTapped on the wallet');
+    await s.until(() => d.getElementById('ftg-warn-go'), 30000, 'the first-launch warning');
+    // what native evaluates (CardAddress.pageCall), and its answer: true, the page has the request
+    assert.equal(s.host.push('_cardTapped'), true, 'the page answers true once it has the request');
+    assert.equal(s.host.push('_cardTapped'), true, 'a second tap while one waits is the same tap, still true');
+    await s.until(() => cardTapLines(s).length > 0, 5000, 'a card tap log line');
+    assert.match(cardTapLines(s)[0], /kept until Foxy is open, it is starting/);
+    assert.ok(!s.host.asked.has('cardBegin'), 'no card session under the gate');
+    // through the gate's first-install screens; then home, where nothing is in progress (cardTapRule): act
+    d.getElementById('ftg-warn-go').click();
+    await s.until(() => d.getElementById('ftg-bt-go'), 10000, 'the Bluetooth screen after PROCEED');
+    d.getElementById('ftg-bt-go').click();
+    await s.until(() => s.host.asked.get('cardBegin') > 0, 10000, 'the kept tap to open the card sheet once the gate has gone');
+    const lines = cardTapLines(s);
+    assert.ok(lines.some((l) => /ignored, one is already waiting/.test(l)), 'the second tap was the same one');
+    assert.ok(lines.some((l) => /opening the card screen from home, after \d+ s kept/.test(l)), 'acted on from home: ' + lines.join(' | '));
+  });
+  // no Android phase built today sends it: it is LATER
+  const p3 = await boot({ seed: true, tor: 'up', phase: 'P3' });
+  try {
+    await p3.settle(300);
+    p3.host.violations.length = 0;
+    p3.host.pushAs('_cardTapped');
+    assert.deepEqual(p3.host.violations.map((v) => v.kind), ['unserved'], 'a P3 host refuses to push the LATER _cardTapped');
+  } finally {
+    p3.close();
+  }
+});
+
 test('native pushes: each one the contract lists, delivered with a contract-shaped payload', async () => {
   await flow({ seed: true, tor: 'up' }, async (s) => {
     const w = s.window, W = s.W;
