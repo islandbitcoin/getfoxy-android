@@ -36,7 +36,13 @@
 # or anything else stops the run after the quote was printed, the emulator is
 # LEFT RUNNING and the script says how to claim and drain it by hand. A run
 # refuses to start (exit 4) while an emulator is up on its serial, so one left
-# running is never wiped, or stopped undrained, by the next run.
+# running is never wiped, or stopped undrained, by the next run. Before the quote
+# is printed, a held-money marker is written next to the AVD
+# (<avd home>/<AVD>.avd/foxy-money-held: mint, quote id, time) and removed only
+# once the change is out; while it exists a run refuses too (exit 4), even with
+# no emulator up (it died, the Mac rebooted): the ecash is in the AVD's userdata,
+# and -wipe-data would destroy it. Recover by starting the AVD WITHOUT -wipe-data
+# and draining it, then delete the marker.
 set -euo pipefail
 mode="$1"
 out="$(cd "$2" && pwd)"
@@ -53,12 +59,23 @@ export ANDROID_SERIAL="emulator-$port"
 apk="$root/app/build/outputs/apk/debug/app-debug.apk"
 pkg=io.islandbitcoin.foxy
 log() { echo "leak-test $mode: $*" >&2; }
+# outlives the emulator process: written before the mint quote is printed, removed once drained
+held_marker="${ANDROID_AVD_HOME:-$HOME/.android/avd}/$avd.avd/foxy-money-held"
 
 # an emulator already on this serial may be one a previous run LEFT RUNNING holding ecash:
 # starting another would fail on the port and the rest of this run would drive, and stop, that one.
 # `adb get-state` fails for an `offline` emulator, so the console port is probed directly, and
 # the serial in any adb state (device, offline, unauthorized, …) counts as up. The grep reads all
 # of adb's output (no -q): an early exit could SIGPIPE adb and, under pipefail, read as "not up".
+if [ -e "$held_marker" ]; then
+  echo "leak-test $mode: AVD $avd may hold real ecash from a previous run ($held_marker):" >&2
+  sed 's/^/  /' "$held_marker" >&2 || true
+  echo "leak-test $mode: not starting it with -wipe-data. Recover it first (docs/DEVICE-TESTS.md \"Leftover sats\"):" >&2
+  echo "  $sdk/emulator/emulator -avd $avd -port $port -no-snapshot &   # NO -wipe-data" >&2
+  echo "  adb -s $ANDROID_SERIAL wait-for-device; adb -s $ANDROID_SERIAL shell am start -n $pkg/.MainActivity" >&2
+  echo "  then claim the quote if it was paid and drain the wallet into your own (the commands the held run printed), stop it (adb -s $ANDROID_SERIAL emu kill), and only then: rm '$held_marker'" >&2
+  exit 4
+fi
 if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || adb devices 2>/dev/null | grep "^$ANDROID_SERIAL[[:space:]]" > /dev/null; then
   echo "leak-test $mode: $ANDROID_SERIAL is already running (it may hold ecash from a previous run): drain it and stop it first (docs/DEVICE-TESTS.md \"Leftover sats\")" >&2
   exit 4
@@ -81,6 +98,8 @@ held() {
   echo "  adb -s $ANDROID_SERIAL forward tcp:9444 localabstract:webview_devtools_remote_\$(adb -s $ANDROID_SERIAL shell pidof $pkg)" >&2
   echo "  node $root/tools/cdp-eval.js 9444 '$drain_js' 120000   # receive the token it returns" >&2
   echo "  adb -s $ANDROID_SERIAL emu kill" >&2
+  echo "leak-test $mode: once it is drained, delete the held-money marker: rm '$held_marker'" >&2
+  echo "leak-test $mode: if this emulator dies first, the ecash is still in AVD $avd's userdata: start it again WITHOUT -wipe-data (the next run refuses while the marker exists)" >&2
 }
 cleanup() {
   [ -n "${sampler:-}" ] && kill "$sampler" 2>/dev/null || true
@@ -161,7 +180,9 @@ if [ -n "$leg" ]; then
   # the mint's own invoice is read too: the person is never shown more than MINT_SATS to pay
   quoted="$(node -e 'process.stdout.write(String(require(process.argv[1]).invoiceSats(process.argv[2])))' "$root/tools/real-money.js" "$bolt11")"
   [ "$quoted" = "$mint_sats" ] || { echo "the mint's invoice is for $quoted sats, not $mint_sats: not paying it" >&2; exit 1; }
-  # from here until the change is exported, the emulator is never killed (cleanup, held)
+  # from here until the change is exported, the emulator is never killed (cleanup, held), and the
+  # marker, which outlives this process, keeps the next run from wiping the AVD
+  printf 'mint %s\nquote %s\nsats %s\nat %s\n' "$mint" "$hash" "$mint_sats" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$held_marker"
   money_held=1
   echo "leak-test $mode: PAY THIS from your own wallet: $mint_sats sats to $mint, within $timeout s:" >&2
   echo "$bolt11" >&2
@@ -203,6 +224,7 @@ if [ -n "$leg" ]; then
     *) echo "leak-test $mode: the leftover could not be exported: ${left#err }" >&2; exit 1 ;;
   esac
   money_held=""
+  rm -f "$held_marker"
 else
   log "no money moved: REAL_MONEY not given (docs/DEVICE-TESTS.md \"Real money\")"
 fi

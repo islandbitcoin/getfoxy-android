@@ -287,6 +287,13 @@ and drain it by hand; a quote paid later is claimed only there. While an
 emulator is up on the script's serial (`emulator-5580`), the next run refuses
 to start (exit 4) instead of wiping it, or driving and stopping it undrained:
 drain it and stop it first.
+Before it prints the quote, it also writes a held-money marker next to the AVD
+(`~/.android/avd/<AVD>.avd/foxy-money-held`, under `ANDROID_AVD_HOME` when set:
+the mint, the quote id and the time) and deletes it only once the change is
+out. While the marker exists the next run refuses too (exit 4), even with no
+emulator up (it died, the terminal closed, the Mac rebooted): the ecash is in the
+AVD's userdata and `-wipe-data` would destroy it. Start the AVD again without
+`-wipe-data`, claim and drain it by hand as above, stop it, then delete the marker.
 
 `tools/leak-test.sh` starts the AVD wiped and headless with `-tcpdump`, turns
 private DNS and the virtual Wi-Fi off (the capture sees the emulated cellular
