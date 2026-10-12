@@ -187,6 +187,17 @@ test('P2: a host serving P1 and P2 actions goes from connecting to up, mints and
   }
 });
 
+/* The first-install screens, as a person meets them: the warning's PROCEED, then
+ * the Bluetooth screen (foxy-tor-gate.js). A fresh install has neither key in page
+ * storage, so the gate puts the warning up by itself. Returns the APPROVE button. */
+async function toBluetoothScreen(s) {
+  const d = s.window.document;
+  await s.until(() => d.getElementById('ftg-warn-go'), 30000, 'the first-launch warning');
+  d.getElementById('ftg-warn-go').click();
+  await s.until(() => d.getElementById('ftg-bt-go'), 10000, 'the Bluetooth screen after PROCEED');
+  return d.getElementById('ftg-bt-go');
+}
+
 test('P3: a host serving P1, P2 and P3 actions answers every platform door the screens ask, and leans on nothing later without a stub', async () => {
   // The flow to run against the Kotlin bridge in P3 (ENG-649): P1, P2 and P3 served,
   // the LATER actions answered by their p1 stubs, and any without a stub an 'unserved'
@@ -194,6 +205,9 @@ test('P3: a host serving P1, P2 and P3 actions answers every platform door the s
   // Tor up from the start: the P2 flow covers connecting to up on the same phase rule
   const s = await flow({ seed: true, tor: 'up', phase: 'P3' }, async (s) => {
     const W = s.W, w = s.window;
+    // a fresh install: PROCEED on the warning, then APPROVE on the Bluetooth screen (ENG-656), which must close it
+    (await toBluetoothScreen(s)).click();
+    await s.until(() => !w.document.getElementById('ftg-bt'), 10000, 'the Bluetooth screen to close after APPROVE');
     await s.until(() => W.connected === true, 30000, 'the page to connect to its default mint');
     // the screen is not captured, and native's doors answer
     assert.equal(await W.captureCheck(), false);
@@ -228,9 +242,59 @@ test('P3: a host serving P1, P2 and P3 actions answers every platform door the s
     await s.settle(800);
   });
   const p3 = CONTRACT.filter((e) => e.kind === 'action' && e.phase === 'P3').map((e) => e.name);
-  assert.equal(p3.length, 20);
+  assert.equal(p3.length, 21);
   assert.deepEqual(p3.filter((a) => !(s.host.asked.get(a) > 0)), [], 'every P3 action was asked of the P3 host');
   assert.ok(s.host.asked.get('haptic') > 0, 'and a haptic');
+});
+
+test('P3: APPROVE on the first-install Bluetooth screen closes it, answered "unsupported" and pushed (ENG-656)', async () => {
+  // The flow to run against the Kotlin bridge in P3 (ENG-656): bluetoothAsk is served by
+  // a real handler that pushes __foxyBluetoothAnswer("unsupported") and then answers it.
+  const s = await flow({ seed: true, tor: 'up', phase: 'P3' }, async (s) => {
+    const d = s.window.document, w = s.window;
+    const approve = await toBluetoothScreen(s);
+    assert.equal(w.localStorage.getItem('foxy.bt.asked'), null, 'nothing written before a button is pressed');
+    approve.click();
+    await s.until(() => !d.getElementById('ftg-bt'), 10000, 'the Bluetooth screen to close after APPROVE');
+    assert.equal(w.localStorage.getItem('foxy.bt.asked'), 'approved, iOS said unsupported', 'the page wrote down the answer it was pushed');
+    assert.equal(w.__foxyBluetoothAnswer, null, 'the screen let go of its global as it left');
+    // and the launch goes on to the wallet, with no gate screen left over it
+    await s.until(() => s.W.connected === true && !w.FoxyGate.visible(), 30000, 'the wallet, with the gate gone');
+  });
+  assert.equal(s.host.asked.get('bluetoothAsk'), 1, 'APPROVE asked the phone once');
+  assert.deepEqual(s.host.answered.filter((a) => a[0] === 'bluetoothAsk'), [['bluetoothAsk', 'unsupported', null]]);
+  assert.deepEqual(s.host.pushes.filter((p) => p === '__foxyBluetoothAnswer'), ['__foxyBluetoothAnswer']);
+});
+
+test('the Bluetooth screen: a reply with no __foxyBluetoothAnswer push leaves it up for good (the ENG-656 bug, as a control)', async () => {
+  // What main 570d049 did: "Unknown action" through _scanResult and no push. The page waits for
+  // the push alone, so the screen stays and a second APPROVE asks nothing (`asking`). This is the
+  // control that shows the flow above can fail.
+  const s = await flow({ seed: true, tor: 'up', phase: 'P3', answers: { bluetoothAsk: () => [null, 'Unknown action: bluetoothAsk'] } }, async (s) => {
+    const d = s.window.document, w = s.window;
+    const approve = await toBluetoothScreen(s);
+    approve.click();
+    await s.until(() => s.host.answered.some((a) => a[0] === 'bluetoothAsk'), 10000, 'the reply');
+    await s.settle(1000);
+    assert.ok(d.getElementById('ftg-bt'), 'the screen is still up');
+    approve.click();
+    await s.settle(500);
+    assert.ok(d.getElementById('ftg-bt'), 'and a second APPROVE does not close it');
+    assert.equal(w.localStorage.getItem('foxy.bt.asked'), null, 'nothing was written down');
+  });
+  assert.equal(s.host.asked.get('bluetoothAsk'), 1, 'the second APPROVE returned early on `asking`');
+  assert.equal(s.host.pushes.includes('__foxyBluetoothAnswer'), false);
+});
+
+test('the Bluetooth screen: REJECT closes it with no native call', async () => {
+  const s = await flow({ seed: true, tor: 'up', phase: 'P3' }, async (s) => {
+    const d = s.window.document;
+    await toBluetoothScreen(s);
+    d.getElementById('ftg-bt-no').click();
+    await s.until(() => !d.getElementById('ftg-bt'), 10000, 'the Bluetooth screen to close after REJECT');
+    assert.match(s.window.localStorage.getItem('foxy.bt.asked'), /^rejected/);
+  });
+  assert.equal(s.host.asked.get('bluetoothAsk') || 0, 0);
 });
 
 test('screens: everything a screen asks native for, through the wallet', async () => {
@@ -368,7 +432,6 @@ test('native pushes: each one the contract lists, delivered with a contract-shap
 /* Actions no flow here posts, each with the reason. Nothing else may be missing. */
 const NOT_EXERCISED = {
   isDebug: 'nothing in the page at the pinned commit asks it (it reads window.FOXY_DEBUG)',
-  bluetoothAsk: 'posted only by the first-install Bluetooth screen\'s Approve button, after the warning; checked statically (contract.test.js)',
   counterReserveAt: 'a recovery path (reserving a range the mint said was already signed); checked statically',
   p2pkPubkeys: 'scanning for the index a token in hand is locked to; checked statically',
   p2pkKey: 'opening ecash locked to this phone; checked statically',

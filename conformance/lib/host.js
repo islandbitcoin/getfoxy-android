@@ -237,7 +237,10 @@ function makeHost(o) {
     tapQuote: () => NO('That phone is no longer connected.'),
     tapTerms: () => NO('That phone is no longer connected.'),
     tapPayStop: () => ['ok', null],
-    bluetoothAsk: () => ['unsupported', null],
+    /* The gate's own global first, then the reply, in iOS's order (FoxyBridge+Tap.swift
+     * `handleBluetoothAsk`): the first-install screen leaves only on the push. Android
+     * answers "unsupported" until BLE tap to pay (ENG-650, ENG-656). */
+    bluetoothAsk: () => { host.global('__foxyBluetoothAnswer', 'unsupported'); return ['unsupported', null]; },
     shakeStart: () => ['ok', null],
     shakeStop: () => ['ok', null],
     cardBegin: () => NO('This phone cannot read cards.'),
@@ -260,6 +263,23 @@ function makeHost(o) {
     const W = w && w.FoxyWallet;
     if (!W || typeof W[name] !== 'function') return undefined;
     return W[name](arg);
+  };
+
+  /* Call a window global native defines no member for (`__foxyBluetoothAnswer`), as
+   * native evaluates `window.X && window.X(arg)`: on a later turn, never inside the
+   * page's own postMessage call, and before a reply scheduled after it. */
+  host.global = (name, arg) => {
+    const entry = BY_NAME.get(name);
+    if (!entry || entry.kind !== 'global') { violate('unknown', 'native calls ' + name + ', which is not a global in contract.json'); return; }
+    if (opts.phase && laterThan(entry.phase, opts.phase)) {
+      violate('unserved', opts.phase + ' pushes ' + entry.phase + ' global "' + name + '"');
+      return;
+    }
+    host.pushes.push(name);
+    setTimeout(() => {
+      const w = host.window;
+      if (w && typeof w[name] === 'function') w[name](arg);
+    }, 0);
   };
 
   function reply(entry, id, text, error) {

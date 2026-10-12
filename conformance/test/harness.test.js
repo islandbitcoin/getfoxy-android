@@ -176,6 +176,50 @@ test('a P2 host serves P1 and P2 actions, stubs later ones, and refuses a later 
   }
 });
 
+test('host.global: a contract global, called on a later turn after nothing else, refused unlisted or from too early a phase', async () => {
+  const s = await boot({ seed: true, tor: 'up', phase: 'P3' });
+  try {
+    await s.settle(300);
+    s.host.violations.length = 0;
+    const w = s.window;
+    const got = [];
+    w.__foxyBluetoothAnswer = (state) => got.push(state);
+    s.host.global('__foxyBluetoothAnswer', 'unsupported');
+    assert.deepEqual(got, [], 'not inside the call that asked for it');
+    await wait(20);
+    assert.deepEqual(got, ['unsupported']);
+    assert.ok(s.host.pushes.includes('__foxyBluetoothAnswer'));
+    // bluetoothAsk on a P3 host: the push lands before the reply (iOS's order)
+    const order = [];
+    w.__foxyBluetoothAnswer = (state) => order.push('push ' + state);
+    const real = w.FoxyWallet._scanResult;
+    w.FoxyWallet._scanResult = function (id, text, error) { if (id === 'bt-h') order.push('reply ' + text); return real.apply(this, arguments); };
+    w.webkit.messageHandlers.foxy.postMessage({ action: 'bluetoothAsk', id: 'bt-h' });
+    await wait(50);
+    w.FoxyWallet._scanResult = real;
+    assert.deepEqual(order, ['push unsupported', 'reply unsupported']);
+    assert.deepEqual(s.host.violations, []);
+    // a name that is not a global of the contract
+    s.host.global('_privacy', {});
+    assert.deepEqual(kinds(s.host.violations), ['unknown']);
+  } finally {
+    s.close();
+  }
+  // a P2 host has no Bluetooth screen answer to push: bluetoothAsk is P3
+  const p2 = await boot({ seed: true, tor: 'up', phase: 'P2' });
+  try {
+    await p2.settle(300);
+    p2.host.violations.length = 0;
+    p2.host.global('__foxyBluetoothAnswer', 'unsupported');
+    assert.deepEqual(kinds(p2.host.violations), ['unserved']);
+    p2.host.violations.length = 0;
+    p2.window.webkit.messageHandlers.foxy.postMessage({ action: 'bluetoothAsk', id: 'bt-p2' });
+    assert.deepEqual(kinds(p2.host.violations), ['unserved'], 'bluetoothAsk has no p1 stub: a P2 host may not lean on it');
+  } finally {
+    p2.close();
+  }
+});
+
 test('the asset origin serves core/web and nothing above it', async () => {
   const s = await boot({ seed: true, tor: 'up' });
   try {
