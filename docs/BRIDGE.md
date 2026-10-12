@@ -140,6 +140,13 @@ allowlisted, plus the WebRTC removal in every frame.
   this file). The flow *P2: a host serving P1 and P2 actions …*
   (`conformance/test/flows.test.js`) goes from connecting to up, mints and
   melts, and fails on any later action with no stub.
+- **P3 answers.** The P3 host (ENG-649) serves the P1, P2 and P3 actions,
+  each P3 action by its real handler (the four with a `p1` stub, `captured`,
+  `seedProtection`, `pasteStart` and `pasteStop`, never by the stub), and
+  answers the `p1` stub of every LATER action that has one (`orbotRefresh`,
+  `orbotAccess`, `tapPayStart`). The flow *P3: a host serving P1, P2 and P3
+  actions …* (`conformance/test/flows.test.js`) asks every P3 action and fails
+  on any LATER action with no stub.
 - **Native pushes the route first.** iOS starts Tor before the page loads and
   pushes `_privacy` on every change (`FoxyBridge.swift:89-118`, `startTor`); the
   page also asks `privacy`. Android: `_privacy` is pushed on every change of
@@ -1211,12 +1218,14 @@ Found while writing this, and not decided here:
    tap is allowed in the foreground. The decision for P3 is whether `pasteStart`
    answers `"ok"` and does nothing (the page's own PASTE button then calls
    `clipboard`), or lays a native button over the rect as iOS does. The
-   rectangle checks must be kept either way.
+   rectangle checks must be kept either way. **Decided (ENG-649):** a native
+   button over the rect, which reads the clipboard only in its tap and pushes
+   `_pasted`.
 5. **`captured` and `_captured` / `_screenshot`.** Android cannot report
    mirroring the way `sceneCaptureState` does; `FLAG_SECURE` blocks capture
    instead, and Android 14's `Activity.ScreenCaptureCallback` reports
    screenshots. Proposed: `FLAG_SECURE` always, `captured` answers `"no"`,
-   `_screenshot` pushed from the callback on API 34+.
+   `_screenshot` pushed from the callback on API 34+. **Built (ENG-649).**
 6. **`biometric` reasons are iOS wording.** The fixed list ("Unlock Foxy",
    "Leave POS mode") maps to `BiometricPrompt` titles; keep the list fixed.
 7. **`openCompany` leaves Tor by design.** It opens a browser outside the app.
@@ -1224,7 +1233,8 @@ Found while writing this, and not decided here:
    from the page.
 8. **Debug-only deep links** (`foxy://receive?...`): iOS registers the scheme in
    Debug builds only. Android should register the intent filter only in the
-   debug source set.
+   debug source set. **Built (ENG-649):** `app/src/debug/AndroidManifest.xml`;
+   the release manifest has no scheme (`ManifestTest`).
 9. **`seedProtection` "device" vs "none".** iOS has two keychain items;
    Android's equivalent is two Keystore keys, one requiring user authentication
    (`setUserAuthenticationRequired`, StrongBox where available). The wording of
