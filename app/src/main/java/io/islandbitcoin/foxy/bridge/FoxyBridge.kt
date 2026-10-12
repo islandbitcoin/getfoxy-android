@@ -2,6 +2,7 @@ package io.islandbitcoin.foxy.bridge
 
 import io.islandbitcoin.foxy.debug.FieldLog
 import io.islandbitcoin.foxy.debug.Log
+import io.islandbitcoin.foxy.flashcard.InterimCardTime
 
 /**
  * What the bridge needs from the WebView's side: everything here runs on the
@@ -98,8 +99,9 @@ interface PageHost {
  *
  * One table: the 18 P1 actions, the 7 P2 actions ([NetBridge]: Tor's snapshot,
  * RETRY, CONTINUE WITHOUT TOR, and the three requests that leave through
- * Route), the 23 P3 actions ([SeedBridge]'s screens, adopting, wiping and
- * protection; [PlatformBridge]'s camera, clipboard, share, notifications,
+ * Route), the 26 P3 actions ([SeedBridge]'s screens, adopting, wiping and
+ * protection, and a card's owner key; the card's signed time;
+ * [PlatformBridge]'s camera, clipboard, share, notifications,
  * biometric, the Bluetooth screen's and the receive screen's TAP's fixed
  * "unsupported" and the rest), and the `p1` stubs of conformance/contract.json
  * for the LATER phase ([ContractStubs], generated from it), which answer the
@@ -117,6 +119,8 @@ class FoxyBridge(
     netEnvironment: NetEnvironment = NetEnvironment.noRoute(),
     /** A monotonic clock in ms: the notification throttle's and the words screen's pause. */
     clock: () -> Long = { System.nanoTime() / 1_000_000 },
+    /** The phone's own clock, ms since 1970: the time `cardTime` signs. */
+    private val wallClock: () -> Long = { System.currentTimeMillis() },
 ) {
     companion object {
         /** The asset loader's origin, the only one the bridge answers. */
@@ -133,8 +137,12 @@ class FoxyBridge(
         /** The P2 actions: docs/BRIDGE.md, phase P2, kind action. */
         val P2_ACTIONS: Set<String> = NetBridge.ACTIONS
 
-        /** The P3 actions: docs/BRIDGE.md, phase P3, kind action. */
-        val P3_ACTIONS: Set<String> = SeedBridge.P3_ACTIONS + PlatformBridge.ACTIONS
+        /**
+         * The P3 actions: docs/BRIDGE.md, phase P3, kind action. ENG-666 adds the
+         * card's owner key ([SeedBridge.CARD_ACTIONS]) and the card's signed time
+         * (`cardTime`), which need no NFC and are answered before the card link is.
+         */
+        val P3_ACTIONS: Set<String> = SeedBridge.P3_ACTIONS + PlatformBridge.ACTIONS + SeedBridge.CARD_ACTIONS + "cardTime"
 
         /** Main frame, asset origin, nothing else (FoxyBridge.swift `answers`). */
         fun answers(isMainFrame: Boolean, origin: String?): Boolean = isMainFrame && origin == ORIGIN
@@ -226,6 +234,19 @@ class FoxyBridge(
         }
         for (action in PlatformBridge.ACTIONS) {
             put(action) { id, body -> platform.handle(action, id, body) }
+        }
+        // a card's owner key: seed actions, on the seed executor (NativeSeedBridge.swift:402-417)
+        for (action in SeedBridge.CARD_ACTIONS) {
+            put(action) { id, body -> seeds.handle(action, id, body) }
+        }
+        /*
+         * {} → {"sig", "time"}: the phone's clock in whole seconds since 1970, signed by
+         * the INTERIM time key (FoxyBridge+Flashcard.swift `handleCardTime`). Arguments are
+         * ignored. It needs no card in hand and no seed, and says nothing secret.
+         */
+        put("cardTime") { id, _ ->
+            val text = InterimCardTime.reply(InterimCardTime.seconds(wallClock()))
+            if (text == null) resolve(id, null, InterimCardTime.UNTELLABLE) else resolve(id, text, null)
         }
         // the later phase's actions the page asks first, answered as the contract's p1 stubs say
         for ((action, stub) in ContractStubs.p1) {

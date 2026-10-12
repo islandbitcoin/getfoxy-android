@@ -2592,7 +2592,7 @@
     "kind": "action",
     "name": "cardOwnerKey",
     "domain": "card",
-    "phase": "LATER",
+    "phase": "P3",
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -2614,14 +2614,16 @@
         "the seed could not be read"
       ]
     },
-    "behaviour": "The P-256 owner PUBLIC key (04||X||Y hex) derived from the seed for one card (its 33-byte compressed key, hex).",
+    "behaviour": "The P-256 owner PUBLIC key (04||X||Y hex) derived from the seed for one card (its 33-byte compressed key, hex). Android (ENG-666): SeedBridge.cardOwnerKey on the seed executor, refused \"bad request\" before the seed is read for anything but a 66-hex compressed key; the same key, byte for byte, as an iPhone restored from the same words (app/src/test CardOwnerTest, the iOS tests/fixtures/card-owner-vectors.json). P-256 through the platform's JCA only.",
     "pageRef": [
       "Web/foxy-wallet.js:10044@'cardOwnerKey'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:436@\"cardOwnerKey\"",
       "Foxy/Bridge/NativeSeedBridge.swift:402-407@handleCardOwnerKey",
-      "Foxy/Keychain/SeedActions.swift:467-477@cardOwnerKey"
+      "Foxy/Keychain/SeedActions.swift:467-477@cardOwnerKey",
+      "Foxy/Bridge/NativeSeedBridge.swift:156-159@cardOwnerKeyCheck",
+      "Foxy/Keychain/NUT13.swift:495-513@publicKey(seed"
     ]
   },
   {
@@ -2629,7 +2631,7 @@
     "kind": "action",
     "name": "cardOwnerSign",
     "domain": "card",
-    "phase": "LATER",
+    "phase": "P3",
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -2654,14 +2656,17 @@
         "the seed could not be read"
       ]
     },
-    "behaviour": "ECDSA P-256 DER signature over \"FoxyCard/\"+label, nonce, value for one of six labels (change-pin, set-limit, set-owner, set-card, load, reset), each with its value shape.",
+    "behaviour": "ECDSA P-256 DER signature over \"FoxyCard/\"+label, nonce, value for one of six labels (change-pin, set-limit, set-owner, set-card, load, reset), each with its value shape. Android (ENG-666): SeedBridge.cardOwnerSign on the seed executor; the six labels and their value shapes are CardOwner.Label, and anything else (lock, tag, time, a bad nonce or value) is \"bad request\" before the seed is read. Signatures verify against the key cardOwnerKey answers, as iOS's do.",
     "pageRef": [
       "Web/foxy-wallet.js:10068@'cardOwnerSign'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:437@\"cardOwnerSign\"",
       "Foxy/Bridge/NativeSeedBridge.swift:412-417@handleCardOwnerSign",
-      "Foxy/Keychain/SeedActions.swift:489-499@cardOwnerSign"
+      "Foxy/Keychain/SeedActions.swift:489-499@cardOwnerSign",
+      "Foxy/Bridge/NativeSeedBridge.swift:165-168@cardOwnerSignCheck",
+      "Foxy/Keychain/NUT13.swift:459-469@signRequest",
+      "Foxy/Keychain/NUT13.swift:516-525@signature(for"
     ]
   },
   {
@@ -2669,7 +2674,7 @@
     "kind": "action",
     "name": "cardTime",
     "domain": "card",
-    "phase": "LATER",
+    "phase": "P3",
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -2689,14 +2694,16 @@
         "The clock on this phone is not a time a card can be told."
       ]
     },
-    "behaviour": "The phone clock (u32 seconds) signed by the INTERIM time key built into the app, for cards of software <=1.14.",
+    "behaviour": "The phone clock (u32 seconds) signed by the INTERIM time key built into the app, for cards of software <=1.14. Android (ENG-666): FoxyBridge answers it with InterimCardTime, iOS's interim key pair byte for byte, over \"FoxyCard/time\" and the four-byte time. A card of software 1.15 and on takes block headers instead, which the page fetches itself over mintRequest and sends with cardSend; nothing of that is native's.",
     "pageRef": [
       "Web/foxy-wallet.js:10191@'cardTime'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:439@\"cardTime\"",
       "Foxy/Bridge/FoxyBridge+Flashcard.swift:152-158@handleCardTime",
-      "Foxy/Flashcard/CardTime.swift:110-113@reply"
+      "Foxy/Flashcard/CardTime.swift:110-113@reply",
+      "Foxy/Flashcard/CardTime.swift:43-46@publicKeyHex",
+      "Foxy/Flashcard/CardTime.swift:53-56@message(time"
     ]
   },
   {

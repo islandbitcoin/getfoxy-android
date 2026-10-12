@@ -175,6 +175,24 @@ allowlisted, plus the WebRTC removal in every frame.
   tap to pay." are the payer's (`tapStatusText`/`tapStatusHint` over
   `tapStage`), and nothing at the pin calls either. The flow *P3: the receive screen's TAP …* holds the screen up on a P3
   host and counts the asks.
+- **A card's owner key and its signed time (ENG-666).** `cardOwnerKey`,
+  `cardOwnerSign` and `cardTime` are P3: none needs NFC, and a card set up
+  from an iPhone has to be operable from an Android phone restored from the
+  same twelve words. `cardOwnerKey` and `cardOwnerSign` are seed actions on
+  the seed executor (`SeedBridge`, `keychain/CardOwner.kt`, the port of
+  `CardOwner` in `Foxy/Keychain/NUT13.swift:365-526`): the owner key is
+  HMAC-SHA256(seed, "FoxyCard/owner" ‖ 0x00 ‖ the card's compressed key
+  [‖ counter]) mod n on P-256, and the owner signs ECDSA P-256/SHA-256, DER,
+  over "FoxyCard/" ‖ label ‖ nonce ‖ value for the six labels iOS signs
+  (`change-pin`, `set-limit`, `set-owner`, `set-card`, `load`, `reset`), each
+  with its value shape; `lock`, `tag`, `time` and every other shape are
+  "bad request" before the seed is read. `cardTime` is iOS's INTERIM signer
+  (`Foxy/Flashcard/CardTime.swift`), the same key pair byte for byte, for a
+  card of software 1.14 and before. A card of 1.15 and on takes block headers
+  instead, which the page fetches over Tor itself (`mintRequest`) and sends
+  through the card session: nothing of that is native's. The JVM tests hold
+  Kotlin to iOS's `tests/fixtures/card-owner-vectors.json` and to the card's
+  own `spec/vectors/owner.json`.
   The rest of the Bluetooth, onion, Nostr and card actions stay LATER: each is
   a request the page awaits with a timeout and a catch, not a push it waits
   for, so an "Unknown action" reply ends it. `tapPayStart` keeps its `p1`
@@ -1199,35 +1217,35 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:433`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:133-145`
 
-#### `cardOwnerKey` — LATER
+#### `cardOwnerKey` — P3
 
 - **Shape:** page → native, action: `{ action: "cardOwnerKey", id, key }`
 - **Payload:** `key`: string
 - **Called from:** `Web/foxy-wallet.js:10044`
-- **Native:** The P-256 owner PUBLIC key (04||X||Y hex) derived from the seed for one card (its 33-byte compressed key, hex).
+- **Native:** The P-256 owner PUBLIC key (04||X||Y hex) derived from the seed for one card (its 33-byte compressed key, hex). Android (ENG-666): SeedBridge.cardOwnerKey on the seed executor, refused "bad request" before the seed is read for anything but a 66-hex compressed key; the same key, byte for byte, as an iPhone restored from the same words (app/src/test CardOwnerTest, the iOS tests/fixtures/card-owner-vectors.json). P-256 through the platform's JCA only.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {pub: string}
 - **Errors:** "bad request"; "no seed"; "the seed could not be read"
-- **iOS:** `Foxy/Bridge/FoxyBridge.swift:436`, `Foxy/Bridge/NativeSeedBridge.swift:402-407`, `Foxy/Keychain/SeedActions.swift:467-477`
+- **iOS:** `Foxy/Bridge/FoxyBridge.swift:436`, `Foxy/Bridge/NativeSeedBridge.swift:402-407`, `Foxy/Keychain/SeedActions.swift:467-477`, `Foxy/Bridge/NativeSeedBridge.swift:156-159`, `Foxy/Keychain/NUT13.swift:495-513`
 
-#### `cardOwnerSign` — LATER
+#### `cardOwnerSign` — P3
 
 - **Shape:** page → native, action: `{ action: "cardOwnerSign", id, key, label, nonce, value }`
 - **Payload:** `key`: string, `label`: string, `nonce`: string, `value`: string
 - **Called from:** `Web/foxy-wallet.js:10068`
-- **Native:** ECDSA P-256 DER signature over "FoxyCard/"+label, nonce, value for one of six labels (change-pin, set-limit, set-owner, set-card, load, reset), each with its value shape.
+- **Native:** ECDSA P-256 DER signature over "FoxyCard/"+label, nonce, value for one of six labels (change-pin, set-limit, set-owner, set-card, load, reset), each with its value shape. Android (ENG-666): SeedBridge.cardOwnerSign on the seed executor; the six labels and their value shapes are CardOwner.Label, and anything else (lock, tag, time, a bad nonce or value) is "bad request" before the seed is read. Signatures verify against the key cardOwnerKey answers, as iOS's do.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {sig: string}
 - **Errors:** "bad request"; "no seed"; "the seed could not be read"
-- **iOS:** `Foxy/Bridge/FoxyBridge.swift:437`, `Foxy/Bridge/NativeSeedBridge.swift:412-417`, `Foxy/Keychain/SeedActions.swift:489-499`
+- **iOS:** `Foxy/Bridge/FoxyBridge.swift:437`, `Foxy/Bridge/NativeSeedBridge.swift:412-417`, `Foxy/Keychain/SeedActions.swift:489-499`, `Foxy/Bridge/NativeSeedBridge.swift:165-168`, `Foxy/Keychain/NUT13.swift:459-469`, `Foxy/Keychain/NUT13.swift:516-525`
 
-#### `cardTime` — LATER
+#### `cardTime` — P3
 
 - **Shape:** page → native, action: `{ action: "cardTime", id }`
 - **Payload:** —
 - **Called from:** `Web/foxy-wallet.js:10191`
-- **Native:** The phone clock (u32 seconds) signed by the INTERIM time key built into the app, for cards of software <=1.14.
+- **Native:** The phone clock (u32 seconds) signed by the INTERIM time key built into the app, for cards of software <=1.14. Android (ENG-666): FoxyBridge answers it with InterimCardTime, iOS's interim key pair byte for byte, over "FoxyCard/time" and the four-byte time. A card of software 1.15 and on takes block headers instead, which the page fetches itself over mintRequest and sends with cardSend; nothing of that is native's.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json {time: integer, sig: string}
 - **Errors:** "The clock on this phone is not a time a card can be told."
-- **iOS:** `Foxy/Bridge/FoxyBridge.swift:439`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:152-158`, `Foxy/Flashcard/CardTime.swift:110-113`
+- **iOS:** `Foxy/Bridge/FoxyBridge.swift:439`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:152-158`, `Foxy/Flashcard/CardTime.swift:110-113`, `Foxy/Flashcard/CardTime.swift:43-46`, `Foxy/Flashcard/CardTime.swift:53-56`
 
 #### `_card` — LATER
 
@@ -1378,9 +1396,9 @@ kind, domain, phase, payloadSchema, reply, iosRef, pageRef, behaviour, timing? }
 | `cardSay` | page → native | action | LATER | `text`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:431 |
 | `cardAgain` | page → native | action | LATER | `text`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:432 |
 | `cardEnd` | page → native | action | LATER | `text`: string?, `error`: string? | "ok" | Foxy/Bridge/FoxyBridge.swift:433 |
-| `cardOwnerKey` | page → native | action | LATER | `key`: string | json {pub: string} | Foxy/Bridge/FoxyBridge.swift:436 |
-| `cardOwnerSign` | page → native | action | LATER | `key`: string, `label`: string, `nonce`: string, `value`: string | json {sig: string} | Foxy/Bridge/FoxyBridge.swift:437 |
-| `cardTime` | page → native | action | LATER | — | json {time: integer, sig: string} | Foxy/Bridge/FoxyBridge.swift:439 |
+| `cardOwnerKey` | page → native | action | P3 | `key`: string | json {pub: string} | Foxy/Bridge/FoxyBridge.swift:436 |
+| `cardOwnerSign` | page → native | action | P3 | `key`: string, `label`: string, `nonce`: string, `value`: string | json {sig: string} | Foxy/Bridge/FoxyBridge.swift:437 |
+| `cardTime` | page → native | action | P3 | — | json {time: integer, sig: string} | Foxy/Bridge/FoxyBridge.swift:439 |
 | `_scanResult` | native → page | push | P1 | `text`: string\|null, `error`: string\|null | none | Foxy/Bridge/FoxyBridge.swift:1488-1494 |
 | `_privacy` | native → page | push | P2 | `tor`: string, `progress`: integer, `everUp`: boolean, `unprotected`: boolean, `transport`: string, `orbot`: string, `firstSetup`: boolean, `vpn`: boolean, `orbotKey`: boolean, `network`: string | none | Foxy/Bridge/FoxyBridge.swift:157-160 |
 | `_captured` | native → page | push | P3 | `on`: boolean | none | Foxy/Bridge/FoxyBridge.swift:142-145 |
