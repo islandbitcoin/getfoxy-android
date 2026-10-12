@@ -36,3 +36,6 @@ google-services.json
 
 # conformance harness dependencies (npm ci)
 node_modules/
+
+# leak-test captures (tools/leak-test): analysed, never committed
+*.pcap
