@@ -102,7 +102,11 @@ object TapScanRules {
      * unfiltered scan is allowed while the app is in front, and Foxy scans only
      * then ([TapPayer] stops it when Foxy is put away). Android gives an
      * unfiltered scan no results while the screen is off (8.1 and later); with
-     * Foxy in front the screen is on, so that costs nothing here.
+     * Foxy in front the screen is on, so that costs nothing here. An
+     * unfiltered scan is not exempt from Android's 30-minute scan timeout,
+     * though (AOSP `ScanManager` moves it to opportunistic mode without a
+     * word), so the phone's central stops and starts it again every 25
+     * minutes ([TapScanCycle]).
      */
     val hardwareFilters: List<TapScanFilter> = emptyList()
 
