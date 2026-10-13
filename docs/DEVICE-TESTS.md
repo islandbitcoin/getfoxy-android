@@ -782,8 +782,9 @@ open for a minute (so its warm spare is published), and neither is on Orbot.
    the ecash request (it names a Nostr key first and the onion second). Pixel:
    SEND, scan it, confirm. Expected: delivered within about ten seconds; the
    Pixel posts to the onion, not to Nostr (its page prefers the onion,
-   `deliveryFor`, and Android has no Nostr yet); the Pixel's log has no
-   `onion post failed`; the iPhone shows 21 received.
+   `deliveryFor`, whatever the order the request lists them in); the Pixel's
+   log has no `onion post failed` and no `nostr:` line; the iPhone shows 21
+   received.
 3. **The hold after the screen closes.** Pixel: RECEIVE, 13 sats, the ecash
    request. iPhone: scan it and confirm, and **at once** on the Pixel tap back
    to the home screen. Expected: the Pixel's log says
@@ -810,20 +811,86 @@ open for a minute (so its warm spare is published), and neither is on Orbot.
    and the screen does not ask `inboxOpen` more than once every four seconds
    (no burst of `onion inbox closed` lines). Airplane mode off: within a
    minute the screen's request names an address again.
-6. **Nostr, both ways (the ENG-672 follow-up; not on this build).** This build
-   has no Nostr: a Pixel request names only its onion, and the Pixel cannot
-   pay a request that names only a Nostr key (a browser wallet's, such as
-   cashu.me's), which it answers by showing the token instead. When the
-   follow-up lands: (a) the Pixel's request names `nostr` as well (decode the
-   QR on the iPhone: two transports, Nostr first); (b) with the Pixel's onion
-   unreachable (its request's onion address changed by hand to another valid
-   v3 address before the iPhone scans it, or paid from cashu.me), the iPhone
-   pays over Nostr and the Pixel's log says a Nostr payment arrived, the
-   request is paid and nothing waits on an answer; (c) the Pixel pays an
-   iPhone request over Nostr the same way (an iPhone request with its onion
-   spoiled), its log saying how many relays took it (at least one), and the
-   iPhone shows it received; (d) every relay connection is over Tor (the leak
-   test, below, with a Nostr leg added).
+6. **Nostr, both ways:** see the next section (ENG-677).
+
+## Payment requests over Nostr between two phones (ENG-677)
+
+The Nostr transport between the iPhone "Max" (Foxy for iOS at `core/PIN`'s
+commit or later) and the Pixel 8 Pro (this branch's debug build): a request
+that names a Nostr key (NIP-17 over NIP-59 gift wraps, NIP-44 v2), paid by
+publishing to relays over Tor, and the key's inbox listening on them. The JVM
+tests hold Android to iOS's code and the specs' own vectors (`NostrCryptoTest`
+replays iOS's `NostrCryptoTests`, RFC 8439 and the official NIP-44 v2 vectors
+byte for byte; `NostrInboxTest`, `NostrDeliveryTest`, `DeliveryNostrTest`,
+`RouteSocketTest`), and the conformance flows of `flows-nostr.test.js` pay one
+page from another through the Android host; only two real phones, real relays
+and the real Tor network show that an iPhone opens what a Pixel wraps and the
+other way round. **Pending: written for the person, not run. No phone was used
+for this change.**
+
+Under "Real money" above, as the onion checks: the person's go for the run,
+100 sats or less a payment, both phones on the default mint
+(`https://mint.minibits.cash/Bitcoin`), each funded beforehand. Nothing is
+melted. Both phones CONNECTED (Tor up), neither on Orbot. The Pixel's log is
+the debug build's LOGS screen (or `adb logcat -s foxy` from the person's
+machine); the iPhone's is its own LOGS screen.
+
+A request paid over Nostr needs its onion out of the way, because a Foxy payer
+always prefers the onion (`deliveryFor`). Two ways, either is fine: pay from a
+wallet that cannot reach an onion (cashu.me in the phone's browser, which pays
+the first transport it knows, and the request lists Nostr first), or spoil the
+onion by hand: decode the request (`creqA…`) on a computer with cashu-ts,
+replace the `post` transport's target with another valid v3 address (or drop
+that transport), re-encode it and show it as a QR.
+
+1. **The Pixel's request names a Nostr key.** Pixel: RECEIVE, 21 sats, the
+   ecash request. Its log says `nostr inbox open, a key made for this request
+   only` (after the onion's line). Decode the QR (on the iPhone, or with
+   cashu-ts): two transports, `nostr` first with the tag `["n","17"]` and an
+   `nprofile1…` target naming four relays (`wss://relay.damus.io`,
+   `wss://nos.lol`, `wss://relay.primal.net`, `wss://relay.minibits.cash`),
+   then `post` with the onion. Back out and RECEIVE again: the nprofile is a
+   different one (a key per request).
+2. **iPhone pays a Pixel request over Nostr.** Pixel: RECEIVE, 21 sats, the
+   ecash request with its onion spoiled as above (or pay it from cashu.me).
+   iPhone: SEND, scan it, confirm. Expected: the iPhone's log says how many
+   relays took the payment (at least one); within about half a minute the
+   Pixel's log says `nostr inbox: a payment arrived` and the Pixel shows 21
+   sats received, with no `a wrap did not open` line. The page's answer to it
+   is told nothing waits (nobody does: the payer published and walked away),
+   which the log may show as an `inboxAnswer` refusal and is expected. The
+   iPhone's history shows the payment as claimed once its claim watch sees the
+   proofs spent.
+3. **Pixel pays an iPhone request over Nostr.** iPhone: RECEIVE, 21 sats, the
+   ecash request, its onion spoiled the same way. Pixel: SEND, scan it,
+   confirm. Expected: the Pixel's log says `nostr: <n> relay(s) took the
+   payment, <m> did not` with n at least 1, and no `could not be wrapped`; the
+   iPhone shows 21 received (its log: `nostr inbox: a payment arrived`).
+   Both balances move by 21 (the payer's by 21 plus any mint fee).
+4. **A relay that refuses, and one that does not answer.** As 3, with the
+   iPhone's request naming, before the four usual relays, one that is not a
+   relay (edit the nprofile with cashu-ts or nak to list `wss://example.com`
+   first). Expected: the Pixel still pays (n at least 1); the log counts the
+   bad relay among those that did not take it, and the whole send ends within
+   about 25 s of the confirmation.
+5. **The key ends with the request, and when Foxy is put away.** Pixel:
+   RECEIVE, 8 sats, the ecash request (spoiled onion); note its nprofile. Back
+   out of the screen. Pay that request from the iPhone: the iPhone says relays
+   took it, but the Pixel's balance does not move and its log has no `nostr
+   inbox: a payment arrived` (the key was thrown away with the request; the 8
+   sats stay in the iPhone's history as a token: claim them back there). Then
+   Pixel: RECEIVE again, press Home: its log says `nostr inbox closed` before
+   `tor: off the network while Foxy is in the background`, and no relay is
+   contacted while Foxy is away (the leak test below shows no flow while it is
+   in the background). Back on the Pixel, the screen's request names a new
+   nprofile.
+6. **Over Tor only.** Run the leak test (`tools/leak-test.sh`, below) with a
+   Nostr leg: the Pixel receiving one Nostr payment and paying one. Every flow
+   to a relay goes through Tor (the relays are never contacted from the
+   phone's own address, and no DNS query names one), on each transport; with
+   CONTINUE WITHOUT TOR on and Tor off, a Nostr payment from the Pixel fails
+   with "No relay took the payment: Foxy is not connected to Tor." and
+   nothing is sent.
 
 ## The P2 device exit (ENG-648)
 

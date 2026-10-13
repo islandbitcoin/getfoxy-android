@@ -22,6 +22,8 @@ import io.islandbitcoin.foxy.network.HostApprovals
 import io.islandbitcoin.foxy.network.OnionInbox
 import io.islandbitcoin.foxy.network.OnionPost
 import io.islandbitcoin.foxy.network.Route
+import io.islandbitcoin.foxy.nostr.NostrDelivery
+import io.islandbitcoin.foxy.nostr.NostrInbox
 import io.islandbitcoin.foxy.tor.Tor
 import io.islandbitcoin.foxy.tor.TorTransport
 import io.islandbitcoin.foxy.web.Clipboard
@@ -123,13 +125,20 @@ class FoxyServices(context: Context) {
         after = after,
     )
 
-    /** What the onion inbox and post use (ENG-672): Tor's onion services, a loopback listener per address, OnionPost. */
+    /**
+     * What the onion inbox and post use (ENG-672): Tor's onion services, a
+     * loopback listener per address, OnionPost; and Nostr's (ENG-677): a key per
+     * request listening on relays, and payments wrapped and published, every
+     * socket a WebSocket over Tor (RouteSocket).
+     */
     fun delivery(main: (Runnable) -> Unit, after: (Long, () -> Unit) -> Unit): DeliveryEnvironment = DeliveryEnvironment(
         torRunning = { Tor.isRunning },
         daemonGeneration = { Tor.daemonGeneration },
         newInbox = { note, onPayment -> OnionInbox(note, Tor, main, onPayment = onPayment) },
         post = { url, body, circuit, timeoutMs, done -> OnionPost.send(url, body, circuit, timeoutMs, done = done) },
         after = after,
+        newNostrInbox = { onPayment -> NostrInbox(onPayment, main = main) },
+        nostrSend = { payload, target, done -> NostrDelivery(main = main, after = after).send(payload, target, done) },
     )
 
     fun environment(): SeedEnvironment = SeedEnvironment(

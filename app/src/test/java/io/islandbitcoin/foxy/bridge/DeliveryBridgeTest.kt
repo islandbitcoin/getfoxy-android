@@ -114,7 +114,7 @@ class DeliveryBridgeTest {
         send("""{"action":"inboxOpen","id":"o1"}""")
         val first = onion("o1")
         assertTrue(first, Regex("^http://[a-z2-7]{55}d\\.onion/[0-9a-f]{16,64}$").matches(first))
-        // the Nostr address is LATER: the answer has the onion and nothing else
+        // no Nostr key is wired here (DeliveryNostrTest has one): the answer has the onion and nothing else
         assertEquals(setOf("onion"), (Json.parse(reply("o1").second!!) as Map<*, *>).keys)
         send("""{"action":"inboxOpen","id":"o2"}""")
         assertEquals("the open one is answered again", first, onion("o2"))

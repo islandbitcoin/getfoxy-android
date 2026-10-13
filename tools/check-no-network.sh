@@ -23,6 +23,9 @@
 # InetAddress.getLoopbackAddress()), never in main/ or release/, so a release
 # build has no socket outside network/; and the debug JVM tests of flashcard/ (src/testDebug) (a fake
 # card server, and the real one's control port, on loopback), which never ship.
+# And, for Nostr (ENG-677): network/RouteSocket.kt, the one place a WebSocket is
+# made (OkHttp's, on the Tor client, to a relay); every other line of code that
+# names a WebSocket fails, comments and a page script's `new WebSocket(` aside.
 #
 #   tools/check-no-network.sh            check app/src
 #   tools/check-no-network.sh <dir>      check another tree (the self-test uses this)
@@ -34,6 +37,7 @@ route='main/java/io/islandbitcoin/foxy/network/Route.kt'
 network='main/java/io/islandbitcoin/foxy/network/'
 socks='main/java/io/islandbitcoin/foxy/network/Socks5SocketFactory.kt'
 inbox='main/java/io/islandbitcoin/foxy/network/OnionInbox.kt'
+relaySocket='main/java/io/islandbitcoin/foxy/network/RouteSocket.kt'
 networkTests='test/java/io/islandbitcoin/foxy/network/'
 listener='androidTest/java/io/islandbitcoin/foxy/ListenerService.java'
 cardsim='debug/java/io/islandbitcoin/foxy/flashcard/SimCardLink.kt'
@@ -92,6 +96,18 @@ rule "InetAddress" 'InetAddress' "$socks" "$listener" "$networkTests" "$cardsim"
 rule "sockets" '(^|[^A-Za-z])(Server|SSL)?Socket\(|DatagramSocket|SocketChannel|(^|[^A-Za-z0-9])(SSL)?SocketFactory' "$socks" "$listener" "$networkTests" "$cardsim" "$cardTests" "$inbox"
 # the onion inbox only listens: no client socket, datagram, channel, factory or TLS listener there either
 rule "a socket other than a listener in the onion inbox" '(^|[^A-Za-z])(SSL)?Socket\(|DatagramSocket|SocketChannel|(^|[^A-Za-z0-9])(SSL)?SocketFactory|SSLServerSocket' "$socks" "$listener" "$networkTests" "$cardsim" "$cardTests"
+
+# a WebSocket: network/RouteSocket.kt only (OkHttp's on the Tor client), and the network/ JVM tests.
+# A comment line, and a JavaScript `new WebSocket(` inside a test's page script, are not code of the app's.
+ws="$(grep -rnE --include='*.kt' --include='*.java' --include='*.kts' 'WebSocket' "$src" \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(\*|/\*|//)' \
+  | grep -vE '^[^:]+:[0-9]+:.*new WebSocket\(' \
+  | awk -v a="$relaySocket" -v t="$networkTests" '{
+      path = $0; sub(/:[0-9]+:.*$/, "", path)
+      if (length(path) >= length(a) + 1 && substr(path, length(path) - length(a)) == "/" a) next
+      if (index(path, "/" t) > 0) next
+      print }' || true)"
+if [ -n "$ws" ]; then report "a WebSocket outside network/RouteSocket.kt" "$ws"; fi
 
 # the onion inbox's listener: 127.0.0.1 only. Every line of it that makes a
 # server socket names Socks5SocketFactory.TOR_HOST as the bind address in that
