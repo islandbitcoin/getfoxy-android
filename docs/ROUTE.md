@@ -218,14 +218,31 @@ As built in P2 (ENG-648). Kotlin paths are under
 - **One retry, and only before the request.** A failure of the SOCKS handshake
   is thrown from the socket's `connect`, before OkHttp writes a byte of the
   request; that, and only that, is retried, once, after 0.4 s, on Tor's port
-  as it is then (`FoxyBridge.swift:1447-1460`). OkHttp's own retry is off
+  as it is then (`FoxyBridge.swift:1447-1460`), within the time the first try
+  left (iOS's retry, `FoxyBridge.swift:1460`, is a new task with its own
+  60 s; Android shares the first try's time so the request stays inside the
+  page's 65 s wait): a mint request is answered within 60 s of being sent
+  however it went, and a retry with under 5 s left is not sent. The 60 s
+  start when the request is sent, after any host-approval alert; the page's
+  65 s wait (`foxy-wallet.js` `bridgeAsk('mintRequest', ..., 65000)`) starts
+  when it asked, so an alert left open for more than 5 s can outlast the
+  page's wait, as on iOS, whose request timeout also starts after the alert.
+  The handshake waits for Tor's answer to its CONNECT as long as the request
+  may, at most 60 s, iOS's request timeout (`TorService.swift:1831-1832`): a
+  new label is a new circuit, and right after "circuit established" Tor took
+  longer than the 30 s the handshake used to allow, so every first request on
+  a label timed out, and its retry, for about two minutes (ENG-655,
+  `MintRequestRetryTest`). OkHttp's own retry is off
   (`retryOnConnectionFailure(false)`), and a failure on a redirect's later hop
   is never "before the request". So a POST that reached the mint is never sent
   twice (`MintRequestRetryTest`, `RouteClientTest`). Two failed handshakes on
   two different ports (Tor's listener moved under the request) are
   "Foxy's private connection was rebuilt mid-request. Try again."; two on the
   same port, or the retry on port 9, are "Foxy is not connected to Tor."
-  (`NetBridgeTest`); a refusal
+  (`NetBridgeTest`); a handshake that ran out of the request's time waiting
+  for Tor's answer (Tor connected, the label's circuit still being built),
+  with or without a retry, is "The request timed out.", URLSession's words
+  (`FoxyBridge.swift` `mintFailureWords`, `MintRequestRetryTest`); a refusal
   Tor itself answered (host unreachable, an onion not found) is
   "<host> could not be asked over Tor: <why>".
 - **No fallback.** When Tor is not running, `Route.start` returns no call and
