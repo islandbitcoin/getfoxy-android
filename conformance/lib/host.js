@@ -102,6 +102,12 @@ function replyProblems(entry, text, error) {
  *               seed is saved (default: abandon … about, the first case of the
  *               iOS card-owner vectors); o.nowMs the phone's clock for cardTime
  *               (default: Date.now)
+ *   o.bluetooth the phone's Bluetooth, as Android's TapBridge reads it (ENG-670):
+ *               'unsupported' (default: no Bluetooth LE peripheral, the ENG-656
+ *               answers), or a phone with one whose state is 'allowed', 'off' or
+ *               'denied'. With one, bluetoothAsk answers that state, and a new
+ *               receiver says `searching` ('allowed') or the state after its
+ *               reply; host.tap drives a payer over its link (below).
  *   o.unknown   a Set of later-phase actions with no stub that this host answers
  *               "Unknown action: …" without a violation, as the Kotlin bridge
  *               answers them today: for a flow about something else that has to
@@ -114,7 +120,10 @@ function makeHost(o) {
     tor: opts.tor || 'up', progress: 0, everUp: (opts.tor || 'up') === 'up', unprotected: false,
     seed: opts.seed !== false, counters: new Map(), p2pkNext: 0, candidates: new Set(), migrated: false,
     protection: 'none', imported: false, notifiedAt: 0, receiverHeld: false,
+    bluetooth: opts.bluetooth || 'unsupported', linked: false, offered: '', early: false,
+    shakeArmed: false, answers: new Map(), m6: [],
   };
+  if (!['unsupported', 'allowed', 'off', 'denied'].includes(state.bluetooth)) throw new Error('unknown o.bluetooth: ' + state.bluetooth);
   const SEED = crypto.createHash('sha256').update('conformance seed').digest();
   const derive = (keysetId, counter, what) =>
     crypto.createHmac('sha256', SEED).update(keysetId + '|' + counter + '|' + what).digest('hex');
@@ -241,40 +250,59 @@ function makeHost(o) {
     openCompany: (m) => (['cashapp', 'strike', 'river', 'flash'].includes(m.which) ? ['ok', null] : NO('Not one of the listed sites.')),
     inboxOpen: () => NO('No address: Tor is not ready.'),
     inboxClose: () => ['ok', null],
-    inboxAnswer: () => NO('No payment is waiting on that answer.'),
+    /* The page's word on a payment it was handed (FoxyBridge+Delivery.swift
+     * `handleInboxAnswer`, TapBridge.kt): taken out by its key, so it is answered
+     * once; the status clamped to 200, 409 or 422 and the text to 300 characters. */
+    inboxAnswer: (m) => {
+      const tell = state.answers.get(m.answer);
+      if (!tell) return NO('No payment is waiting on that answer.');
+      state.answers.delete(m.answer);
+      const status = [200, 409, 422].includes(m.status) ? m.status : 422;
+      tell(status, status === 200 ? '' : Array.from(String(m.text || '')).slice(0, 300).join(''));
+      return ['ok', null];
+    },
     onionPost: () => NO('That is not an onion address Foxy will post to.'),
     nostrSend: () => NO('The payment could not be sent over Nostr.'),
-    /* As an iPhone without Bluetooth answers, which is Android until BLE tap to pay
-     * (ENG-650, ENG-656; FoxyBridge+Tap.swift `handleTapReceiveStart`, TapLink.swift
-     * `cbState`): a non-empty payload TapRules.kt (TapProtocol.isPayload) would
-     * refuse is refused with its words, making no receiver; otherwise "ok", and
-     * the receiver this makes says `unsupported` after the reply; a receiver
-     * already held says nothing more. */
+    /* As Android's TapBridge answers (ENG-670; FoxyBridge+Tap.swift `handleTapReceiveStart`,
+     * TapLink.swift `cbState`): a non-empty payload TapRules.kt (TapProtocol.isPayload)
+     * would refuse is refused with its words, making no receiver; otherwise "ok", and
+     * the receiver this makes says its radio after the reply: `unsupported` on a phone
+     * without a Bluetooth LE peripheral (ENG-656), `searching` once on the air, or `off`
+     * or `denied`. A receiver already held takes the payload and says nothing more. */
     tapReceiveStart: (m) => {
       const payload = typeof m.payload === 'string' ? m.payload : '';
       if (payload !== '' && !TapRules.isPayload(payload)) return NO(TapRules.NOT_PAYABLE);
+      state.offered = payload;
+      state.early = !!m.early;
       if (!state.receiverHeld) {
         state.receiverHeld = true;
-        host.afterReply(() => host.pushAs('_tap', { side: 'receive', stage: 'unsupported' }));
+        const stage = state.bluetooth === 'allowed' ? 'searching' : state.bluetooth;
+        host.afterReply(() => host.pushAs('_tap', { side: 'receive', stage }));
       }
       return ['ok', null];
     },
-    tapReceiveStop: () => { state.receiverHeld = false; return ['ok', null]; },
+    tapReceiveStop: () => { state.receiverHeld = false; state.linked = false; return ['ok', null]; },
     tapPayStart: (m) => (m.now ? ['ok', null] : NO('Stopped.')),
     tapSend: () => NO('That phone is no longer connected.'),
-    tapChange: () => NO('That phone is no longer connected.'),
+    /* The receiving side's words over a link (TapBridge.kt): only a linked receiver
+     * can send M7, M9 or M11; the payer of host.tap keeps any change at once. */
+    tapChange: (m) => {
+      if (!m.body) return NO('There is no change to send.');
+      if (!state.linked) return NO('That phone is no longer connected.');
+      return ['ok', null];
+    },
     tapChangeKept: () => { if (!state.changeWaiting) return NO('No change is waiting to be kept.'); state.changeWaiting = false; return ['ok', null]; },
-    tapAsking: () => ['no link', null],
+    tapAsking: () => [state.linked ? 'ok' : 'no link', null],
     tapChangeDue: () => ['ok', null],
     tapQuote: () => NO('That phone is no longer connected.'),
-    tapTerms: () => NO('That phone is no longer connected.'),
+    tapTerms: () => (state.linked ? ['ok', null] : NO('That phone is no longer connected.')),
     tapPayStop: () => ['ok', null],
     /* The gate's own global first, then the reply, in iOS's order (FoxyBridge+Tap.swift
-     * `handleBluetoothAsk`): the first-install screen leaves only on the push. Android
-     * answers "unsupported" until BLE tap to pay (ENG-650, ENG-656). */
-    bluetoothAsk: () => { host.global('__foxyBluetoothAnswer', 'unsupported'); return ['unsupported', null]; },
-    shakeStart: () => ['ok', null],
-    shakeStop: () => ['ok', null],
+     * `handleBluetoothAsk`): the first-install screen leaves only on the push. The
+     * state is the phone's (o.bluetooth), "unsupported" without Bluetooth (ENG-656). */
+    bluetoothAsk: () => { host.global('__foxyBluetoothAnswer', state.bluetooth); return [state.bluetooth, null]; },
+    shakeStart: () => { state.shakeArmed = true; return ['ok', null]; },
+    shakeStop: () => { state.shakeArmed = false; return ['ok', null]; },
     cardBegin: () => NO('This phone cannot read cards.'),
     cardSend: () => NO('The card was taken away.'),
     cardSay: () => ['ok', null],
@@ -304,7 +332,7 @@ function makeHost(o) {
    * contract's push: refused, like `global`, when its phase is later than the host's. */
   let afterReplies = [];
   host.afterReply = (fn) => { afterReplies.push(fn); };
-  host.pushAs = (name, arg) => {
+  host.pushAs = (name, arg, ...more) => {
     const entry = BY_NAME.get(name);
     if (!entry || entry.kind !== 'push') { violate('unknown', 'native pushes ' + name + ', which is not a push in contract.json'); return undefined; }
     if (opts.phase && laterThan(entry.phase, opts.phase)) {
@@ -316,7 +344,41 @@ function makeHost(o) {
       const p = check(entry.payloadSchema, arg);
       if (p.length) violate('payload', name + ': ' + p.join('; '));
     }
-    return host.push(name, arg);
+    if (!more.length) return host.push(name, arg);
+    // positional arguments (`_requestPaid(body, answerId, "tap")`), each the type its field gives
+    const fields = Object.entries(entry.payloadSchema.fields);
+    const args = [arg, ...more];
+    if (args.length > fields.length) violate('payload', name + ': ' + args.length + ' arguments for ' + fields.length + ' fields');
+    const p = check(entry.payloadSchema, Object.fromEntries(fields.slice(0, args.length).map(([k], i) => [k, args[i]])));
+    if (p.length) violate('payload', name + ': ' + p.join('; '));
+    host.pushes.push(name);
+    const W = host.window && host.window.FoxyWallet;
+    if (!W || typeof W[name] !== 'function') return undefined;
+    return W[name](...args);
+  };
+
+  /* A payer over a receiver's link, as Android's TapReceiver tells the page of one
+   * (TapBridge.kt, TapGattServer.kt): `near` (the edge it chose), `link` (its first
+   * word, then the four digits), `pay` (a payment that crossed the link, pushed as
+   * `_requestPaid(body, key, "tap")`; resolves with the page's answer, as M6 carries
+   * it: [status, why]), `shake` (pressed only while shake to TAP is armed), `gone`.
+   * Needs a receiver on the air (o.bluetooth 'allowed' and a tapReceiveStart). */
+  host.tap = {
+    near: (edge) => host.pushAs('_tap', { side: 'receive', stage: 'nearby', edge }),
+    link: (code) => {
+      if (state.bluetooth !== 'allowed' || !state.receiverHeld) { violate('tap', 'a payer linked with no receiver on the air'); return; }
+      host.pushAs('_tap', { side: 'receive', stage: 'connecting' });
+      host.pushAs('_tap', { side: 'receive', stage: 'code', code });
+      state.linked = true;
+    },
+    pay: (body) => new Promise((resolve) => {
+      if (!state.linked) { violate('tap', 'a payment over no link'); resolve(null); return; }
+      const key = crypto.randomBytes(16).toString('hex');
+      state.answers.set(key, (status, why) => { state.m6.push([status, why]); resolve([status, why]); });
+      host.pushAs('_requestPaid', body, key, 'tap');
+    }),
+    shake: () => { if (state.shakeArmed) host.pushAs('_tap', { side: 'receive', stage: 'shake' }); },
+    gone: () => { state.linked = false; host.pushAs('_tap', { side: 'receive', stage: 'gone' }); },
   };
 
   /* Call a window global native defines no member for (`__foxyBluetoothAnswer`), as

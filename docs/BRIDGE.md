@@ -147,34 +147,69 @@ allowlisted, plus the WebRTC removal in every frame.
   `orbotAccess`, `tapPayStart`). The flow *P3: a host serving P1, P2 and P3
   actions …* (`conformance/test/flows.test.js`) asks every P3 action and fails
   on any LATER action with no stub.
-- **The Bluetooth screen (ENG-656).** `bluetoothAsk` and
+- **The Bluetooth screen (ENG-656, ENG-670).** `bluetoothAsk` and
   `__foxyBluetoothAnswer` are P3, not LATER: the first-install Bluetooth
   screen's APPROVE posts `bluetoothAsk`, sets `asking` and leaves only when
   native calls `window.__foxyBluetoothAnswer(state)`, so an "Unknown action"
-  reply left the screen up for good. Until BLE tap to pay lands (ENG-650) the
-  Android host asks nothing and declares no Bluetooth permission: it pushes
-  `__foxyBluetoothAnswer("unsupported")` and then answers `"unsupported"`,
-  in iOS's order (`Foxy/Bridge/FoxyBridge+Tap.swift:254-265`). The flow
-  *P3: APPROVE on the first-install Bluetooth screen …* presses it on a P3 host.
-- **The receive screen's TAP (ENG-656).** `tapReceiveStart`, `tapReceiveStop`
-  and the `_tap` push are P3 too. The page asks `tapReceiveStart` by itself on
-  every receive screen (auto-arm, `foxy.tap.auto` on by default), and took an
-  "Unknown action" reply as a refusal: it put UNKNOWN ACTION: TAPRECEIVESTART
-  in the TAP card and asked again every 1.2 s while the screen was up
-  (`build/app/26d-tap.js` `syncTap`). Android now answers what iOS answers on an
-  iPhone whose Bluetooth is `unsupported`: a payload iOS would refuse is
-  refused with its words; otherwise `"ok"`, and, when that makes the receiver,
-  then `_tap({side: "receive", stage: "unsupported"})`, the reply first as on
-  iOS, where the peripheral manager reports its state after the handler has
-  answered (`Foxy/Bridge/FoxyBridge+Tap.swift:22-147`,
-  `Foxy/Bluetooth/TapLink.swift:26-33`, `506-509`). `tapReceiveStop` lets the
-  receiver go and answers `"ok"`. Nothing is advertised and no Bluetooth
-  permission is declared. The page at the pin takes only `off` and `denied`
-  from a receive-side `_tap`, so the TAP card says HOLD A PHONE HERE, as on
-  an iPhone without Bluetooth. The words NO BLUETOOTH / "This phone cannot do
-  tap to pay." are the payer's (`tapStatusText`/`tapStatusHint` over
-  `tapStage`), and nothing at the pin calls either. The flow *P3: the receive screen's TAP …* holds the screen up on a P3
-  host and counts the asks.
+  reply left the screen up for good. ENG-656 answered `"unsupported"` on every
+  phone; since tap to pay's receiver (ENG-670, `bridge/TapBridge.kt`) Android
+  puts the system's question up for `BLUETOOTH_ADVERTISE` and
+  `BLUETOOTH_CONNECT` (API 31+; API 28-30 holds `BLUETOOTH` and
+  `BLUETOOTH_ADMIN` from the install) and answers as iOS's `BluetoothAsk`
+  does: `allowed`, `denied`, `off`, `unsupported`, or `unknown` after a minute
+  with no state, pushed to `__foxyBluetoothAnswer` first and then replied
+  (`Foxy/Bridge/FoxyBridge+Tap.swift:254-265`, `504-539`). A phone with no
+  adapter, or one whose adapter is on and cannot advertise, is `unsupported`
+  and is asked nothing (`tap/TapBluetooth.kt` `BluetoothAnswer`; iOS reads the
+  authorization first, but Android cannot tell whether an adapter can
+  advertise while it is off, and a permission the phone could not use is not
+  asked for). The flow *P3: APPROVE on the first-install Bluetooth screen …*
+  presses it on a P3 host without Bluetooth, and *P3 (ENG-670): APPROVE …
+  allowed* on one with it.
+- **The receive screen's TAP (ENG-656, ENG-670).** `tapReceiveStart`,
+  `tapReceiveStop` and the `_tap` push are P3 too. The page asks
+  `tapReceiveStart` by itself on every receive screen (auto-arm, `foxy.tap.auto`
+  on by default), and took an "Unknown action" reply as a refusal: it put
+  UNKNOWN ACTION: TAPRECEIVESTART in the TAP card and asked again every 1.2 s
+  while the screen was up (`build/app/26d-tap.js` `syncTap`). A payload iOS
+  would refuse is refused with its words; otherwise `"ok"`, and, when that
+  makes the receiver, its radio's state after the reply, as iOS's peripheral
+  manager reports its state after the handler has answered
+  (`Foxy/Bridge/FoxyBridge+Tap.swift:22-147`, `Foxy/Bluetooth/TapLink.swift:26-33`,
+  `506-509`). On a phone without a Bluetooth LE peripheral that is
+  `_tap({side: "receive", stage: "unsupported"})`, as ENG-656 answered
+  everywhere: the page at the pin takes only `off` and `denied` from a
+  receive-side `_tap`, so the TAP card says HOLD A PHONE HERE, as on an iPhone
+  without Bluetooth. On a phone with one (ENG-670) the receiver is
+  `tap/TapReceiver.kt`: a GATT server with iOS's four doors and a CCCD on each
+  notify door, an advertisement of the service UUID and nothing else, and the
+  ENG-669 link (`TapReceiverLink`) on top; `searching` once on the air, then
+  `nearby`/`far`, `connecting`, `code`, `receiving`, `gone` and `version` as iOS
+  says them. `tapReceiveStop` lets the receiver go, or holds it off the air
+  while a payment or change is crossing, and answers `"ok"`. The flows *P3:
+  the receive screen's TAP …* (a phone without Bluetooth) and *P3 (ENG-670):
+  the receive screen on the air …* (a phone with it) hold the screen up on a
+  P3 host.
+- **Tap to pay's receiving side (ENG-670).** `tapChange`, `tapAsking`,
+  `tapChangeDue`, `tapTerms`, `shakeStart`, `shakeStop` and `inboxAnswer`, and
+  the pushes `_requestPaid(…, "tap")`, `_tapQuote`, `_tapChangeKeptLate` and
+  `_turned`, are P3. A payment that has crossed the link is pushed as
+  `_requestPaid(body, key, "tap")` and the page's `inboxAnswer` for that key
+  becomes M6, iOS's one registry for the onion and the tap
+  (`Foxy/Bridge/FoxyBridge+Tap.swift:77-122`,
+  `Foxy/Bridge/FoxyBridge+Delivery.swift:234-246`); the onion inbox's keys join
+  it with ENG-672, and until then a key nothing waits on is "No payment is
+  waiting on that answer.". Change goes back over the same link (`tapChange`,
+  answered when the payer says it kept it, 7 s, or late as
+  `_tapChangeKeptLate`). Shake to TAP listens to the accelerometer only while
+  armed and Foxy is in front; `_turned` comes from an
+  `OrientationEventListener` while Foxy is in front (`Foxy/FoxyWebView.swift:38-48`).
+  Nothing advertises while Foxy is not in front: the activity's stop takes the
+  receiver off the air and lets it go (unless a payment is crossing), and its
+  start puts a new receiver, with a new service UUID, on the air with what the
+  page last offered. The paying side (`tapPayStart`, `tapSend`,
+  `tapChangeKept`, `tapQuote`, `tapPayStop`, `_tapChange`, `_tapTerms`) is
+  ENG-671 and stays LATER.
 - **A card's owner key and its signed time (ENG-666).** `cardOwnerKey`,
   `cardOwnerSign` and `cardTime` are P3: none needs NFC, and a card set up
   from an iPhone has to be operable from an Android phone restored from the
@@ -193,7 +228,7 @@ allowlisted, plus the WebRTC removal in every frame.
   through the card session: nothing of that is native's. The JVM tests hold
   Kotlin to iOS's `tests/fixtures/card-owner-vectors.json` and to the card's
   own `spec/vectors/owner.json`.
-  The rest of the Bluetooth, onion, Nostr and card actions stay LATER: each is
+  The paying side of tap to pay, the onion, Nostr and card actions stay LATER: each is
   a request the page awaits with a timeout and a catch, not a push it waits
   for, so an "Unknown action" reply ends it. `tapPayStart` keeps its `p1`
   stub (`Stopped.`): the page backs its re-listen off to a minute and shows
@@ -930,12 +965,12 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:411`, `Foxy/Bridge/FoxyBridge+Delivery.swift:208-230`
 
-#### `inboxAnswer` — LATER
+#### `inboxAnswer` — P3
 
 - **Shape:** page → native, action: `{ action: "inboxAnswer", id, answer, status, text }`
 - **Payload:** `answer`: string, `status`: integer, `text`: string
 - **Called from:** `Web/foxy-wallet.js:22836`
-- **Native:** Answer a payment that arrived (_requestPaid): status 200, 409 or 422 only, 300 characters of text.
+- **Native:** Answer a payment that arrived (_requestPaid): status 200, 409 or 422 only, 300 characters of text. Android (ENG-670): the answers owed are kept by key; a tap's (_requestPaid(.., "tap")) is dropped 30 s after it was pushed, and its status and text become the M6 the payer reads (status 200 with no reason; any other status clamped to 422). A key nothing is waiting on is "No payment is waiting on that answer." The onion inbox's keys join the same table with ENG-672.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "No payment is waiting on that answer."
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:412`, `Foxy/Bridge/FoxyBridge+Delivery.swift:234-246`
@@ -950,12 +985,12 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Errors:** "That payment is too large to send."; "<OnionPost failure text>"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:413`, `Foxy/Bridge/FoxyBridge+Delivery.swift:292-323`
 
-#### `_requestPaid` — LATER
+#### `_requestPaid` — P3
 
 - **Shape:** native → page, push: `window.FoxyWallet._requestPaid(body, answerId[, "tap"])`
 - **Payload:** `body`: string, `answerId`: string, `via`: string?
 - **Called from:** `Web/foxy-wallet.js:22823`
-- **Native:** A payment arrived for the request on screen (onion inbox, Nostr inbox with answerId "", or a tap with "tap"). The page redeems it and answers with inboxAnswer.
+- **Native:** A payment arrived for the request on screen (onion inbox, Nostr inbox with answerId "", or a tap with "tap"). The page redeems it and answers with inboxAnswer. Android (ENG-670): pushed for a tap only, `_requestPaid(body, key, "tap")` with a fresh 32-hex key, the moment the payment has crossed the link; the onion and Nostr inboxes are ENG-672.
 - **iOS:** `Foxy/Bridge/FoxyBridge+Delivery.swift:104`, `Foxy/Bridge/FoxyBridge+Delivery.swift:256`, `Foxy/Bridge/FoxyBridge+Tap.swift:121`
 
 ### Nostr (LATER)
@@ -978,17 +1013,17 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Shape:** page → native, action: `{ action: "tapReceiveStart", id, payload, early }`
 - **Payload:** `payload`: string, `early`: boolean
 - **Called from:** `Web/foxy-wallet.js:24159`
-- **Native:** Advertise the invoice/payment request on screen over BLE (service UUID only). Payment, quote and stage events come back as _requestPaid(.., "tap"), _tapQuote, _tap. Android (ENG-656, until BLE tap to pay in ENG-650): nothing is advertised and no Bluetooth permission is declared or requested. A non-empty payload iOS would refuse (TapProtocol.isPayload) is refused with its words; otherwise native answers "ok" and, when this makes the receiver (none held since the last tapReceiveStop or the page going; putting Foxy away keeps it, as iOS keeps tapReceiver in the background), then pushes _tap({side:"receive",stage:"unsupported"}), in iOS order on an iPhone without Bluetooth (the reply, then the peripheral manager reporting its state). The page asks this by itself on every receive screen (auto-arm); an "Unknown action" reply put UNKNOWN ACTION: TAPRECEIVESTART in the TAP card and was retried every 1.2 s while the screen was up.
+- **Native:** Advertise the invoice/payment request on screen over BLE (service UUID only). Payment, quote and stage events come back as _requestPaid(.., "tap"), _tapQuote, _tap. Android (ENG-670, bridge/TapBridge.kt, tap/TapReceiver.kt): a non-empty payload iOS would refuse (TapProtocol.isPayload) is refused with its words and nothing else. Otherwise "ok", and a receiver held since the last tapReceiveStop takes the payload and early flag and stays on the air; one that has handed its offer to a payer is refused "That payment is still going through. A moment." while a payment or change is crossing, keeps that payer's offer and answers "ok" while the payer holds it, and is otherwise retired for a new one. A new receiver (a fresh random service UUID) reports its radio after the reply, as iOS's peripheral manager does: _tap receive stage unsupported (no adapter, or one that cannot advertise), denied (BLUETOOTH_ADVERTISE/CONNECT refused; asked by the system's own question if never answered), off, or, once armed, the GATT server up and searching when the advertisement is on the air. The GATT service is iOS's: out (notify), in (write with response), near left and near right (notify), UUIDs SHA-256(label ‖ service)[0..16], a CCCD on each notify door, no encryption or bonding, every read refused; long (prepared) writes are queued per central and taken on the execute; notifications go one at a time, at most MTU - 3 bytes. The advertisement is the service UUID and nothing else: connectable, no name, no TX power, no manufacturer data. Nothing advertises while Foxy is not in front: the activity stopping takes the receiver off the air (and lets it go unless a payment is crossing), and its start puts a new one on the air with what the page last offered. The page asks this by itself on every receive screen (auto-arm); an "Unknown action" reply put UNKNOWN ACTION: TAPRECEIVESTART in the TAP card and was retried every 1.2 s while the screen was up (ENG-656).
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "Not something a payer could pay."; "That payment is still going through. A moment."
-- **iOS:** `Foxy/Bridge/FoxyBridge.swift:416`, `Foxy/Bridge/FoxyBridge+Tap.swift:22-147`, `Foxy/Bluetooth/TapLink.swift:26-33`, `Foxy/Bluetooth/TapLink.swift:506-509`
+- **iOS:** `Foxy/Bridge/FoxyBridge.swift:416`, `Foxy/Bridge/FoxyBridge+Tap.swift:22-147`, `Foxy/Bluetooth/TapLink.swift:26-33`, `Foxy/Bluetooth/TapLink.swift:506-509`, `Foxy/Bluetooth/TapLink.swift:481-504`, `Foxy/Bluetooth/TapLink.swift:669-698`, `Foxy/Bluetooth/TapLink.swift:850-872`
 
 #### `tapReceiveStop` — P3
 
 - **Shape:** page → native, action: `{ action: "tapReceiveStop", id }`
 - **Payload:** —
 - **Called from:** `Web/foxy-wallet.js:24162`
-- **Native:** Stop advertising. Android (ENG-656): lets go of the receiver tapReceiveStart made and answers "ok".
+- **Native:** Stop advertising. Android (ENG-670): the receiver is stopped and let go, unless a payment or change is crossing, when it is held (off the air) until that is answered or the result wait (25 s) and 2 s more have passed; "ok" either way.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:417`, `Foxy/Bridge/FoxyBridge+Tap.swift:149-165`
 
@@ -1015,12 +1050,12 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Errors:** "There is nothing to hand over."; "That phone is no longer connected."
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:427`, `Foxy/Bridge/FoxyBridge+Tap.swift:223-245`
 
-#### `tapChange` — LATER
+#### `tapChange` — P3
 
 - **Shape:** page → native, action: `{ action: "tapChange", id, body }`
 - **Payload:** `body`: string
 - **Called from:** `Web/foxy-wallet.js:24273`
-- **Native:** Change token back to the payer over the same link; resolves when the payer says it kept it (7 s), or late via _tapChangeKeptLate.
+- **Native:** Change token back to the payer over the same link; resolves when the payer says it kept it (7 s), or late via _tapChangeKeptLate. Android (ENG-670): "There is no change to send." for an empty body, "That phone is no longer connected." with no receiver or no link (nothing sealed), "The payer's phone did not say it kept the change." after 7 s, and a later "kept" as _tapChangeKeptLate.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "There is no change to send."; "That phone is no longer connected."; "The payer's phone did not say it kept the change."
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:419`, `Foxy/Bridge/FoxyBridge+Tap.swift:348-399`
@@ -1035,21 +1070,21 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Errors:** "No change is waiting to be kept."
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:420`, `Foxy/Bridge/FoxyBridge+Tap.swift:474-485`
 
-#### `tapAsking` — LATER
+#### `tapAsking` — P3
 
 - **Shape:** page → native, action: `{ action: "tapAsking", id }`
 - **Payload:** —
 - **Called from:** `Web/foxy-wallet.js:24285`
-- **Native:** The receiver is asking its person about an offline payment (M9).
+- **Native:** The receiver is asking its person about an offline payment (M9). Android (ENG-670): "ok" when M9 went to the payer (the result wait becomes 90 s), "no link" when there is none.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok" / "no link"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:421`, `Foxy/Bridge/FoxyBridge+Tap.swift:412-421`
 
-#### `tapChangeDue` — LATER
+#### `tapChangeDue` — P3
 
 - **Shape:** page → native, action: `{ action: "tapChangeDue", id }`
 - **Payload:** —
 - **Called from:** `Web/foxy-wallet.js:24359`
-- **Native:** This payment owes change: keep the link.
+- **Native:** This payment owes change: keep the link. Android (ENG-670): "ok" always; a linked receiver is held (busy) until the payer says it kept the change or goes.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:422`, `Foxy/Bridge/FoxyBridge+Tap.swift:463-468`
 
@@ -1063,12 +1098,12 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Errors:** "That phone is no longer connected."
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:423`, `Foxy/Bridge/FoxyBridge+Tap.swift:429-438`
 
-#### `tapTerms` — LATER
+#### `tapTerms` — P3
 
 - **Shape:** page → native, action: `{ action: "tapTerms", id, body }`
 - **Payload:** `body`: string
 - **Called from:** `Web/foxy-wallet.js:24299`
-- **Native:** Receiver agreeing the price (M11).
+- **Native:** Receiver agreeing the price (M11). Android (ENG-670): "ok" when M11 was sealed and sent to the payer, else "That phone is no longer connected."
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "That phone is no longer connected."
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:424`, `Foxy/Bridge/FoxyBridge+Tap.swift:445-454`
@@ -1087,34 +1122,34 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Shape:** page → native, action: `{ action: "bluetoothAsk", id }`
 - **Payload:** —
 - **Called from:** `Web/foxy-tor-gate.js:2071`
-- **Native:** First-install screen: put the OS Bluetooth permission question up, answer the state (also pushed to window.__foxyBluetoothAnswer). Scans and advertises nothing. Android (ENG-656, until BLE tap to pay in ENG-650): no question is asked and no Bluetooth permission is declared or requested; native pushes window.__foxyBluetoothAnswer("unsupported") and then answers "unsupported", in iOS's order, so the page writes foxy.bt.asked and closes the screen. A reply without the push left the screen up for good: the page leaves only on the push, and every later APPROVE returns early on `asking`.
+- **Native:** First-install screen: put the OS Bluetooth permission question up, answer the state (also pushed to window.__foxyBluetoothAnswer). Scans and advertises nothing. Android (ENG-670, bridge/TapBridge.kt): the system's question for BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT (API 31+; API 28-30 has them at install), never BLUETOOTH_SCAN or location. The state, read once the question is answered: no Bluetooth adapter, or one that is on and cannot advertise (BluetoothAdapter.isMultipleAdvertisementSupported false), is "unsupported" and nothing is asked; a permission refused is "denied"; the adapter off or turning off is "off"; on is "allowed"; one turning on is waited for, and "unknown" after 60 s with no state. Native pushes window.__foxyBluetoothAnswer(state) and then answers state, in iOS's order, so the page writes foxy.bt.asked and closes the screen. A reply without the push left the screen up for good (ENG-656): the page leaves only on the push, and every later APPROVE returns early on `asking`.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "allowed" / "denied" / "off" / "unsupported" / "unknown"
-- **iOS:** `Foxy/Bridge/FoxyBridge.swift:426`, `Foxy/Bridge/FoxyBridge+Tap.swift:254-265`
+- **iOS:** `Foxy/Bridge/FoxyBridge.swift:426`, `Foxy/Bridge/FoxyBridge+Tap.swift:254-265`, `Foxy/Bridge/FoxyBridge+Tap.swift:526-539`
 
-#### `shakeStart` — LATER
+#### `shakeStart` — P3
 
 - **Shape:** page → native, action: `{ action: "shakeStart", id }`
 - **Payload:** —
 - **Called from:** `Web/foxy-wallet.js:24150`
-- **Native:** While set, a shake is pushed as _tap({side:"receive",stage:"shake"}).
+- **Native:** While set, a shake is pushed as _tap({side:"receive",stage:"shake"}). Android (ENG-670): the accelerometer is listened to only while set and Foxy is in front; two jolts of 1.6 g or more within 0.6 s are a shake, then 1.2 s of quiet (tap/Motion.kt ShakeDetector). Idempotent, "ok".
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
-- **iOS:** `Foxy/Bridge/FoxyBridge.swift:441`, `Foxy/Bridge/FoxyBridge+Tap.swift:279-285`
+- **iOS:** `Foxy/Bridge/FoxyBridge.swift:441`, `Foxy/Bridge/FoxyBridge+Tap.swift:279-285`, `Foxy/Bridge/FoxyBridge+Tap.swift:310-318`, `Foxy/FoxyWebView.swift:45-48`
 
-#### `shakeStop` — LATER
+#### `shakeStop` — P3
 
 - **Shape:** page → native, action: `{ action: "shakeStop", id }`
 - **Payload:** —
 - **Called from:** `Web/foxy-wallet.js:24150`
-- **Native:** Clears the shake flag.
+- **Native:** Clears the shake flag. Android (ENG-670): and lets the accelerometer go. Idempotent, "ok".
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:442`, `Foxy/Bridge/FoxyBridge+Tap.swift:287-293`
 
-#### `_tapQuote` — LATER
+#### `_tapQuote` — P3
 
 - **Shape:** native → page, push: `window.FoxyWallet._tapQuote(text)`
 - **Payload:** `text`: string
 - **Called from:** `Web/foxy-wallet.js:24305`
-- **Native:** M10 arrived on the receiver.
+- **Native:** M10 arrived on the receiver. Android (ENG-670): pushed with the payer's text as it opened.
 - **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:130`
 
 #### `_tapChange` — LATER
@@ -1138,23 +1173,23 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Shape:** native → page, global: `window.__foxyBluetoothAnswer(state)`
 - **Payload:** `state`: string
 - **Called from:** `Web/foxy-tor-gate.js:2060`
-- **Native:** The Bluetooth question was answered (defined by the gate's first-install screen). Android (ENG-656): pushed with "unsupported" on every bluetoothAsk, before its reply, until BLE tap to pay (ENG-650).
+- **Native:** The Bluetooth question was answered (defined by the gate's first-install screen). Android (ENG-670): pushed with the state bluetoothAsk answers (allowed, denied, off, unsupported or unknown) on every bluetoothAsk, before its reply; "unsupported" on a phone with no Bluetooth LE peripheral, as ENG-656 answered on every phone.
 - **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:259`
 
-#### `_turned` — LATER
+#### `_turned` — P3
 
 - **Shape:** native → page, push: `window.FoxyWallet._turned(upsideDown)`
 - **Payload:** `upsideDown`: boolean
 - **Called from:** `Web/foxy-wallet.js:24446`
-- **Native:** Device turned portrait/upside-down (the receive screen turns itself for the payer across the table).
-- **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:303-307`, `Foxy/FoxyWebView.swift:42`
+- **Native:** Device turned portrait/upside-down (the receive screen turns itself for the payer across the table). Android (ENG-670): OrientationEventListener while Foxy is in front (the activity stays portrait): pushed each time the phone comes to portrait (false) or upside down (true), within 30° of each; face up, face down and landscape leave it as it was (tap/Motion.kt TurnDetector).
+- **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:303-307`, `Foxy/FoxyWebView.swift:42`, `Foxy/FoxyWebView.swift:38-43`
 
-#### `_tapChangeKeptLate` — LATER
+#### `_tapChangeKeptLate` — P3
 
 - **Shape:** native → page, push: `window.FoxyWallet._tapChangeKeptLate()`
 - **Payload:** —
 - **Called from:** `Web/foxy-wallet.js:24248`
-- **Native:** The payer said it kept the change after tapChange had already answered.
+- **Native:** The payer said it kept the change after tapChange had already answered. Android (ENG-670): pushed once, for a "kept" that comes after tapChange's 7 s.
 - **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:380`
 
 #### `_tap` — P3
@@ -1162,7 +1197,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Shape:** native → page, push: `window.FoxyWallet._tap({side, stage, code?, edge?, pct?})`
 - **Payload:** `side`: string, `stage`: string, `code`: string?, `edge`: string?, `pct`: integer?
 - **Called from:** `Web/foxy-wallet.js:24454`
-- **Native:** Tap progress. side receive|pay; stage one of searching, far, connecting, linked, sending, receiving, code, asking, gone, shake, nearby, version, off, denied, unsupported. Android (ENG-656, until BLE tap to pay in ENG-650): pushed only as {side:"receive",stage:"unsupported"}, after the reply to a tapReceiveStart that made the receiver. At the pinned page a receive-side stage other than off and denied leaves tapRecvStage alone, so the TAP card says HOLD A PHONE HERE, as on an iPhone without Bluetooth.
+- **Native:** Tap progress. side receive|pay; stage one of searching, far, connecting, linked, sending, receiving, code, asking, gone, shake, nearby, version, off, denied, unsupported. code only for four digits (stage code), edge left|right only with nearby, pct 0-100 only with sending or receiving. Android (ENG-670): the receive side, as iOS's TapReceiver says it: off/denied/unsupported for the radio, searching when on the air, nearby (edge) and far for payers on the near doors, connecting at a payer's first word, code with the four digits, receiving (pct) for a large payment, gone, version, and shake while shake to TAP is armed. A phone with no Bluetooth LE peripheral says {side:"receive",stage:"unsupported"} once per receiver, after the reply to the tapReceiveStart that made it (ENG-656). The pay side is ENG-671.
 - **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:487-498`, `Foxy/Bluetooth/TapLink.swift:5-24`
 
 ### NFC card (LATER)
@@ -1374,23 +1409,23 @@ kind, domain, phase, payloadSchema, reply, iosRef, pageRef, behaviour, timing? }
 | `username` | page → native | message | P1 | `username`: string | none | Foxy/Bridge/FoxyBridge.swift:456-466 |
 | `inboxOpen` | page → native | action | LATER | — | json {onion: string?, nostr: string?} | Foxy/Bridge/FoxyBridge.swift:410 |
 | `inboxClose` | page → native | action | LATER | `hold`: number | "ok" | Foxy/Bridge/FoxyBridge.swift:411 |
-| `inboxAnswer` | page → native | action | LATER | `answer`: string, `status`: integer, `text`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:412 |
+| `inboxAnswer` | page → native | action | P3 | `answer`: string, `status`: integer, `text`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:412 |
 | `onionPost` | page → native | action | LATER | `url`: string, `body`: string, `timeout`: number | "<HTTP status>\n<body>" | Foxy/Bridge/FoxyBridge.swift:413 |
 | `nostrSend` | page → native | action | LATER | `target`: string, `body`: string | text (how many relays accepted it, as a decimal string) | Foxy/Bridge/FoxyBridge.swift:414 |
 | `tapReceiveStart` | page → native | action | P3 | `payload`: string, `early`: boolean | "ok" | Foxy/Bridge/FoxyBridge.swift:416 |
 | `tapReceiveStop` | page → native | action | P3 | — | "ok" | Foxy/Bridge/FoxyBridge.swift:417 |
 | `tapPayStart` | page → native | action | LATER | `now`: boolean? | json-or-text {payload: string, code: string} or "ok" | Foxy/Bridge/FoxyBridge.swift:418 |
 | `tapSend` | page → native | action | LATER | `body`: string | text (the receiver's answer) | Foxy/Bridge/FoxyBridge.swift:427 |
-| `tapChange` | page → native | action | LATER | `body`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:419 |
+| `tapChange` | page → native | action | P3 | `body`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:419 |
 | `tapChangeKept` | page → native | action | LATER | `kept`: boolean | "ok" | Foxy/Bridge/FoxyBridge.swift:420 |
-| `tapAsking` | page → native | action | LATER | — | "ok" / "no link" | Foxy/Bridge/FoxyBridge.swift:421 |
-| `tapChangeDue` | page → native | action | LATER | — | "ok" | Foxy/Bridge/FoxyBridge.swift:422 |
+| `tapAsking` | page → native | action | P3 | — | "ok" / "no link" | Foxy/Bridge/FoxyBridge.swift:421 |
+| `tapChangeDue` | page → native | action | P3 | — | "ok" | Foxy/Bridge/FoxyBridge.swift:422 |
 | `tapQuote` | page → native | action | LATER | `body`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:423 |
-| `tapTerms` | page → native | action | LATER | `body`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:424 |
+| `tapTerms` | page → native | action | P3 | `body`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:424 |
 | `tapPayStop` | page → native | action | LATER | — | "ok" | Foxy/Bridge/FoxyBridge.swift:425 |
 | `bluetoothAsk` | page → native | action | P3 | — | "allowed" / "denied" / "off" / "unsupported" / "unknown" | Foxy/Bridge/FoxyBridge.swift:426 |
-| `shakeStart` | page → native | action | LATER | — | "ok" | Foxy/Bridge/FoxyBridge.swift:441 |
-| `shakeStop` | page → native | action | LATER | — | "ok" | Foxy/Bridge/FoxyBridge.swift:442 |
+| `shakeStart` | page → native | action | P3 | — | "ok" | Foxy/Bridge/FoxyBridge.swift:441 |
+| `shakeStop` | page → native | action | P3 | — | "ok" | Foxy/Bridge/FoxyBridge.swift:442 |
 | `cardBegin` | page → native | action | LATER | `text`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:429 |
 | `cardSend` | page → native | action | LATER | `apdu`: string | text (the response APDU, hex) | Foxy/Bridge/FoxyBridge.swift:430 |
 | `cardSay` | page → native | action | LATER | `text`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:431 |
@@ -1411,13 +1446,13 @@ kind, domain, phase, payloadSchema, reply, iosRef, pageRef, behaviour, timing? }
 | `_resumed` | native → page | push | P1 | `away`: integer | none | Foxy/FoxyWebView.swift:1174 |
 | `__foxyUptime` | native → page | global | P1 | `s`: number, `p`: number | none | Foxy/FoxyWebView.swift:1198 |
 | `deepLink` | native → page | global | P3 | `hash`: string | none | Foxy/FoxyWebView.swift:492-531 |
-| `_requestPaid` | native → page | push | LATER | `body`: string, `answerId`: string, `via`: string? | none | Foxy/Bridge/FoxyBridge+Delivery.swift:104 |
-| `_tapQuote` | native → page | push | LATER | `text`: string | none | Foxy/Bridge/FoxyBridge+Tap.swift:130 |
+| `_requestPaid` | native → page | push | P3 | `body`: string, `answerId`: string, `via`: string? | none | Foxy/Bridge/FoxyBridge+Delivery.swift:104 |
+| `_tapQuote` | native → page | push | P3 | `text`: string | none | Foxy/Bridge/FoxyBridge+Tap.swift:130 |
 | `_tapChange` | native → page | push | LATER | `token`: string | none | Foxy/Bridge/FoxyBridge+Tap.swift:194 |
 | `_tapTerms` | native → page | push | LATER | `text`: string | none | Foxy/Bridge/FoxyBridge+Tap.swift:200 |
 | `__foxyBluetoothAnswer` | native → page | global | P3 | `state`: string | none | Foxy/Bridge/FoxyBridge+Tap.swift:259 |
-| `_turned` | native → page | push | LATER | `upsideDown`: boolean | none | Foxy/Bridge/FoxyBridge+Tap.swift:303-307 |
-| `_tapChangeKeptLate` | native → page | push | LATER | — | none | Foxy/Bridge/FoxyBridge+Tap.swift:380 |
+| `_turned` | native → page | push | P3 | `upsideDown`: boolean | none | Foxy/Bridge/FoxyBridge+Tap.swift:303-307 |
+| `_tapChangeKeptLate` | native → page | push | P3 | — | none | Foxy/Bridge/FoxyBridge+Tap.swift:380 |
 | `_tap` | native → page | push | P3 | `side`: string, `stage`: string, `code`: string?, `edge`: string?, `pct`: integer? | none | Foxy/Bridge/FoxyBridge+Tap.swift:487-498 |
 | `_card` | native → page | push | LATER | `stage`: string, `text`: string | none | Foxy/Flashcard/CardGate.swift:144-150 |
 | `_cardTapped` | native → page | push | LATER | — | none | Foxy/Flashcard/CardAddress.swift:64 |
