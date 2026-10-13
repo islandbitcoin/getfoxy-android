@@ -4,7 +4,7 @@
 # Plants each kind of network call in a scratch tree and expects
 # tools/check-no-network.sh to fail on it; then a clean tree, and the allowed
 # exceptions (OkHttp in network/, the SOCKS factory's socket and placeholder
-# address, the network/ JVM tests' loopback servers, the net-block test's
+# address, the onion inbox's loopback listener, the network/ JVM tests' loopback servers, the net-block test's
 # listener, a page script's `new WebSocket(`), must pass.
 set -euo pipefail
 
@@ -100,6 +100,20 @@ plant 'main/java/io/islandbitcoin/foxy/x/X.kt' '// main/java/io/islandbitcoin/fo
 expect fail "a line that only names the factory's path is not excused"
 plant 'main/java/io/islandbitcoin/foxy/x/X.kt' 'val f = javax.net.SocketFactory.getDefault()'
 expect fail "the platform SocketFactory"
+# ENG-672: the onion inbox's loopback listener, and nothing else, in network/OnionInbox.kt
+inbox="$net/OnionInbox.kt"
+plant "$inbox" 'val listener = ServerSocket(0, 8, Socks5SocketFactory.TOR_HOST)'
+expect pass "the onion inbox's loopback listener"
+plant "$inbox" 'val s = Socket("127.0.0.1", 9050)'
+expect fail "a client socket in the onion inbox"
+plant "$inbox" 'val s = SSLServerSocketFactory.getDefault()'
+expect fail "a TLS listener in the onion inbox"
+plant "$inbox" 'val u = DatagramSocket()'
+expect fail "a datagram socket in the onion inbox"
+plant "$inbox" 'val a = InetAddress.getLoopbackAddress()'
+expect fail "an InetAddress in the onion inbox"
+plant "$net/OnionPost.kt" 'val listener = ServerSocket(0)'
+expect fail "a listener anywhere else in network/"
 plant 'test/java/io/islandbitcoin/foxy/network/FakeSocks.kt' 'val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())'
 expect pass "a network/ JVM test's loopback server"
 plant 'test/java/io/islandbitcoin/foxy/network/RouteClientTest.kt' 'import okhttp3.mockwebserver.MockWebServer'

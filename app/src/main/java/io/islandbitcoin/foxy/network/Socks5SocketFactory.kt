@@ -119,7 +119,7 @@ class Socks5SocketFactory(
             try {
                 super.connect(InetSocketAddress(TOR_HOST, p), timeout)
             } catch (e: IOException) {
-                throw Socks5Failure("Tor's SOCKS port $p refused the connection (${e.javaClass.simpleName})", p, e)
+                throw Socks5Failure("Tor's SOCKS port $p refused the connection (${e.javaClass.simpleName})", p, e, kind = Socks5Failure.Kind.DIAL)
             }
             val before = soTimeout
             soTimeout = if (timeout > 0) minOf(timeout, handshakeTimeoutMs) else handshakeTimeoutMs
@@ -130,7 +130,7 @@ class Socks5SocketFactory(
                 throw e
             } catch (e: IOException) {
                 closeQuietly()
-                throw Socks5Failure("the SOCKS handshake broke (${e.javaClass.simpleName})", p, e)
+                throw Socks5Failure("the SOCKS handshake broke (${e.javaClass.simpleName})", p, e, kind = Socks5Failure.Kind.BROKEN)
             }
             soTimeout = before
         }
@@ -177,7 +177,7 @@ class Socks5SocketFactory(
         val head = readExactly(input, 4, p)
         if (head[0] != VERSION) throw Socks5Failure("not a SOCKS5 reply", p)
         val code = head[1].toInt() and 0xff
-        if (code != 0) throw Socks5Failure("Tor could not open the stream: ${replyWords(code)}", p, code = code)
+        if (code != 0) throw Socks5Failure("Tor could not open the stream: ${replyWords(code)}", p, code = code, kind = Socks5Failure.Kind.UNREACHABLE)
         val rest = when (head[3].toInt()) {
             1 -> 4
             4 -> 16
@@ -192,7 +192,7 @@ class Socks5SocketFactory(
         var got = 0
         while (got < n) {
             val r = input.read(out, got, n - got)
-            if (r < 0) throw Socks5Failure("Tor closed the SOCKS connection", p)
+            if (r < 0) throw Socks5Failure("Tor closed the SOCKS connection", p, kind = Socks5Failure.Kind.BROKEN)
             got += r
         }
         return out
@@ -202,9 +202,25 @@ class Socks5SocketFactory(
 /**
  * Anything that went wrong before Tor granted the stream: no request byte has
  * been written. `port`: the SOCKS port that was dialled. `code`: Tor's reply
- * code, when it answered one.
+ * code, when it answered one. `kind`: which step failed, in OnionPost.swift's
+ * terms (its `Failure`), so a payment posted to an onion is told what iOS
+ * tells it.
  */
-class Socks5Failure(message: String, val port: Int, cause: Throwable? = null, val code: Int = 0) : IOException(message, cause)
+class Socks5Failure(message: String, val port: Int, cause: Throwable? = null, val code: Int = 0, val kind: Kind = Kind.REFUSED) : IOException(message, cause) {
+    enum class Kind {
+        /** Nothing answered on Tor's SOCKS port: iOS's `noTor`. */
+        DIAL,
+
+        /** Tor answered, but not with what SOCKS5 asks (or refused the login): `refusedBySocks`. */
+        REFUSED,
+
+        /** Tor refused the stream with a reply code ([code]): `unreachable`. */
+        UNREACHABLE,
+
+        /** The connection to Tor closed or failed mid-handshake: `broken`. */
+        BROKEN,
+    }
+}
 
 /**
  * The name, kept, and nothing looked up: OkHttp needs an address to hand the
