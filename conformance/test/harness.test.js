@@ -316,12 +316,13 @@ test('host.pushAs and o.unknown: a push after its reply, refused from too early 
     }
   }
   // and on a P3 host, an unknown action is answered as the Kotlin bridge answers it, with no violation
-  const p3 = await boot({ seed: true, tor: 'up', phase: 'P3', unknown: new Set(['shakeStart']) });
+  // (shakeStart was the example until ENG-670 made it P3; tapPayStop is the payer's, LATER and unstubbed)
+  const p3 = await boot({ seed: true, tor: 'up', phase: 'P3', unknown: new Set(['tapPayStop']) });
   try {
     await p3.settle(300);
     p3.host.violations.length = 0;
-    await assert.doesNotReject(p3.W.shakeSense(true));
-    assert.deepEqual(p3.host.answered.filter((a) => a[0] === 'shakeStart').slice(-1), [['shakeStart', null, 'Unknown action: shakeStart']]);
+    await assert.doesNotReject(p3.W.tapPayStop());
+    assert.deepEqual(p3.host.answered.filter((a) => a[0] === 'tapPayStop').slice(-1), [['tapPayStop', null, 'Unknown action: tapPayStop']]);
     assert.deepEqual(p3.host.violations, []);
   } finally {
     p3.close();

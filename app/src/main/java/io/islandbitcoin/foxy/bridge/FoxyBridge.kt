@@ -100,6 +100,16 @@ interface PageHost {
      * is not available). Main thread.
      */
     fun cardLink(): CardLink? = null
+
+    /**
+     * The phone's Bluetooth for tap to pay (ENG-670), or null on a phone with
+     * none Foxy can use, which answers every Bluetooth question `unsupported`
+     * (ENG-656). Asked once, on the main thread.
+     */
+    fun bluetooth(): io.islandbitcoin.foxy.tap.TapBluetooth? = null
+
+    /** The accelerometer's shake while [on] (shake to TAP), [onShake] on the main thread; off lets the sensor go. */
+    fun shakeSense(on: Boolean, onShake: () -> Unit) {}
 }
 
 /**
@@ -108,11 +118,11 @@ interface PageHost {
  *
  * One table: the 18 P1 actions, the 7 P2 actions ([NetBridge]: Tor's snapshot,
  * RETRY, CONTINUE WITHOUT TOR, and the three requests that leave through
- * Route), the 31 P3 actions ([SeedBridge]'s screens, adopting, wiping and
+ * Route), the 38 P3 actions ([SeedBridge]'s screens, adopting, wiping and
  * protection, and a card's owner key; the card's signed time; [CardBridge]'s
  * card session (ENG-667); [PlatformBridge]'s camera, clipboard, share, notifications,
- * biometric, the Bluetooth screen's and the receive screen's TAP's fixed
- * "unsupported" and the rest), and the `p1` stubs of conformance/contract.json
+ * biometric and the rest; [TapBridge]'s Bluetooth question, the receive
+ * screen's TAP and tap to pay's receiving side, ENG-670), and the `p1` stubs of conformance/contract.json
  * for the LATER phase ([ContractStubs], generated from it), which answer the
  * actions the page asks before anything else. A P3 action's stub is never put in the table: every P3
  * action is answered by its real handler. Every other action is answered
@@ -150,10 +160,10 @@ class FoxyBridge(
          * The P3 actions: docs/BRIDGE.md, phase P3, kind action. ENG-666 adds the
          * card's owner key ([SeedBridge.CARD_ACTIONS]) and the card's signed time
          * (`cardTime`), which need no NFC; ENG-667 the card session ([CardBridge.ACTIONS]:
-         * `cardBegin`, `cardSend`, `cardSay`, `cardAgain`, `cardEnd`) over the NFC link.
+         * `cardBegin`, `cardSend`, `cardSay`, `cardAgain`, `cardEnd`) over the NFC link; ENG-670 tap to pay's receiving side ([TapBridge.ACTIONS]).
          */
         val P3_ACTIONS: Set<String> =
-            SeedBridge.P3_ACTIONS + PlatformBridge.ACTIONS + SeedBridge.CARD_ACTIONS + "cardTime" + CardBridge.ACTIONS
+            SeedBridge.P3_ACTIONS + PlatformBridge.ACTIONS + SeedBridge.CARD_ACTIONS + "cardTime" + CardBridge.ACTIONS + TapBridge.ACTIONS
 
         /** Main frame, asset origin, nothing else (FoxyBridge.swift `answers`). */
         fun answers(isMainFrame: Boolean, origin: String?): Boolean = isMainFrame && origin == ORIGIN
@@ -176,6 +186,7 @@ class FoxyBridge(
     private val seeds = SeedBridge(seedEnvironment, seedExecutor, ::resolve, host, clock)
     private val net = NetBridge(netEnvironment, host, ::resolve)
     private val platform = PlatformBridge(host, ::resolve, seedEnvironment, seedExecutor, clock)
+    private val tap = TapBridge(host, ::resolve)
     private val cards = CardBridge(host, ::resolve)
 
     /** Whether a card session is open (the tests). */
@@ -210,14 +221,25 @@ class FoxyBridge(
 
     /**
      * The page went (its process ended, or it is loading again): what [letGo]
-     * lets go, and the tap receiver it held (FoxyBridge.swift `pageGone` →
-     * `stopTap`). Putting Foxy away is [letGo] alone, as on iOS. Main thread.
+     * lets go, and the tap receiver it held, shake to TAP and the answers owed
+     * (FoxyBridge.swift `pageGone` → `stopTap`). Putting Foxy away is [letGo]
+     * and [tapAway]. Main thread.
      */
     fun pageGone() {
         platform.pageGone()
+        tap.pageGone()
         seeds.closeScreens()
         cards.pageGone()
     }
+
+    /** Foxy's page left the screen (the activity stopped): nothing is advertised while it is away (ENG-670). Main thread. */
+    fun tapAway() = tap.away()
+
+    /** Foxy's page is in front again: what the receive screen had on the air goes back on it. Main thread. */
+    fun tapBack() = tap.back()
+
+    /** The phone came to portrait (false) or upside down (true): `_turned`. Main thread. */
+    fun turned(upsideDown: Boolean) = tap.turned(upsideDown)
 
     /** The saved seed was written or deleted: no seed screen shows words from before (L4). Main thread. */
     fun seedChanged() = seeds.closeScreens()
@@ -258,6 +280,10 @@ class FoxyBridge(
         }
         for (action in PlatformBridge.ACTIONS) {
             put(action) { id, body -> platform.handle(action, id, body) }
+        }
+        // tap to pay's receiving side, the Bluetooth question, shake to TAP, and the answer to a payment handed over (ENG-670)
+        for (action in TapBridge.ACTIONS) {
+            put(action) { id, body -> tap.handle(action, id, body) }
         }
         // a card's owner key: seed actions, on the seed executor (NativeSeedBridge.swift:402-417)
         for (action in SeedBridge.CARD_ACTIONS) {
