@@ -36,7 +36,7 @@ const DOMAINS = [
   ['platform', 'Other platform doors'],
   ['onion', 'Onion inbox and post'],
   ['nostr', 'Nostr (LATER)'],
-  ['bluetooth', 'Bluetooth tap to pay (LATER)'],
+  ['bluetooth', 'Bluetooth tap to pay'],
   ['card', 'NFC card'],
 ];
 

@@ -159,6 +159,7 @@ function makeHost(o) {
     protection: 'none', imported: false, notifiedAt: 0, receiverHeld: false,
     bluetooth: opts.bluetooth || 'unsupported', linked: false, offered: '', early: false,
     shakeArmed: false, answers: new Map(), m6: [],
+    pay: null, payLinked: false, paySent: [], payM6: JSON.stringify({ ok: true, code: 200 }),
     card: opts.card || null, cardPull: null,
     inbox: null,
   };
@@ -338,8 +339,29 @@ function makeHost(o) {
       return ['ok', null];
     },
     tapReceiveStop: () => { state.receiverHeld = false; state.linked = false; return ['ok', null]; },
-    tapPayStart: (m) => (m.now ? ['ok', null] : NO('Stopped.')),
-    tapSend: () => NO('That phone is no longer connected.'),
+    /* The payer's listen as Android's TapBridge serves it (ENG-671; FoxyBridge+Tap.swift
+     * `handleTapPayStart`): `now` answered at once; otherwise the listen before is ended
+     * ("Started again.") and this one is answered only with an offer (host.payer.link), or
+     * by tapPayStop and the page going ("Stopped."). A phone whose Bluetooth cannot listen
+     * says so as a stage, once, after the call, and the call stays open: nothing for the
+     * page to ask again (ENG-658). */
+    tapPayStart: (m) => {
+      if (m.now) { if (state.pay) state.pay.nudged = true; return ['ok', null]; }
+      endPay('Started again.');
+      state.payLinked = false;
+      return new Promise((resolve) => {
+        state.pay = { resolve, nudged: false };
+        if (state.bluetooth !== 'allowed') setTimeout(() => host.pushAs('_tap', { side: 'pay', stage: state.bluetooth }), 0);
+      });
+    },
+    /* The payment over the held link (TapBridge.kt `tapSend`): the receiver's M6 as it
+     * sealed it, which host.payer sets (state.payM6). */
+    tapSend: (m) => {
+      if (!m.body) return NO('There is nothing to hand over.');
+      if (!state.payLinked) return NO('That phone is no longer connected.');
+      state.paySent.push(m.body);
+      return [state.payM6, null];
+    },
     /* The receiving side's words over a link (TapBridge.kt): only a linked receiver
      * can send M7, M9 or M11; the payer of host.tap keeps any change at once. */
     tapChange: (m) => {
@@ -350,9 +372,9 @@ function makeHost(o) {
     tapChangeKept: () => { if (!state.changeWaiting) return NO('No change is waiting to be kept.'); state.changeWaiting = false; return ['ok', null]; },
     tapAsking: () => [state.linked ? 'ok' : 'no link', null],
     tapChangeDue: () => ['ok', null],
-    tapQuote: () => NO('That phone is no longer connected.'),
+    tapQuote: () => (state.payLinked ? ['ok', null] : NO('That phone is no longer connected.')),
     tapTerms: () => (state.linked ? ['ok', null] : NO('That phone is no longer connected.')),
-    tapPayStop: () => ['ok', null],
+    tapPayStop: () => { endPay('Stopped.'); state.payLinked = false; return ['ok', null]; },
     /* The gate's own global first, then the reply, in iOS's order (FoxyBridge+Tap.swift
      * `handleBluetoothAsk`): the first-install screen leaves only on the push. The
      * state is the phone's (o.bluetooth), "unsupported" without Bluetooth (ENG-656). */
@@ -371,6 +393,16 @@ function makeHost(o) {
     cardTime: () => CardOwner.cardTime(opts.nowMs ? opts.nowMs() : Date.now()),
   };
   host.answerers = answer;
+  /* Every `_tap` pushed through pushAs, its payload as said ({side, stage, …}). */
+  host.taps = [];
+
+  /* A listen waiting for an offer is answered with [why] and let go (TapBridge.kt `endTapPay`). */
+  function endPay(why) {
+    const p = state.pay;
+    state.pay = null;
+    if (p) p.resolve([null, why]);
+  }
+  host.endPay = endPay;
 
   /* Push into the page, as native does with evaluateJavaScript. */
   host.push = (name, arg) => {
@@ -399,6 +431,8 @@ function makeHost(o) {
       const p = check(entry.payloadSchema, arg);
       if (p.length) violate('payload', name + ': ' + p.join('; '));
     }
+    // each `_tap` as it was said, so a flow can tell the receiving side's from the paying side's (ENG-671)
+    if (name === '_tap' && arg && typeof arg === 'object') host.taps.push(Object.assign({}, arg));
     if (!more.length) return host.push(name, arg);
     // positional arguments (`_requestPaid(body, answerId, "tap")`), each the type its field gives
     const fields = Object.entries(entry.payloadSchema.fields);
@@ -439,6 +473,29 @@ function makeHost(o) {
     }),
     shake: () => { if (state.shakeArmed) host.pushAs('_tap', { side: 'receive', stage: 'shake' }); },
     gone: () => { state.linked = false; host.pushAs('_tap', { side: 'receive', stage: 'gone' }); },
+  };
+
+  /* A receiver the payer's listen hears, as Android's TapPayer tells the page of one
+   * (TapBridge.kt, TapPayer.kt; ENG-671): `nearby` (TAP TO PAY, with this screen's edge),
+   * `far`, `link` (connecting, linked, and the listen answered {payload, code}), `change`
+   * (`_tapChange`, answered with tapChangeKept), `terms` (`_tapTerms`), `asking`, and
+   * `gone` (the held link went). Needs a listen (a tapPayStart on o.bluetooth 'allowed'). */
+  host.payer = {
+    nearby: (edge) => host.pushAs('_tap', { side: 'pay', stage: 'nearby', edge }),
+    far: () => host.pushAs('_tap', { side: 'pay', stage: 'far' }),
+    link: (payload, code) => {
+      const p = state.pay;
+      if (state.bluetooth !== 'allowed' || !p) { violate('tap', 'a receiver linked with no listen'); return; }
+      host.pushAs('_tap', { side: 'pay', stage: 'connecting' });
+      host.pushAs('_tap', { side: 'pay', stage: 'linked' });
+      state.pay = null;
+      state.payLinked = true;
+      p.resolve([JSON.stringify({ payload, code }), null]);
+    },
+    change: (token) => { if (!state.payLinked) { violate('tap', 'change over no link'); return; } host.pushAs('_tapChange', token); },
+    terms: (text) => { if (!state.payLinked) { violate('tap', 'terms over no link'); return; } host.pushAs('_tapTerms', text); },
+    asking: () => host.pushAs('_tap', { side: 'pay', stage: 'asking' }),
+    gone: () => { state.payLinked = false; },
   };
 
   /* A payment posted to this phone's onion inbox (OnionInbox → DeliveryBridge.paymentArrived):

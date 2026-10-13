@@ -34,7 +34,9 @@ test('P3: the receive screen\'s TAP is answered "ok" then told "unsupported", wi
   });
   assert.equal(s.host.asked.get('tapReceiveStart'), 1, 'asked once for the whole screen');
   assert.deepEqual(s.host.answered.filter((a) => a[0] === 'tapReceiveStart'), [['tapReceiveStart', 'ok', null]]);
-  assert.deepEqual(s.host.pushes.filter((p) => p === '_tap'), ['_tap'], 'the receiver said unsupported once');
+  assert.deepEqual(s.host.taps.filter((t) => t.side === 'receive'), [{ side: 'receive', stage: 'unsupported' }], 'the receiver said unsupported once');
+  // and the paying side, listening since ENG-671 on screens that listen, said its own unsupported at most once per listen (ENG-658)
+  assert.ok(s.host.taps.filter((t) => t.side === 'pay').length <= (s.host.asked.get('tapPayStart') || 0), 'no pay-side stage without a listen');
 });
 
 test('the receive screen\'s TAP: an "Unknown action" reply shows UNKNOWN ACTION: TAPRECEIVESTART and re-arms every 1.2 s (the ENG-656 bug, as a control)', async () => {
@@ -47,5 +49,5 @@ test('the receive screen\'s TAP: an "Unknown action" reply shows UNKNOWN ACTION:
     await s.settle(REARM_WINDOW_MS);
     assert.ok(s.host.asked.get('tapReceiveStart') >= before + 2, 'asked again and again: ' + before + ' then ' + s.host.asked.get('tapReceiveStart'));
   });
-  assert.equal(s.host.pushes.includes('_tap'), false);
+  assert.equal(s.host.taps.some((t) => t.side === 'receive'), false, 'no receiver was made: nothing said on the receiving side');
 });

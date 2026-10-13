@@ -307,7 +307,7 @@ test('host.pushAs and o.unknown: a push after its reply, refused from too early 
     p2.close();
   }
   // o.unknown may not hide an action the host serves, or one with a stub
-  for (const [phase, name] of [['P3', 'tapReceiveStart'], ['P3', 'tapPayStart'], ['P3', 'nope']]) {
+  for (const [phase, name] of [['P3', 'tapReceiveStart'], ['P3', 'tapPayStart'], ['P3', 'tapPayStop'], ['P3', 'nope']]) {
     const h = await boot({ seed: true, tor: 'up', phase, unknown: new Set([name]) });
     try {
       assert.ok(h.host.violations.some((v) => v.kind === 'unknown' && v.detail.includes(name)), name + ' refused as unknown on ' + phase);
@@ -316,13 +316,15 @@ test('host.pushAs and o.unknown: a push after its reply, refused from too early 
     }
   }
   // and on a P3 host, an unknown action is answered as the Kotlin bridge answers it, with no violation
-  // (shakeStart was the example until ENG-670 made it P3; tapPayStop is the payer's, LATER and unstubbed)
-  const p3 = await boot({ seed: true, tor: 'up', phase: 'P3', unknown: new Set(['tapPayStop']) });
+  // (shakeStart was the example until ENG-670 made it P3, tapPayStop until ENG-671 did, inboxClose until
+  // ENG-672 did; nostrSend is the one left, LATER and unstubbed, asked here as the page's deliverOverNostr asks it)
+  const p3 = await boot({ seed: true, tor: 'up', phase: 'P3', unknown: new Set(['nostrSend']) });
   try {
     await p3.settle(300);
     p3.host.violations.length = 0;
-    await assert.doesNotReject(p3.W.tapPayStop());
-    assert.deepEqual(p3.host.answered.filter((a) => a[0] === 'tapPayStop').slice(-1), [['tapPayStop', null, 'Unknown action: tapPayStop']]);
+    p3.window.webkit.messageHandlers.foxy.postMessage({ action: 'nostrSend', id: 'n-p3', target: 'nprofile1x', body: 'cashuBx' });
+    await wait(50);
+    assert.deepEqual(p3.host.answered.filter((a) => a[0] === 'nostrSend').slice(-1), [['nostrSend', null, 'Unknown action: nostrSend']]);
     assert.deepEqual(p3.host.violations, []);
   } finally {
     p3.close();

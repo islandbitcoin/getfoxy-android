@@ -15,13 +15,14 @@ import java.util.concurrent.Executor
 
 /**
  * S15: the bridge serves exactly the P3 contract. Every name in the table is in
- * conformance/contract.json; the 18 P1 actions, the 7 P2 actions, the 41 P3
+ * conformance/contract.json; the 18 P1 actions, the 7 P2 actions, the 46 P3
  * actions (`bluetoothAsk`, `tapReceiveStart` and `tapReceiveStop` P3 since
  * ENG-656; `cardOwnerKey`, `cardOwnerSign` and `cardTime` since ENG-666; the card
  * session's `cardBegin`, `cardSend`, `cardSay`, `cardAgain` and `cardEnd` since
  * ENG-667; tap to pay's receiving side, `tapChange`, `tapAsking`, `tapChangeDue`,
- * `tapTerms`, `shakeStart`, `shakeStop` and `inboxAnswer`, since ENG-670;
- * `inboxOpen`, `inboxClose` and `onionPost` since ENG-672) and the `p1` stubs of the LATER
+ * `tapTerms`, `shakeStart`, `shakeStop` and `inboxAnswer`, since ENG-670; the
+ * payer's `tapPayStart`, `tapPayStop`, `tapSend`, `tapChangeKept` and `tapQuote`
+ * since ENG-671; `inboxOpen`, `inboxClose` and `onionPost` since ENG-672) and the `p1` stubs of the LATER
  * actions are all there, and no P3 action is answered by its stub (four have
  * one: the real handler wins); each LATER stub answers the contract's text or
  * error byte for byte; every P3 answer is one the contract lists; with no Tor,
@@ -78,11 +79,15 @@ class BridgeContractTest {
         val laterStubs = entries.filter { it["kind"] == "action" && it["p1"] != null && it["phase"] !in served }.map { it["name"] as String }.toSet()
         assertEquals(18, p1.size)
         assertEquals(setOf("privacy", "torRetry", "unprotected", "mintRequest", "price", "candles", "hostsKnown"), p2)
-        assertEquals(41, p3.size)
+        assertEquals(46, p3.size)
         assertTrue("bluetoothAsk is P3 (ENG-656)", "bluetoothAsk" in p3)
         assertTrue(
             "tap to pay's receiving side is P3 (ENG-670)",
             p3.containsAll(setOf("tapChange", "tapAsking", "tapChangeDue", "tapTerms", "shakeStart", "shakeStop", "inboxAnswer")),
+        )
+        assertTrue(
+            "tap to pay's paying side is P3 (ENG-671)",
+            p3.containsAll(setOf("tapPayStart", "tapPayStop", "tapSend", "tapChangeKept", "tapQuote")),
         )
         assertEquals("exactly those are the tap bridge's", TapBridge.ACTIONS, p3.intersect(TapBridge.ACTIONS))
         assertTrue("a card's owner key and its signed time are P3 (ENG-666)", p3.containsAll(setOf("cardOwnerKey", "cardOwnerSign", "cardTime")))
@@ -91,7 +96,8 @@ class BridgeContractTest {
         assertTrue("the onion inbox and post are P3 (ENG-672)", p3.containsAll(setOf("inboxOpen", "inboxClose", "inboxAnswer", "onionPost")))
         assertFalse("nostrSend is not (the ENG-672 follow-up)", "nostrSend" in p3)
         assertEquals(setOf("captured", "orbotRefresh", "orbotAccess", "seedProtection", "tapPayStart", "pasteStart", "pasteStop"), stubs)
-        assertEquals(setOf("orbotRefresh", "orbotAccess", "tapPayStart"), laterStubs)
+        // tapPayStart keeps its stub for P1 and P2 hosts; a P3 host serves it (ENG-671, ENG-658)
+        assertEquals(setOf("orbotRefresh", "orbotAccess"), laterStubs)
         assertEquals(p1, FoxyBridge.P1_ACTIONS)
         assertEquals(p2, FoxyBridge.P2_ACTIONS)
         assertEquals(p3, FoxyBridge.P3_ACTIONS)
@@ -147,6 +153,9 @@ class BridgeContractTest {
             "cardEnd" to ""","text":"Done."""",
             "tapChange" to ""","body":"cashuBx"""", "tapAsking" to "", "tapChangeDue" to "", "tapTerms" to ""","body":"{}"""",
             "shakeStart" to "", "shakeStop" to "", "inboxAnswer" to ""","answer":"00112233445566778899aabbccddeeff","status":200,"text":""""",
+            // the payer's (ENG-671): a listen is answered only by an offer, so TAP TO PAY, which is answered at once
+            "tapPayStart" to ""","now":true""", "tapPayStop" to "", "tapSend" to ""","body":"cashuBx"""",
+            "tapChangeKept" to ""","kept":true""", "tapQuote" to ""","body":"{}"""",
             "inboxOpen" to "", "inboxClose" to ""","hold":30""",
             "onionPost" to ""","url":"http://abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwd.onion/0123456789abcdef0123456789abcdef","body":"{}","timeout":30000""",
         )
@@ -159,6 +168,7 @@ class BridgeContractTest {
             "seedCandidateForget" to "", "tapReceiveStart" to ""","payload":"not an offer"""",
             "cardSend" to ""","apdu":"zz"""", "cardBegin" to ""","text":5""", "cardEnd" to ""","error":"x\u0000y"""",
             "tapChange" to ""","body":""""", "inboxAnswer" to ""","answer":5,"status":"x"""",
+            "tapSend" to ""","body":""""", "tapChangeKept" to ""","kept":"yes"""", "tapQuote" to ""","body":5""",
             "cardOwnerKey" to ""","key":"04"""", "cardOwnerSign" to ""","key":"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","label":"lock","nonce":"000102030405060708090a0b0c0d0e0f","value":""""",
             "inboxClose" to ""","hold":"forever"""", "onionPost" to ""","url":"https://mint.example.com/v1/swap","body":""""",
         )
@@ -218,7 +228,7 @@ class BridgeContractTest {
     @Test
     fun eachLaterStubAnswersTheContractsTextOrErrorExactly() {
         val stubs = entries.filter { it["kind"] == "action" && it["p1"] != null && it["phase"] !in served }
-        assertEquals(3, stubs.size)
+        assertEquals(2, stubs.size)
         for ((n, e) in stubs.withIndex()) {
             val name = e["name"] as String
             @Suppress("UNCHECKED_CAST")
@@ -236,18 +246,16 @@ class BridgeContractTest {
         // and tapReceiveStart and tapReceiveStop are P3, answered as an iPhone without Bluetooth answers (TapReceiveTest);
         // and in ENG-666: cardOwnerKey, cardOwnerSign and cardTime are P3, answered as iOS answers them (CardBridgeTest);
         // and in ENG-667: the card session (cardBegin, cardSend, cardSay, cardAgain, cardEnd) is P3 (CardSessionTest);
-        // and in ENG-670: tap to pay's receiving side is P3 (TapBridgeTest), the payer's (ENG-671) is still unknown;
-        // and in ENG-672: inboxOpen, inboxClose and onionPost are P3 (DeliveryBridgeTest), nostrSend stays.
+        // and in ENG-670: tap to pay's receiving side is P3 (TapBridgeTest);
+        // and in ENG-671: the payer's side is P3 too (TapPayBridgeTest);
+        // and in ENG-672: inboxOpen, inboxClose and onionPost are P3 (DeliveryBridgeTest): what is left is nostrSend.
         // Named one by one, so a later action that stops being unknown has to be taken off here by hand.
         val later = entries.filter { it["kind"] == "action" && it["phase"] !in served && it["p1"] == null }.map { it["name"] as String }
         assertEquals(
-            setOf(
-                "nostrSend",
-                "tapSend", "tapChangeKept", "tapQuote", "tapPayStop",
-            ),
+            setOf("nostrSend"),
             later.toSet(),
         )
-        assertEquals(5, later.size)
+        assertEquals(1, later.size)
         assertTrue(later.contains("nostrSend"))
         for (name in listOf("inboxOpen", "inboxClose", "inboxAnswer", "onionPost")) assertFalse("$name is no longer unknown", later.contains(name))
         assertFalse("bluetoothAsk is no longer unknown", later.contains("bluetoothAsk"))
@@ -256,6 +264,9 @@ class BridgeContractTest {
         for (name in listOf("cardOwnerKey", "cardOwnerSign", "cardTime")) assertFalse("$name is no longer unknown", later.contains(name))
         for (name in CardBridge.ACTIONS) assertFalse("$name is no longer unknown (ENG-667)", later.contains(name))
         for (name in TapBridge.ACTIONS) assertFalse("$name is no longer unknown", later.contains(name))
+        for (name in listOf("tapPayStart", "tapPayStop", "tapSend", "tapChangeKept", "tapQuote")) {
+            assertFalse("$name is no longer unknown (ENG-671)", later.contains(name))
+        }
         assertTrue(later.none { it in FoxyBridge.P3_ACTIONS })
         for (name in later) {
             host.evaluated.clear()

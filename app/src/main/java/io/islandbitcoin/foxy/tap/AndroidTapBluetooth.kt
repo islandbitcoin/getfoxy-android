@@ -73,15 +73,59 @@ class AndroidTapBluetooth(
         ::granted,
     )
 
+    /** The receiver's and the payer's together: the first-install APPROVE and the receiver's TAP ask both in one question. */
     override fun ask(done: (Boolean) -> Unit) {
-        if (permitted()) return done(true)
-        askPermissions(needed) { answer ->
+        if (permitted() && scanPermitted()) return done(true)
+        askPermissions(BluetoothAnswer.askedAtApprove(Build.VERSION.SDK_INT)) { answer ->
             refusal.answered(answer)
+            scanRefusal.answered(answer)
             done(permitted())
         }
     }
 
     override fun refused(): Boolean = refusal.refused()
+
+    // MARK: the payer (ENG-671)
+
+    override val pays: Boolean = BluetoothAnswer.pays(Build.VERSION.SDK_INT)
+
+    override val scans: Boolean
+        get() = pays && bt?.bluetoothLeScanner != null
+
+    private val scanNeeded = BluetoothAnswer.scanPermissions(Build.VERSION.SDK_INT)
+
+    private fun scanGranted(): Boolean = scanNeeded.all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+
+    override fun scanPermitted(): Boolean = scanGranted().also { if (it) scanRefusal.seenGranted() }
+
+    private val scanRefusal = BluetoothRefusal(
+        object : BluetoothRefusal.Store {
+            override fun get() = prefs.getBoolean(SCAN_REFUSED, false)
+            override fun put(refused: Boolean) = prefs.edit().putBoolean(SCAN_REFUSED, refused).apply()
+            override fun clear() = prefs.edit().remove(SCAN_REFUSED).apply()
+        },
+        ::scanGranted,
+    )
+
+    override fun askScan(done: (Boolean) -> Unit) {
+        if (scanPermitted()) return done(true)
+        askPermissions(scanNeeded) { answer ->
+            scanRefusal.answered(answer)
+            done(scanPermitted())
+        }
+    }
+
+    override fun scanRefused(): Boolean = scanRefusal.refused()
+
+    override fun central(payer: TapPayer): TapCentral? {
+        // the payer runs from API 31 only (BluetoothAnswer.pays): onServiceChanged, which brings the card down, is 31+ too
+        if (Build.VERSION.SDK_INT < BluetoothAnswer.PAYER_SDK) return null
+        val m = manager ?: return null
+        val a = bt ?: return null
+        if (!scanPermitted()) return null
+        val scanner = a.bluetoothLeScanner ?: return null
+        return AndroidTapCentral(context, m, a, scanner, payer, main)
+    }
 
     override fun power(): TapBluetooth.Power = when (bt?.state ?: BluetoothAdapter.STATE_OFF) {
         BluetoothAdapter.STATE_ON -> TapBluetooth.Power.ON
@@ -126,6 +170,7 @@ class AndroidTapBluetooth(
     companion object {
         const val PREFS = "foxy.tap"
         const val REFUSED = "bluetoothRefused"
+        const val SCAN_REFUSED = "bluetoothScanRefused"
     }
 
     /** The main looper as a [TapClock]. */

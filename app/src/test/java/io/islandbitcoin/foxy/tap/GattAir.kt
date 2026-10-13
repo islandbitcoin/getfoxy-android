@@ -3,12 +3,18 @@ package io.islandbitcoin.foxy.tap
 import java.util.UUID
 
 /**
- * Bluetooth as [TapReceiver] sees it, with no radio: whether there is an
- * adapter, whether it advertises, the permissions and the system's question,
- * the power and its changes, and a [FakePeripheral] each time a GATT server is
- * opened. Everything happens on [clock]'s thread, as on the main looper.
+ * Bluetooth as [TapReceiver] and [TapPayer] see it, with no radio: whether there
+ * is an adapter, whether it advertises and scans, the permissions and the
+ * system's question, the power and its changes, a [FakePeripheral] each time a
+ * GATT server is opened, and a central ([centralFor]) each time a payer asks for
+ * one. Everything happens on [clock]'s thread, as on the main looper; [pending]
+ * may be shared by several phones on one air.
  */
-class FakeBluetooth(override val clock: FakeClock = FakeClock()) : TapBluetooth {
+class FakeBluetooth(
+    override val clock: FakeClock = FakeClock(),
+    /** Every peripheral's callbacks, carried across by [GattAir.settle]. */
+    val pending: ArrayDeque<() -> Unit> = ArrayDeque(),
+) : TapBluetooth {
     override var adapter = true
     override var advertises = true
     var granted = true
@@ -22,8 +28,54 @@ class FakeBluetooth(override val clock: FakeClock = FakeClock()) : TapBluetooth 
     val opened = ArrayList<FakePeripheral>()
     var openFails = false
 
-    /** Every peripheral's callbacks, carried across by [GattAir.settle]. */
-    val pending = ArrayDeque<() -> Unit>()
+    // the payer's side (ENG-671)
+    override var scans = true
+
+    /** False: an API 28-30 phone, where the payer does not run (BluetoothAnswer.pays). */
+    override var pays = true
+    var scanGranted = true
+
+    /** What the payer's own question answers: true, false, or null for one still on screen. */
+    var grantScanOnAsk: Boolean? = true
+    var scanAsks = 0
+    private val scanWaiting = ArrayList<(Boolean) -> Unit>()
+    val keptScan = MemoryRefusal()
+    private val scanRefusal = BluetoothRefusal(keptScan) { scanGranted }
+
+    /** What makes the payer's central; null answers as Android would not give one. */
+    var centralFor: ((TapPayer) -> TapCentral?)? = null
+    var centralsMade = 0
+
+    override fun scanPermitted() = scanGranted.also { if (it) scanRefusal.seenGranted() }
+
+    override fun askScan(done: (Boolean) -> Unit) {
+        scanAsks++
+        val answer = grantScanOnAsk
+        if (answer == null) {
+            scanWaiting.add(done)
+            return
+        }
+        scanGranted = answer
+        scanRefusal.answered(answer)
+        done(answer)
+    }
+
+    override fun scanRefused() = scanRefusal.refused()
+
+    /** The payer's question on screen is answered now. */
+    fun answerScan(grant: Boolean) {
+        scanGranted = grant
+        scanRefusal.answered(grant)
+        val w = scanWaiting.toList()
+        scanWaiting.clear()
+        w.forEach { it(grant) }
+    }
+
+    override fun central(payer: TapPayer): TapCentral? {
+        val c = centralFor?.invoke(payer) ?: return null
+        centralsMade++
+        return c
+    }
 
     /** Where a refusal is kept (AndroidTapBluetooth: its preferences); the logic is the app's own [BluetoothRefusal]. */
     val kept = MemoryRefusal()
@@ -40,6 +92,11 @@ class FakeBluetooth(override val clock: FakeClock = FakeClock()) : TapBluetooth 
         }
         granted = answer
         refusal.answered(answer)
+        // AndroidTapBluetooth.ask asks the payer's permissions in the same question (BluetoothAnswer.askedAtApprove)
+        if (!scanGranted) {
+            scanGranted = answer
+            scanRefusal.answered(answer)
+        }
         done(answer)
     }
 
@@ -62,6 +119,10 @@ class FakeBluetooth(override val clock: FakeClock = FakeClock()) : TapBluetooth 
     fun answer(grant: Boolean) {
         granted = grant
         refusal.answered(grant)
+        if (!scanGranted) {
+            scanGranted = grant
+            scanRefusal.answered(grant)
+        }
         val w = waiting.toList()
         waiting.clear()
         w.forEach { it(grant) }
@@ -107,6 +168,12 @@ class MemoryRefusal : BluetoothRefusal.Store {
  * and refuses the next until it says the last was sent, and the centrals
  * ([FakeCentral]) connected to it hear what it notifies.
  */
+/** A central at the ATT level, as [FakePeripheral] reaches it: what it notifies, and the answers to its requests. */
+interface AttCentral {
+    fun notified(door: UUID, value: ByteArray)
+    fun answered(requestId: Int, status: Int, offset: Int, value: ByteArray?)
+}
+
 class FakePeripheral(val server: TapGattServer, private val pending: ArrayDeque<() -> Unit>) : TapPeripheral {
     var layout: TapGatt.Layout? = null
     var addOk = true
@@ -116,7 +183,7 @@ class FakePeripheral(val server: TapGattServer, private val pending: ArrayDeque<
     var stopCalls = 0
     var advertiseFails: Int? = null
     var closed = false
-    val centrals = LinkedHashMap<String, FakeCentral>()
+    val centrals = LinkedHashMap<String, AttCentral>()
 
     /** Notifications the stack has not said it sent: it takes no other meanwhile. */
     var inFlight = 0
@@ -213,7 +280,7 @@ class FakeCentral(
     private val away: () -> Boolean = { false },
     /** Writes go to this door instead of the in door (a payer at the wrong door). */
     private val writeDoor: () -> UUID? = { null },
-) : TapPayerLink.Radio {
+) : TapPayerLink.Radio, AttCentral {
     lateinit var payer: TapPayerLink
     private val p: FakePeripheral get() = bluetooth.peripheral
     private val server: TapGattServer get() = p.server
@@ -259,11 +326,11 @@ class FakeCentral(
         return r
     }
 
-    fun answered(requestId: Int, status: Int, offset: Int, value: ByteArray?) {
+    override fun answered(requestId: Int, status: Int, offset: Int, value: ByteArray?) {
         waiting.remove(requestId)?.invoke(status, offset, value)
     }
 
-    fun notified(door: UUID, value: ByteArray) {
+    override fun notified(door: UUID, value: ByteArray) {
         if (!isConnected) return
         val layout = p.layout ?: return
         when (door) {
