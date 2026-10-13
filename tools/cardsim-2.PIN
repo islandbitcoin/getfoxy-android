@@ -1,0 +1,3 @@
+repo=https://github.com/lnflash/cashu-javacard
+commit=bced1c41726ef23e733cb228fd46f6fba568467d
+test=CardSim2EndToEndTest
