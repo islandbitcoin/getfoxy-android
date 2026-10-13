@@ -35,6 +35,10 @@ class ReleaseBuildTest {
         return f
     }
 
+    // the version app/build.gradle.kts sets (defaultConfig), handed over by the test task
+    private val versionCode by lazy { System.getProperty("foxy.versionCode")?.takeIf { it != "null" } ?: error("foxy.versionCode is not set") }
+    private val versionName by lazy { System.getProperty("foxy.versionName")?.takeIf { it != "null" } ?: error("foxy.versionName is not set") }
+
     private val kotlinClasses by lazy { dir("foxy.releaseClasses") }
     private val javaClasses by lazy { dir("foxy.releaseJavaClasses") }
 
@@ -93,12 +97,12 @@ class ReleaseBuildTest {
     private fun foxy(): List<Disassembly> = release.filter { it.className.startsWith("io.islandbitcoin.foxy.") }
 
     @Test
-    fun theReleaseIsVersionZeroOneZeroWithNoDebugFlag() {
+    fun theReleaseCarriesTheBuildFilesVersionWithNoDebugFlag() {
         val text = javap("-constants", "-cp", javaClasses.path, "io.islandbitcoin.foxy.BuildConfig")
         assertTrue(text, text.contains("public static final boolean DEBUG = false;"))
         assertTrue(text, text.contains("public static final java.lang.String BUILD_TYPE = \"release\";"))
-        assertTrue(text, text.contains("public static final int VERSION_CODE = 1;"))
-        assertTrue(text, text.contains("public static final java.lang.String VERSION_NAME = \"0.1.0\";"))
+        assertTrue(text, text.contains("public static final int VERSION_CODE = $versionCode;"))
+        assertTrue(text, text.contains("public static final java.lang.String VERSION_NAME = \"$versionName\";"))
         assertTrue(text, text.contains("public static final java.lang.String APPLICATION_ID = \"io.islandbitcoin.foxy\";"))
     }
 
@@ -110,8 +114,8 @@ class ReleaseBuildTest {
         assertEquals("debug keeps API 28 for the ENG-654 work", "28", usesSdk(debug).getAttributeNS(android, "minSdkVersion"))
         for (m in listOf(release, debug)) {
             assertEquals("36", usesSdk(m).getAttributeNS(android, "targetSdkVersion"))
-            assertEquals("1", m.getAttributeNS(android, "versionCode"))
-            assertEquals("0.1.0", m.getAttributeNS(android, "versionName"))
+            assertEquals(versionCode, m.getAttributeNS(android, "versionCode"))
+            assertEquals(versionName, m.getAttributeNS(android, "versionName"))
             assertEquals("io.islandbitcoin.foxy", m.getAttribute("package"))
         }
     }

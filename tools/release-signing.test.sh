@@ -86,6 +86,8 @@ failed "no password"; has "no password" "the macOS Keychain has no foxy-android-
 # a wrong store password, a wrong key password, an alias that is not there, a path that is not a file
 gradle "${store[@]}" FOXY_UPLOAD_STORE_PASSWORD=wrong-password FOXY_UPLOAD_KEY_PASSWORD="$password" -- :app:verifyReleaseSigning
 failed "wrong store password"; has "wrong store password" "does not open with its store password"; lacks "wrong store password" "$password"
+gradle "${store[@]}" FOXY_UPLOAD_STORE_PASSWORD="$password" FOXY_UPLOAD_KEY_PASSWORD=wrong-password -- :app:verifyReleaseSigning
+failed "wrong key password"; has "wrong key password" "does not open with its key password"; lacks "wrong key password" "$password"
 gradle FOXY_UPLOAD_STORE_FILE="$tmp/upload.p12" FOXY_UPLOAD_KEY_ALIAS=nobody "${secrets[@]}" -- :app:verifyReleaseSigning
 failed "wrong alias"; has "wrong alias" "has no key under the alias nobody"
 gradle FOXY_UPLOAD_STORE_FILE="$tmp/nothing.p12" FOXY_UPLOAD_KEY_ALIAS=throwaway "${secrets[@]}" -- :app:verifyReleaseSigning
@@ -98,7 +100,7 @@ ok "no signing"; keychainNotRead "no signing"
 # the bundle signed with the key: its signer is the throwaway certificate
 rm -f "$aab"
 gradle "${store[@]}" "${secrets[@]}" -- :app:bundleRelease
-ok "signed bundle"; lacks "signed bundle" "UNSIGNED"; keychainNotRead "signed bundle"
+ok "signed bundle"; lacks "signed bundle" "UNSIGNED"; lacks "signed bundle" "$password"; keychainNotRead "signed bundle"
 if [ -f "$aab" ]; then
   mkdir -p "$tmp/aab"
   (cd "$tmp/aab" && unzip -q -o "$aab" 'META-INF/*')

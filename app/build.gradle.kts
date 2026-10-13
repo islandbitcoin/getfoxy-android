@@ -246,6 +246,9 @@ android {
                 layout.buildDirectory.file("intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml")
                     .get().asFile.absolutePath)
             it.systemProperty("foxy.res", file("src/main/res").absolutePath)
+            // ReleaseBuildTest: the version the builds must carry, from defaultConfig above, so a bump needs no test edit
+            it.systemProperty("foxy.versionCode", defaultConfig.versionCode.toString())
+            it.systemProperty("foxy.versionName", defaultConfig.versionName.toString())
             // ReleaseBuildTest: the release build's own classes, and the source sets that say what is debug only
             it.systemProperty("foxy.releaseClasses", layout.buildDirectory.dir("tmp/kotlin-classes/release").get().asFile.absolutePath)
             it.systemProperty("foxy.releaseJavaClasses",
