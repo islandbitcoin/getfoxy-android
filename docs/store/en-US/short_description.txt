@@ -1,0 +1,1 @@
+Bitcoin wallet for Lightning and Cashu ecash, with Tor built in.
