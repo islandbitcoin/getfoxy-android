@@ -265,10 +265,14 @@ allowlisted, plus the WebRTC removal in every frame.
   `Foxy/Bridge/FoxyBridge+Flashcard.swift` and `Foxy/Flashcard/CardGate.swift`,
   `CardLink.swift` (`bridge/CardBridge.kt`, `flashcard/CardGate.kt`,
   `flashcard/NfcCardLink.kt`). One session at a time; every command is read by
-  the gate before it is carried: the SELECT of Foxy's applet by its whole name
-  (`F0 46 4F 58 59 43 41 52 44 01`) first, then only that applet's 31
-  instructions under class `B0` (SET_TAG `52` is not one, as upstream), and
-  the applet chosen again after a card comes back. Android has no system NFC
+  the gate before it is carried: the SELECT of a card's applet by its whole
+  name first, then only the applet's instructions under class `B0` (SET_TAG
+  `52` is not one, as upstream), and the applet chosen again after a card
+  comes back. Two names are chosen (ENG-682): card protocol 2.0's
+  (`F0 43 41 53 48 55 43 41 52 44 01`, CASHUCARD) and Foxy 1.x's
+  (`F0 46 4F 58 59 43 41 52 44 01`, the pinned page's `CARD_AID`, dropped at
+  the v0.1.3 re-pin); the instructions are iOS's 31 and 2.0's REFRESH `53`
+  (ANDROID-MAPPING.md, "Card protocol 2.0"). Android has no system NFC
   sheet: Foxy draws its own over the page (`flashcard/CardSheetView.kt`, "Ready
   to Scan", the page's line, Cancel; a tick and a word or the reason in red),
   and reads the card in reader mode on the resumed activity only
@@ -1369,7 +1373,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Shape:** page → native, action: `{ action: "cardSend", id, apdu }`
 - **Payload:** `apdu`: string
 - **Called from:** `Web/foxy-wallet.js:25491`
-- **Native:** One APDU (hex) and its answer. Only SELECT of Foxy's own applet AID (F0 46 4F 58 59 43 41 52 44 01), then only that applet's 31 instructions (CardGate.instructions, CLA B0): 01, 10, 11, 13-1A, 20, 22-26, 30-32, 34-37, 40-45, 51. 1A (GET_DLEQ, card software 1.20) reads back the mint's NUT-12 proof a card keeps with an unspent piece, two places per command; 30 with P1 = 1 (LOAD_PROOF) writes a piece with its proof, 96 more bytes of data (e, s, r), still a short APDU. 12, 33 and 50, which the applet has, stay out. Never logged: one carries the PIN. Android (ENG-667): flashcard/CardGate.kt is CardGate.swift's 31 byte for byte (CardGateTest also holds it to the page's CARD_INS, both ways, and tries every class, instruction and P1/P2). SET_TAG (52, card software 1.19) is not carried, as CardGate.swift at the pin does not carry it, though the card's FOXY-CARD-SPEC.md section 7 (docs/FOXY-CARD-SPEC.md:1070-1072) says a phone's gate should. That section's list is stale against iOS in ten more: 17, 18, 19, 22-26, 35 and 51 (RESET_CARD) are carried here and by CardGate.swift, and the page sends them, but section 7 does not name them. All eleven are for getfoxy/iOS and getfoxy/card to settle together; Android follows iOS. The command is carried over IsoDep (10 s for an answer) or the simulator's "apdu HEX"; an answer under two bytes, a dropped card or the simulator's "gone" is "the tag was lost" with a `_card` lost push, and nothing more is carried until cardAgain finds a card and the applet is chosen again.
+- **Native:** One APDU (hex) and its answer. Only SELECT of a card applet by its whole AID, then only the applet's instructions (CLA B0). iOS at the pin: Foxy's own applet (F0 46 4F 58 59 43 41 52 44 01) and its 31 instructions (CardGate.instructions): 01, 10, 11, 13-1A, 20, 22-26, 30-32, 34-37, 40-45, 51. Android (ENG-682) also carries card protocol 2.0, the one Flash and Foxy share (lnflash/cashu-javacard DECISIONS.md D19, D25): the SELECT of F0 43 41 53 48 55 43 41 52 44 01 (CASHUCARD), never its package's name alone (which reaches the opener on a chip), and REFRESH (53, the owner's proof over a block header), 32 instructions in all; the page at the pin chooses FOXYCARD and does not send 53, and the v0.1.3 re-pin to a 2.0 page drops FOXYCARD. 1A (GET_DLEQ, card software 1.20) reads back the mint's NUT-12 proof a card keeps with an unspent piece, two places per command; 30 with P1 = 1 (LOAD_PROOF) writes a piece with its proof, 96 more bytes of data (e, s, r), still a short APDU. 12, 33 and 50, which the applet has, stay out. Never logged: one carries the PIN. Android (ENG-667): flashcard/CardGate.kt is CardGate.swift's 31 byte for byte and 53 (CardGateTest also holds it to the page's CARD_INS, every one the page sends and 53 besides, and tries every class, instruction and P1/P2). SET_TAG (52, card software 1.19) is not carried, as CardGate.swift at the pin does not carry it, though the card's FOXY-CARD-SPEC.md section 7 (docs/FOXY-CARD-SPEC.md:1070-1072) says a phone's gate should. That section's list is stale against iOS in ten more: 17, 18, 19, 22-26, 35 and 51 (RESET_CARD) are carried here and by CardGate.swift, and the page sends them, but section 7 does not name them. All eleven are for getfoxy/iOS and getfoxy/card to settle together; Android follows iOS. The command is carried over IsoDep (10 s for an answer) or the simulator's "apdu HEX"; an answer under two bytes, a dropped card or the simulator's "gone" is "the tag was lost" with a `_card` lost push, and nothing more is carried until cardAgain finds a card and the applet is chosen again.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — text (the response APDU, hex)
   The text is the response APDU, hex.
 - **Errors:** "That is not a command for a card."; "That is not a command Foxy sends to a card."; "<CardLinkError words>"

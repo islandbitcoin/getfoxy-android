@@ -29,7 +29,7 @@ dialog, to continue without Tor for the session.
 | `tools/check-no-network.sh` | fail if anything under `app/src` can reach the network other than through `network/` (with its self-test, `tools/check-no-network.test.sh`) |
 | `tools/leak-test.sh`, `tools/leak-check.js` | the P2 leak test: an emulator capture through each transport, and the analysis that holds every flow of the app's to Tor (with its tests, `tools/leak-check.test.js`) |
 | `tools/cdp-eval.js`, `tools/real-money.js`, `tools/fake-invoice.js` | drive the page of a debug build over WebView debugging; the money rules of a leg on a real mint (the person's go, 100 sats or less, the person's own invoice: docs/DEVICE-TESTS.md "Real money"); an invoice that pays no one, for the scanner check only, never paid |
-| `tools/cardsim-test.sh`, `tools/cardsim.PIN` | the card session end to end: getfoxy/card's applet at the pinned commit, built with that repository's own tooling and run in jCardSim, driven through the bridge and the debug build's simulator link (`CardSimEndToEndTest`) |
+| `tools/cardsim-test.sh`, `tools/cardsim.PIN`, `tools/cardsim-2.PIN` | the card session end to end: a card applet at a pinned commit, built with its repository's own tooling and run in jCardSim, driven through the bridge and the debug build's simulator link; getfoxy/card's Foxy 1.x applet (`CardSimEndToEndTest`) and lnflash/cashu-javacard's card protocol 2.0 applet (`CardSim2EndToEndTest`, ENG-682) |
 | `docs/DEVICE-TESTS.md` | what is checked on a phone: the instrumented tests and the checks by hand |
 | `docs/RELEASE.md` | the Play internal-testing release: the upload key (read from outside the repository), R8 off, what a release leaves out, the Play Console steps, the Data safety answers and the checklist |
 | `docs/PRIVACY.md` | the public privacy policy (the URL Play links) |
@@ -55,6 +55,8 @@ tools/check-no-network.sh && tools/check-no-network.test.sh
 tools/release-signing.test.sh
 # the card session against getfoxy/card's applet in jCardSim (JDK 17 and Maven; tools/cardsim.PIN)
 tools/cardsim-test.sh [path/to/getfoxy-card-clone]
+# and against card protocol 2.0, lnflash/cashu-javacard's applet (tools/cardsim-2.PIN)
+tools/cardsim-test.sh --pin tools/cardsim-2.PIN [path/to/cashu-javacard-clone]
 # on a phone (docs/DEVICE-TESTS.md)
 ./gradlew connectedDebugAndroidTest
 ```
