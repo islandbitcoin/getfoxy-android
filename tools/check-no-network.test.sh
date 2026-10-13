@@ -6,7 +6,8 @@
 # exceptions (OkHttp in network/, the SOCKS factory's socket and placeholder
 # address, the onion inbox's loopback listener, the network/ JVM tests' loopback servers, the net-block test's
 # listener, a page script's `new WebSocket(`, the debug card simulator link on
-# loopback and the flashcard/ JVM tests' card servers), must pass.
+# loopback, the flashcard/ JVM tests' card servers, and the relay WebSocket in
+# network/RouteSocket.kt), must pass.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -138,6 +139,36 @@ plant 'test/java/io/islandbitcoin/foxy/bridge/X.kt' 'val server = ServerSocket(0
 expect fail "a server in a JVM test outside network/"
 plant 'test/java/io/islandbitcoin/foxy/network/X.kt' 'val a = InetAddress.getByName("example.com")'
 expect fail "a lookup in a network/ JVM test"
+
+# ENG-677: a WebSocket in network/RouteSocket.kt only (Nostr relays, over Tor)
+relay="$net/RouteSocket.kt"
+plant "$relay" 'val socket = client.newWebSocket(request, object : WebSocketListener() {'
+expect pass "the relay WebSocket in network/RouteSocket.kt"
+plant "$relay" 'import okhttp3.WebSocket'
+expect pass "OkHttp's WebSocket imported in network/RouteSocket.kt"
+plant "$net/Other.kt" 'val socket = client.newWebSocket(request, listener)'
+expect fail "a WebSocket elsewhere in network/"
+plant "$net/OnionPost.kt" 'import okhttp3.WebSocketListener'
+expect fail "a WebSocket listener elsewhere in network/"
+plant 'main/java/io/islandbitcoin/foxy/nostr/NostrInbox.kt' 'import okhttp3.WebSocket'
+expect fail "OkHttp's WebSocket in nostr/"
+plant 'main/java/io/islandbitcoin/foxy/nostr/X.kt' 'val c = java.net.http.HttpClient.newHttpClient().newWebSocketBuilder()'
+expect fail "the JDK's WebSocket in nostr/"
+plant 'main/java/io/islandbitcoin/foxy/nostr/X.kt' 'val s: WebSocket = open()'
+expect fail "a WebSocket held outside network/"
+plant 'main/java/io/islandbitcoin/foxy/nostr/X.kt' 'import org.java_websocket.client.WebSocketClient'
+expect fail "another WebSocket library"
+plant 'main/java/io/islandbitcoin/foxy/nostr/X.kt' ' * every socket a WebSocket over Tor (RouteSocket)'
+expect pass "a comment that names a WebSocket"
+plant 'main/java/io/islandbitcoin/foxy/nostr/X.kt' 'val s = open() // a WebSocket'
+expect fail "code with a trailing comment naming a WebSocket is still code"
+plant 'main/java/io/islandbitcoin/foxy/x/X.kt' '// main/java/io/islandbitcoin/foxy/network/RouteSocket.kt
+val socket = client.newWebSocket(request, listener)'
+expect fail "a file that names RouteSocket.kt's path is not excused"
+plant 'test/java/io/islandbitcoin/foxy/network/RouteSocketTest.kt' 'val server = MockWebServer().apply { enqueue(MockResponse().withWebSocketUpgrade(listener)) }'
+expect pass "a network/ JVM test's WebSocket server"
+plant 'test/java/io/islandbitcoin/foxy/nostr/X.kt' 'val socket = OkHttpClient().newWebSocket(request, listener)'
+expect fail "a WebSocket in a JVM test outside network/"
 
 # ENG-667: the card simulator link, debug builds only, loopback only
 sim='debug/java/io/islandbitcoin/foxy/flashcard/SimCardLink.kt'

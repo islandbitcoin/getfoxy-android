@@ -1835,7 +1835,7 @@
         "No onion address: Tor is not ready."
       ]
     },
-    "behaviour": "An ephemeral v3 onion address (key made and discarded by Tor) forwarding to a 127.0.0.1 listener, plus a Nostr nprofile listening on up to four relays over Tor, for the payment request on screen. A spare is kept warm. Android (ENG-672): DeliveryBridge.inboxOpen, a port of handleInboxOpen: the open inbox, else the warm spare handed over (and another started), else a new OnionInbox (network/OnionInbox.kt) on a 127.0.0.1 listener with ADD_ONION NEW:ED25519-V3 Flags=DiscardPK,Detach Port=80,127.0.0.1:<port> through tor-android's control link (TorMachine.addOnion; null unless Tor is up). The answer is {\"onion\"} alone: the Nostr half is LATER (ENG-672 follow-up), and the page takes an answer without nostr as it takes an iPhone whose relays would not listen. While Foxy is put away no address is made and the answer is \"No onion address: Tor is not ready.\"",
+    "behaviour": "An ephemeral v3 onion address (key made and discarded by Tor) forwarding to a 127.0.0.1 listener, plus a Nostr nprofile listening on up to four relays over Tor, for the payment request on screen. A spare is kept warm. Android (ENG-672): DeliveryBridge.inboxOpen, a port of handleInboxOpen: the open inbox, else the warm spare handed over (and another started), else a new OnionInbox (network/OnionInbox.kt) on a 127.0.0.1 listener with ADD_ONION NEW:ED25519-V3 Flags=DiscardPK,Detach Port=80,127.0.0.1:<port> through tor-android's control link (TorMachine.addOnion; null unless Tor is up). Android (ENG-677): the same request is also paid to a Nostr key made for it alone (nostr/NostrInbox.kt, a port of NostrInbox.swift and openNostrInbox): the key listening on the four fallback relays over Tor, each a WebSocket on its own circuit (network/RouteSocket.kt) asking [\"REQ\",<sub>,{kinds:[1059],#p:[key],since: now - 2 days - 1 h,limit:64}]; the answer is {\"onion\",\"nostr\"} with the nprofile naming the key and those relays, the open key kept while a relay listens, a fresh one otherwise, and {\"onion\"} alone when no relay would listen (as an iPhone answers). A gift wrap from a relay is opened and checked as NIP-59 asks (the wrap's and the seal's signatures over recomputed ids, the rumor's author the seal's) and each wrap taken once. While Foxy is put away no address is made and the answer is \"No onion address: Tor is not ready.\"",
     "pageRef": [
       "Web/foxy-wallet.js:22514@'inboxOpen'"
     ],
@@ -1845,7 +1845,11 @@
       "Foxy/Bridge/FoxyBridge+Delivery.swift:61-73@answerInboxOpen",
       "Foxy/Bridge/FoxyBridge+Delivery.swift:31-50@warmSpare",
       "Foxy/Network/OnionInbox.swift:71-136@func open",
-      "Foxy/Tor/TorService.swift:1775-1789@ADD_ONION"
+      "Foxy/Tor/TorService.swift:1775-1789@ADD_ONION",
+      "Foxy/Bridge/FoxyBridge+Delivery.swift:77-96@openNostrInbox",
+      "Foxy/Nostr/NostrInbox.swift:77-133@func open",
+      "Foxy/Nostr/NostrInbox.swift:152-183@func took",
+      "Foxy/Nostr/NostrEvent.swift:85-95@static func unwrap"
     ]
   },
   {
@@ -1869,7 +1873,7 @@
       ],
       "errors": []
     },
-    "behaviour": "End the address (after `hold` seconds, 0..180, if a payment may be on its way) and the Nostr inbox. Android (ENG-672): DeliveryBridge.inboxClose: hold clamped to 0..180 s (a number only), the retiring inbox closed (DEL_ONION) when the hold ends, then the warm spare restarted. Putting Foxy away closes every inbox (the one on screen, the spare and the retiring ones) and drops their answers before Tor parks, as closeInboxForBackground; the bridge going with its page (WebHost.destroy) does the same.",
+    "behaviour": "End the address (after `hold` seconds, 0..180, if a payment may be on its way) and the Nostr inbox. Android (ENG-672): DeliveryBridge.inboxClose: hold clamped to 0..180 s (a number only), the retiring inbox closed (DEL_ONION) when the hold ends, then the warm spare restarted. Putting Foxy away closes every inbox (the one on screen, the spare and the retiring ones) and drops their answers before Tor parks, as closeInboxForBackground; the bridge going with its page (WebHost.destroy) does the same. Android (ENG-677): the request's Nostr key and its sockets end with it, whatever the hold (handleInboxClose), and with Foxy put away; no key is made while it is.",
     "pageRef": [
       "Web/foxy-wallet.js:22532@'inboxClose'"
     ],
@@ -1878,7 +1882,9 @@
       "Foxy/Bridge/FoxyBridge+Delivery.swift:208-230@handleInboxClose",
       "Foxy/Bridge/FoxyBridge+Delivery.swift:157-183@closeInboxForBackground",
       "Foxy/FoxyWebView.swift:1022@closeInboxForBackground",
-      "Foxy/Tor/TorService.swift:1793-1798@DEL_ONION"
+      "Foxy/Tor/TorService.swift:1793-1798@DEL_ONION",
+      "Foxy/Bridge/FoxyBridge+Delivery.swift:224-226@nostrInbox?.close()",
+      "Foxy/Nostr/NostrInbox.swift:185-195@func close"
     ]
   },
   {
@@ -1906,7 +1912,7 @@
         "No payment is waiting on that answer."
       ]
     },
-    "behaviour": "Answer a payment that arrived (_requestPaid): status 200, 409 or 422 only, 300 characters of text. Android (ENG-670, ENG-672): one table of the answers owed, by key, the onion's and the tap's (InboxAnswers, as FoxyBridge.swift's inboxAnswers with tapAnswerKeys); a key nothing is waiting on is \"No payment is waiting on that answer.\" The answer's JSON is {\"ok\":true} for 200, else {\"error\":<text>} written as Apple's JSONSerialization writes it (the slash escaped), the text cut at 300 characters as a person counts them. An onion payment's key is 32 lowercase hex, kept 110 s, and the inbox writes iOS's answer byte for byte (HTTP/1.1 <status> <reason>, Content-Length, Connection: close, Content-Type: application/json when there is a body); its keys go when Foxy is put away. A tap's (_requestPaid(.., \"tap\")) is kept across Foxy being put away and dropped 30 s after it was pushed, and its status and the JSON's reason become the M6 the payer reads (status 200 with no reason; any other status clamped to 422).",
+    "behaviour": "Answer a payment that arrived (_requestPaid): status 200, 409 or 422 only, 300 characters of text. Android (ENG-670, ENG-672): one table of the answers owed, by key, the onion's and the tap's (InboxAnswers, as FoxyBridge.swift's inboxAnswers with tapAnswerKeys); a key nothing is waiting on is \"No payment is waiting on that answer.\" The answer's JSON is {\"ok\":true} for 200, else {\"error\":<text>} written as Apple's JSONSerialization writes it (the slash escaped), the text cut at 300 characters as a person counts them. An onion payment's key is 32 lowercase hex, kept 110 s, and the inbox writes iOS's answer byte for byte (HTTP/1.1 <status> <reason>, Content-Length, Connection: close, Content-Type: application/json when there is a body); its keys go when Foxy is put away. A tap's (_requestPaid(.., \"tap\")) is kept across Foxy being put away and dropped 30 s after it was pushed, and its status and the JSON's reason become the M6 the payer reads (status 200 with no reason; any other status clamped to 422). A payment over Nostr (_requestPaid(body, \"\"), ENG-677) has no key in the table: its answer is that nothing is waiting, as on iOS.",
     "pageRef": [
       "Web/foxy-wallet.js:22836@'inboxAnswer'"
     ],
@@ -1962,7 +1968,7 @@
     "kind": "action",
     "name": "nostrSend",
     "domain": "nostr",
-    "phase": "LATER",
+    "phase": "P3",
     "payloadSchema": {
       "fields": {
         "action": "string",
@@ -1982,14 +1988,21 @@
       ],
       "note": "how many relays accepted it, as a decimal string"
     },
-    "behaviour": "NIP-17/59 gift-wrap the payment for the nprofile in a request and publish to at most five wss relays it names (fallback: damus, nos.lol, primal, minibits), each over Tor on its own circuit; never the open connection.",
+    "behaviour": "NIP-17/59 gift-wrap the payment for the nprofile in a request and publish to at most five wss relays it names (fallback: damus, nos.lol, primal, minibits), each over Tor on its own circuit; never the open connection. Android (ENG-677): DeliveryBridge.nostrSend and nostr/NostrDelivery.kt, a port of handleNostrSend and NostrDelivery.swift: target a non-empty string, body non-empty and at most 32767 UTF-8 bytes (half NIP-44's 65535); the nprofile read by hand (bech32, NIP-19 TLVs), the relays wss only, each once, at most five, the fallbacks when it names none; the payment wrapped as iOS wraps it (nostr/NostrEvent.kt: a kind 14 rumor with the real time, a kind 13 seal and a kind 1059 wrap each signed by a key made for this payment, both backdated up to two days, NIP-44 v2 with ChaCha20 per RFC 8439, HMAC-SHA256 and HKDF in nostr/NostrCrypto.kt, BIP-340 by libsecp256k1 through secp256k1-kmp; the official NIP-44 vectors replayed byte for byte); [\"EVENT\",<wrap>] sent down a WebSocket per relay (network/RouteSocket.kt: OkHttp on the Tor client, a fresh circuit label per relay, the relay's name handed to Tor, never the open connection, not while Route's door is shut), the relay's OK read (a duplicate: refusal counts as taken), 25 s each. The answer is how many relays took it; none is \"No relay took the payment: <why>\" with the first relay's reason (Foxy is not connected to Tor. when no socket would open).",
     "pageRef": [
       "Web/foxy-wallet.js:8900@'nostrSend'"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge.swift:414@\"nostrSend\"",
       "Foxy/Bridge/FoxyBridge+Delivery.swift:262-288@handleNostrSend",
-      "Foxy/Nostr/NostrDelivery.swift:18-19@fallbackRelays"
+      "Foxy/Nostr/NostrDelivery.swift:18-19@fallbackRelays",
+      "Foxy/Nostr/NostrDelivery.swift:31-66@static func send",
+      "Foxy/Nostr/NostrDelivery.swift:70-80@static func relays",
+      "Foxy/Nostr/NostrDelivery.swift:84-127@private static func publish",
+      "Foxy/Nostr/NostrDelivery.swift:134-142@static func reading",
+      "Foxy/Nostr/NostrEvent.swift:44-68@static func giftWrapped",
+      "Foxy/Nostr/NostrCrypto.swift:142-157@static func encrypt",
+      "Foxy/Network/Route.swift:248-259@static func startSocket"
     ]
   },
   {
@@ -3075,14 +3088,15 @@
         "via": "string?"
       }
     },
-    "behaviour": "A payment arrived for the request on screen (onion inbox, Nostr inbox with answerId \"\", or a tap with \"tap\"). The page redeems it and answers with inboxAnswer. Android: pushed with a fresh 32-hex answer key for a payment posted to an onion inbox (DeliveryBridge, ENG-672), and as `_requestPaid(body, key, \"tap\")` the moment a tap payment has crossed the link (TapBridge, ENG-670). Not yet the Nostr form (answerId \"\", the ENG-672 follow-up).",
+    "behaviour": "A payment arrived for the request on screen (onion inbox, Nostr inbox with answerId \"\", or a tap with \"tap\"). The page redeems it and answers with inboxAnswer. Android: pushed with a fresh 32-hex answer key for a payment posted to an onion inbox (DeliveryBridge, ENG-672), and as `_requestPaid(body, key, \"tap\")` the moment a tap payment has crossed the link (TapBridge, ENG-670). And with answerId \"\" for a payment that came over Nostr (DeliveryBridge.nostrPaymentArrived, ENG-677): nobody waits on its answer, so no key is put in InboxAnswers and the page's inboxAnswer(\"\") is told \"No payment is waiting on that answer.\"",
     "pageRef": [
       "Web/foxy-wallet.js:22823@_requestPaid"
     ],
     "iosRef": [
       "Foxy/Bridge/FoxyBridge+Delivery.swift:104@_requestPaid",
       "Foxy/Bridge/FoxyBridge+Delivery.swift:256@_requestPaid",
-      "Foxy/Bridge/FoxyBridge+Tap.swift:121@_requestPaid"
+      "Foxy/Bridge/FoxyBridge+Tap.swift:121@_requestPaid",
+      "Foxy/Bridge/FoxyBridge+Delivery.swift:102-106@nostrPaymentArrived"
     ]
   },
   {

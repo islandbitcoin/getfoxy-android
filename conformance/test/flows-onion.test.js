@@ -54,7 +54,8 @@ test('P3: the receive screen\'s onion inbox is answered with an address once, an
   assert.equal(answers[0][2], null);
   const onion = JSON.parse(answers[0][1]).onion;
   assert.equal(onion, s.host.state.inbox, 'the address the phone opened');
-  assert.deepEqual(plain(app._inboxUrl), { onion }, 'the page holds it, and only it: no Nostr address on Android yet');
+  // and the Nostr key beside it since ENG-677 (flows-nostr.test.js follows that half)
+  assert.deepEqual(plain(app._inboxUrl), { onion, nostr: s.host.state.nostr.nprofile }, 'the page holds both of the phone\'s addresses');
   // a request made for the screen names it as where the payer posts
   const req = s.W.decodeRequest(s.W.paymentRequest(21, { deliverTo: app._inboxUrl, lock: false }));
   assert.deepEqual(plain(req.delivery), { kind: 'onion', target: onion });
