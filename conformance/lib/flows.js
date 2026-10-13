@@ -106,6 +106,10 @@ function askAsPage(s, action, extra) {
  * make one. */
 const IN_A_TAP_LINK = ['tapChange', 'tapAsking', 'tapChangeDue', 'tapTerms', 'inboxAnswer', 'shakeStart', 'shakeStop'];
 
+/* Tap to pay's paying side (ENG-671): P3, asked by the flows that listen on a funded
+ * wallet and pay over the link (flows-tap-pay.test.js). */
+const IN_A_PAY_LINK = ['tapPayStart', 'tapPayStop', 'tapSend', 'tapChangeKept', 'tapQuote'];
+
 /* The receive invoice screen, as a person reaches it, on a P3 host: through the
  * first-install screens (the gate is up until then, and nothing arms under it),
  * an invoice made, the screen up, and TAP pressed, which raises the TAP HERE card
@@ -147,10 +151,20 @@ async function fundedWallet(s, sats) {
   await s.until(() => s.logic().state.balSats === sats, 10000, 'the balance to read ' + sats);
 }
 
+/* Through the first-install screens to a wallet holding sats, on its home screen, which
+ * listens for a tap by itself (ENG-671: flows-tap-listen.test.js, flows-tap-pay.test.js). */
+async function toFundedHome(s, sats) {
+  const W = s.W, w = s.window;
+  (await toBluetoothScreen(s)).click();
+  await s.until(() => W.connected === true && !w.FoxyGate.visible(), 30000, 'the wallet, with the gate gone');
+  await fundedWallet(s, sats);
+  await s.until(() => s.host.asked.get('tapPayStart') > 0, 10000, 'the home screen to listen for a tap');
+}
+
 module.exports = {
   SEEN_DIR, seen, pushesSeen, flow, record,
   routeActions, shows, QUIET_MS, staysQuiet,
   toBluetoothScreen, askAsPage,
-  IN_A_TAP_LINK, RECEIVE_ALSO_ASKS, toReceiveScreenWithTapPressed, REARM_WINDOW_MS, NO_PRICE,
-  fundedWallet,
+  IN_A_TAP_LINK, IN_A_PAY_LINK, RECEIVE_ALSO_ASKS, toReceiveScreenWithTapPressed, REARM_WINDOW_MS, NO_PRICE,
+  fundedWallet, toFundedHome,
 };

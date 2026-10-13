@@ -12,7 +12,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { CONTRACT } = require('../lib/host');
-const { record, flow, shows, toBluetoothScreen, IN_A_TAP_LINK } = require('../lib/flows');
+const { record, flow, shows, toBluetoothScreen, IN_A_TAP_LINK, IN_A_PAY_LINK } = require('../lib/flows');
 
 record(__filename);
 
@@ -63,14 +63,16 @@ test('P3: a host serving P1, P2 and P3 actions answers every platform door the s
     await s.settle(800);
   });
   const p3 = CONTRACT.filter((e) => e.kind === 'action' && e.phase === 'P3').map((e) => e.name);
-  assert.equal(p3.length, 38);
+  assert.equal(p3.length, 43);
   // The page asks a card's owner key and its signed time only inside a card session, which
   // opens with cardBegin: they are asked of a P3 host, as the page's card code asks them, by
   // the ENG-666 flows, and the session itself by the ENG-667 flows (both flows-card.test.js).
   const inACardSession = ['cardOwnerKey', 'cardOwnerSign', 'cardTime', 'cardBegin', 'cardSend', 'cardSay', 'cardAgain', 'cardEnd'];
   // And tap to pay's receiving side only over a link a payer has made, on a phone with
   // Bluetooth: asked of a P3 host by the ENG-670 flows (IN_A_TAP_LINK, flows-tap-ble.test.js).
-  assert.deepEqual(p3.filter((a) => !inACardSession.includes(a) && !IN_A_TAP_LINK.includes(a) && !(s.host.asked.get(a) > 0)), [], 'every other P3 action was asked of the P3 host');
+  // And tap to pay's paying side only from a listen on a funded wallet, and over the link it makes:
+  // asked of a P3 host by the ENG-671 flows (IN_A_PAY_LINK, flows-tap-pay.test.js).
+  assert.deepEqual(p3.filter((a) => !inACardSession.includes(a) && !IN_A_TAP_LINK.includes(a) && !IN_A_PAY_LINK.includes(a) && !(s.host.asked.get(a) > 0)), [], 'every other P3 action was asked of the P3 host');
   assert.ok(s.host.asked.get('haptic') > 0, 'and a haptic');
 });
 

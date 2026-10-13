@@ -177,7 +177,8 @@ test('tap to pay and the card: their doors, with no radio', async () => {
     await W.tapReceive('lnbc80n1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypq', false).catch(() => {});
     await W.tapReceiveStop();
     await W.tapPayNow().catch(() => {});
-    await W.tapPay().catch(() => {});
+    // a listen is answered only by an offer (ENG-671): on a phone with no radio it waits, until tapPayStop below ends it
+    const listen = W.tapPay().catch(() => {});
     await W.tapSend('cashuBx').catch(() => {});
     await W.tapChange('cashuBx').catch(() => {});
     await W.tapAsking().catch(() => {});
@@ -186,6 +187,7 @@ test('tap to pay and the card: their doors, with no radio', async () => {
     await W.tapChangeDue().catch(() => {});
     await W.tapChangeKept(true).catch(() => {});
     await W.tapPayStop();
+    await listen;
     await W.cardStop();
     await W.cardSession('Tap behind the phone.', () => Promise.resolve(), {}).catch(() => {});
   });
