@@ -34,7 +34,7 @@ const BY_NAME = new Map(CONTRACT.map((e) => [e.name, e]));
 /* The fake phone's onion service id: 56 characters of base32, the last a "d". */
 const ONION_ID = 'abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwd';
 
-/* What the payer hears for the page's word, as DeliveryBridge.answerBody writes it:
+/* What the payer hears for the page's word, as InboxAnswers.answerBody writes it:
  * {"ok":true}, or {"error":…} escaped as Apple's JSONSerialization escapes (the slash too). */
 function appleJson(text) {
   let out = '"';
