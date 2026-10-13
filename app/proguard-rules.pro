@@ -1,3 +1,6 @@
+# Not applied in 0.1.0: the release build has isMinifyEnabled = false (docs/RELEASE.md §2).
+# Kept for when R8 is turned on.
+#
 # Release builds say nothing (SECURITY-INVARIANTS.md S18): every android.util.Log
 # call is removed, in Foxy's code and in its dependencies'.
 -assumenosideeffects class android.util.Log {

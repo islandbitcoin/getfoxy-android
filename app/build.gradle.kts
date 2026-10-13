@@ -1,4 +1,7 @@
+import java.io.IOException
+import java.security.KeyStore
 import java.security.MessageDigest
+import java.security.UnrecoverableKeyException
 
 plugins {
     alias(libs.plugins.android.application)
@@ -101,6 +104,53 @@ val generateContractStubs = tasks.register<GenerateContractStubs>("generateContr
     outputDir.set(generatedStubs)
 }
 
+/* The upload key (ENG-680): read from outside the repository at build time, never
+ * from a file in it. FOXY_UPLOAD_STORE_FILE (the keystore's path) and
+ * FOXY_UPLOAD_KEY_ALIAS come from the environment; the passwords from
+ * FOXY_UPLOAD_STORE_PASSWORD and FOXY_UPLOAD_KEY_PASSWORD or, for either that is
+ * unset, the macOS Keychain's generic password `foxy-android-upload`
+ * (`security find-generic-password -s foxy-android-upload -w`), and only when a
+ * release is signed (signsARelease) or :app:verifyReleaseSigning runs. Without the path and the
+ * alias the release builds unsigned, with a warning, and verifyReleaseSigning
+ * fails. FOXY_SECURITY_TOOL replaces /usr/bin/security (tools/release-signing.test.sh
+ * points it at a stub, so the test never reads the Keychain). */
+class UploadKey(val storeFile: String, val alias: String)
+
+val uploadKey: UploadKey? = run {
+    val store = providers.environmentVariable("FOXY_UPLOAD_STORE_FILE").orNull?.takeIf { it.isNotBlank() }
+    val alias = providers.environmentVariable("FOXY_UPLOAD_KEY_ALIAS").orNull?.takeIf { it.isNotBlank() }
+    if (store != null && alias != null) UploadKey(store, alias) else null
+}
+val uploadKeyMissing = "the release is not signed: set FOXY_UPLOAD_STORE_FILE (the upload keystore's path, outside " +
+    "this repository) and FOXY_UPLOAD_KEY_ALIAS, and the passwords in FOXY_UPLOAD_STORE_PASSWORD and " +
+    "FOXY_UPLOAD_KEY_PASSWORD or the macOS Keychain item foxy-android-upload (docs/RELEASE.md)"
+
+/* Whether this build was asked for a signed release: AGP reads a signing config's passwords
+ * when the build is configured, so they are read only for a build that names a task that
+ * packages, signs or installs the release (or assemble/bundle/build, which include it).
+ * Any other build, a debug one or the unit tests, never reads a password or the Keychain. */
+val signsARelease: Boolean = gradle.startParameter.taskNames.any {
+    Regex("(assemble|bundle|package|sign|install)Release.*|assemble|bundle|build").matches(it.substringAfterLast(':'))
+}
+
+/** The Keychain's password for the upload key, read once and only when asked for; null when there is none. */
+val keychainPassword: String? by lazy {
+    val tool = providers.environmentVariable("FOXY_SECURITY_TOOL").orNull?.takeIf { it.isNotBlank() } ?: "/usr/bin/security"
+    if (!File(tool).canExecute()) return@lazy null
+    val found = providers.exec {
+        commandLine(tool, "find-generic-password", "-s", "foxy-android-upload", "-w")
+        isIgnoreExitValue = true
+    }
+    if (found.result.get().exitValue != 0) null
+    else found.standardOutput.asText.get().removeSuffix("\n").takeIf { it.isNotEmpty() }
+}
+
+/** A password of the upload key's: its environment variable, else the Keychain; a clear failure when neither has one. */
+fun uploadPassword(variable: String): String =
+    providers.environmentVariable(variable).orNull?.takeIf { it.isNotEmpty() }
+        ?: keychainPassword
+        ?: throw GradleException("$variable is not set and the macOS Keychain has no foxy-android-upload password: $uploadKeyMissing")
+
 android {
     namespace = "io.islandbitcoin.foxy"
     compileSdk {
@@ -122,13 +172,36 @@ android {
         buildConfig = true
     }
 
+    signingConfigs {
+        // The upload key (ENG-680, docs/RELEASE.md): its path and alias from the environment,
+        // only when both are given; its passwords only for a build that signs a release
+        // (signsARelease), so no other build reads a secret.
+        if (uploadKey != null) {
+            create("upload") {
+                storeFile = file(uploadKey.storeFile)
+                keyAlias = uploadKey.alias
+                if (signsARelease) {
+                    storePassword = uploadPassword("FOXY_UPLOAD_STORE_PASSWORD")
+                    keyPassword = uploadPassword("FOXY_UPLOAD_KEY_PASSWORD")
+                }
+            }
+        }
+    }
+
     buildTypes {
-        // P1 ships debug builds only. Release is configured so its rules (R8
-        // stripping android.util.Log, no logcat, console silence) are in the
-        // tree, but it has no signing config and CI does not build it.
+        // The Play internal-testing build (ENG-680, docs/RELEASE.md). Signed with the
+        // upload key when FOXY_UPLOAD_STORE_FILE and FOXY_UPLOAD_KEY_ALIAS are set
+        // (Play App Signing re-signs it for the store), unsigned otherwise, so CI
+        // keeps compiling it. minSdk 30 is set per variant (androidComponents below).
         release {
-            isMinifyEnabled = true
+            // R8 is off for 0.1.0: the page's bridge is reached from the WebView by
+            // name, secp256k1-kmp and Tink load JNI and classes by reflection, and no
+            // minified build has been through the device suite. Foxy's own release
+            // classes call no android.util.Log (ReleaseBuildTest); a dependency's own
+            // logcat lines are not stripped until R8 is on (docs/RELEASE.md "R8").
+            isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("upload")
         }
     }
 
@@ -173,6 +246,13 @@ android {
                 layout.buildDirectory.file("intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml")
                     .get().asFile.absolutePath)
             it.systemProperty("foxy.res", file("src/main/res").absolutePath)
+            // ReleaseBuildTest: the release build's own classes, and the source sets that say what is debug only
+            it.systemProperty("foxy.releaseClasses", layout.buildDirectory.dir("tmp/kotlin-classes/release").get().asFile.absolutePath)
+            it.systemProperty("foxy.releaseJavaClasses",
+                layout.buildDirectory.dir("intermediates/javac/release/compileReleaseJavaWithJavac/classes").get().asFile.absolutePath)
+            it.systemProperty("foxy.mainSrc", file("src/main/java").absolutePath)
+            it.systemProperty("foxy.debugSrc", file("src/debug/java").absolutePath)
+            it.systemProperty("foxy.releaseSrc", file("src/release/java").absolutePath)
             it.systemProperty("foxy.torSeed", torSeedAssets.get().asFile.resolve("tor/cached-microdescs").absolutePath)
             // the card simulator's port (tools/cardsim-test.sh): CardSimEndToEndTest drives the real applet there, and is skipped without it
             it.systemProperty("foxy.cardsimPort", providers.gradleProperty("foxy.cardsimPort").getOrElse(""))
@@ -199,11 +279,54 @@ kotlin {
     jvmToolchain(17)
 }
 
+androidComponents {
+    // Release runs on Android 11 and later until ENG-654 proves the API 28-29 screen-lock
+    // confirmation on a phone; debug builds keep 28 for that work (ReleaseBuildTest reads both).
+    beforeVariants(selector().withBuildType("release")) { it.minSdk = 30 }
+}
+
+/* Fails unless the upload key is there and opens: the keystore at FOXY_UPLOAD_STORE_FILE,
+ * its store password, the alias's private key and its key password. Prints the alias and
+ * the certificate's SHA-256 (public: Play Console shows it as the upload certificate), never
+ * a password. */
+tasks.register("verifyReleaseSigning") {
+    group = "verification"
+    description = "Fails clearly unless the release upload key is configured and opens (docs/RELEASE.md)."
+    doLast {
+        val key = uploadKey ?: throw GradleException(uploadKeyMissing)
+        val store = file(key.storeFile)
+        if (!store.isFile) throw GradleException("FOXY_UPLOAD_STORE_FILE names no file: ${store.path}")
+        val keystore = try {
+            KeyStore.getInstance(store, uploadPassword("FOXY_UPLOAD_STORE_PASSWORD").toCharArray())
+        } catch (e: IOException) {
+            throw GradleException("the upload keystore does not open with its store password (${e.javaClass.simpleName})")
+        }
+        if (!keystore.isKeyEntry(key.alias)) throw GradleException("the upload keystore has no key under the alias ${key.alias}")
+        try {
+            keystore.getKey(key.alias, uploadPassword("FOXY_UPLOAD_KEY_PASSWORD").toCharArray())
+                ?: throw GradleException("the upload keystore has no private key under the alias ${key.alias}")
+        } catch (e: UnrecoverableKeyException) {
+            throw GradleException("the upload key does not open with its key password")
+        }
+        val cert = keystore.getCertificate(key.alias)
+        val sha256 = MessageDigest.getInstance("SHA-256").digest(cert.encoded).joinToString(":") { "%02X".format(it) }
+        println("upload key: alias ${key.alias}, certificate SHA-256 $sha256")
+    }
+}
+
+// A release built without the upload key says so where it is built.
+tasks.matching { it.name == "bundleRelease" || it.name == "assembleRelease" }.configureEach {
+    doLast { if (uploadKey == null) logger.warn("WARNING: UNSIGNED $name: $uploadKeyMissing") }
+}
+
 tasks.named("preBuild") { dependsOn(generateContractStubs, "unpackTorSeed") }
 afterEvaluate {
     // ManifestTest reads the merged manifests, so the debug and release manifests are merged before the debug
     // unit tests: the release one must register no deep-link scheme (BRIDGE.md `deepLink`).
-    tasks.named("testDebugUnitTest") { dependsOn("processDebugMainManifest", "processReleaseMainManifest") }
+    // ReleaseBuildTest reads the release build's own classes, so they are compiled first too.
+    tasks.named("testDebugUnitTest") {
+        dependsOn("processDebugMainManifest", "processReleaseMainManifest", "compileReleaseKotlin", "compileReleaseJavaWithJavac")
+    }
 }
 
 dependencies {
