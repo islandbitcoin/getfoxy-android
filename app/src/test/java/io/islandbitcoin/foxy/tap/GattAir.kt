@@ -25,6 +25,9 @@ class FakeBluetooth(override val clock: FakeClock = FakeClock()) : TapBluetooth 
     /** Every peripheral's callbacks, carried across by [GattAir.settle]. */
     val pending = ArrayDeque<() -> Unit>()
 
+    /** The system's question has had an answer on this install (AndroidTapBluetooth keeps it in its preferences). */
+    var answered = false
+
     override fun permitted() = granted
 
     override fun ask(done: (Boolean) -> Unit) {
@@ -35,12 +38,16 @@ class FakeBluetooth(override val clock: FakeClock = FakeClock()) : TapBluetooth 
             return
         }
         granted = answer
+        answered = true
         done(answer)
     }
+
+    override fun asked() = answered
 
     /** The question on screen is answered now. */
     fun answer(grant: Boolean) {
         granted = grant
+        answered = true
         val w = waiting.toList()
         waiting.clear()
         w.forEach { it(grant) }

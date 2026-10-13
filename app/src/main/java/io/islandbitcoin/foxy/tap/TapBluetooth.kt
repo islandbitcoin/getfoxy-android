@@ -27,6 +27,14 @@ interface TapBluetooth {
     /** Asks for them, the system's own question; `done(granted)`. Answered at once when nothing needs asking. */
     fun ask(done: (Boolean) -> Unit)
 
+    /**
+     * The system's question has had an answer before, on this install. iOS asks only while the
+     * authorization is `.notDetermined`; once refused it reads `.unauthorized` and the stage is `denied`
+     * with no dialog (TapLink.swift `cbState`). Android would put its dialog up again on every TAP until
+     * its own lockout, so Foxy remembers that it asked and does not ask again.
+     */
+    fun asked(): Boolean
+
     fun power(): Power
 
     /** Told each change of [power] until the function returned is called. */
@@ -44,6 +52,7 @@ interface TapBluetooth {
         override val advertises = false
         override fun permitted() = false
         override fun ask(done: (Boolean) -> Unit) = done(false)
+        override fun asked() = false
         override fun power() = Power.OFF
         override fun watch(onChange: (Power) -> Unit): () -> Unit = {}
         override fun open(server: TapGattServer): TapPeripheral? = null

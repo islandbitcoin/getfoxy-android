@@ -58,10 +58,18 @@ class AndroidTapBluetooth(
 
     override fun permitted(): Boolean = needed.all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
+    /** Where the system's question is remembered as answered (no backup: a new install asks afresh). */
+    private val prefs by lazy { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
+
     override fun ask(done: (Boolean) -> Unit) {
         if (permitted()) return done(true)
-        askPermissions(needed) { done(permitted()) }
+        askPermissions(needed) {
+            prefs.edit().putBoolean(ASKED, true).apply()
+            done(permitted())
+        }
     }
+
+    override fun asked(): Boolean = prefs.getBoolean(ASKED, false)
 
     override fun power(): TapBluetooth.Power = when (bt?.state ?: BluetoothAdapter.STATE_OFF) {
         BluetoothAdapter.STATE_ON -> TapBluetooth.Power.ON
@@ -101,6 +109,11 @@ class AndroidTapBluetooth(
         if (!permitted()) return null
         val advertiser = a.bluetoothLeAdvertiser ?: return null
         return AndroidTapPeripheral.open(context, m, advertiser, server, main)
+    }
+
+    companion object {
+        const val PREFS = "foxy.tap"
+        const val ASKED = "bluetoothAsked"
     }
 
     /** The main looper as a [TapClock]. */
@@ -151,6 +164,25 @@ class AndroidTapPeripheral private constructor(
             p.gatt = gatt
             return p
         }
+
+        /**
+         * The advertisement: the service UUID and nothing else, no name, no power level, no
+         * manufacturer or service data. The iPhone payer drops an advert that carries manufacturer
+         * data or is not connectable (TapLink.swift 1154-1157: connectable, no manufacturer data, exactly one 128-bit service UUID), so this is held by TapGattOnDeviceTest.
+         */
+        fun advertiseData(service: UUID): AdvertiseData = AdvertiseData.Builder()
+            .setIncludeDeviceName(false)
+            .setIncludeTxPowerLevel(false)
+            .addServiceUuid(ParcelUuid(service))
+            .build()
+
+        /** Connectable, low latency, [TX_POWER], no timeout: on the air until the link takes it off. */
+        fun advertiseSettings(): AdvertiseSettings = AdvertiseSettings.Builder()
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            .setTxPowerLevel(TX_POWER)
+            .setConnectable(true)
+            .setTimeout(0)
+            .build()
 
         /** The layout as Android's objects: each door, and a CCCD under each notify door. */
         fun service(layout: TapGatt.Layout): BluetoothGattService {
@@ -257,20 +289,8 @@ class AndroidTapPeripheral private constructor(
             main.post { server.advertiseFailed(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR) }
             return
         }
-        val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-            .setTxPowerLevel(TX_POWER)
-            .setConnectable(true)
-            .setTimeout(0)
-            .build()
-        // the service and nothing else: no name, no power level, no manufacturer or service data
-        val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(false)
-            .setIncludeTxPowerLevel(false)
-            .addServiceUuid(ParcelUuid(service))
-            .build()
         try {
-            advertiser.startAdvertising(settings, data, advertised)
+            advertiser.startAdvertising(advertiseSettings(), advertiseData(service), advertised)
         } catch (e: SecurityException) {
             main.post { server.advertiseFailed(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR) }
         } catch (e: IllegalStateException) {

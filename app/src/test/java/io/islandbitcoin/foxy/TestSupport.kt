@@ -152,7 +152,18 @@ class FakeHost : PageHost {
         held.forEach { it.finish() }
     }
 
-    override fun post(action: Runnable) = action.run()
+    /** Posts wait on [posted] until [runPosts], as on a main looper behind other work; off, they run at once. */
+    var holdPosts = false
+    val posted = java.util.ArrayDeque<Runnable>()
+
+    /** Runs what is queued, and what that queues, in order. */
+    fun runPosts() {
+        while (true) posted.pollFirst()?.run() ?: return
+    }
+
+    override fun post(action: Runnable) {
+        if (holdPosts) posted.addLast(action) else action.run()
+    }
     override fun evaluate(js: String) {
         evaluated.add(js)
     }

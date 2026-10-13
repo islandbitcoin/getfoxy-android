@@ -124,6 +124,25 @@ class TapBridgeTest {
     }
 
     @Test
+    fun aRefusalIsRememberedAndTheNextAskIsDeniedWithNoSecondQuestion() {
+        bt.granted = false
+        bt.grantOnAsk = false
+        send("""{"id":"bt-1","action":"bluetoothAsk"}""")
+        assertEquals(1, bt.asks)
+        assertEquals(reply("bt-1", "denied"), host.evaluated.last())
+        host.evaluated.clear()
+        send("""{"id":"bt-2","action":"bluetoothAsk"}""")
+        assertEquals("iOS reads `.unauthorized`: no dialog the second time", 1, bt.asks)
+        assertEquals(listOf(PlatformBridge.bluetoothAnswer("denied"), reply("bt-2", "denied")), host.evaluated.toList())
+        // and a TAP after it is denied without a dialog too
+        host.evaluated.clear()
+        send("""{"action":"tapReceiveStart","id":"t1","payload":"","early":false}""")
+        settle()
+        assertEquals(1, bt.asks)
+        assertEquals(listOf(tap("denied")), taps)
+    }
+
+    @Test
     fun eachStateIsAnsweredAsTheContractSays() {
         val cases = listOf<Pair<(FakeBluetooth) -> Unit, String>>(
             { b: FakeBluetooth -> b.granted = false; b.grantOnAsk = false } to "denied",
@@ -195,6 +214,25 @@ class TapBridgeTest {
         host.evaluated.clear()
         send("""{"action":"inboxAnswer","id":"a2","answer":"$key","status":200,"text":""}""")
         assertEquals(listOf(reply("a2", null, TapBridge.NO_PAYMENT_WAITING)), host.evaluated.toList())
+    }
+
+    @Test
+    fun twoTapsQueuedBeforeTheFirstIsMadeMakeOneReceiverWithTheLatest() {
+        // the amount screen arms early with nothing to offer, the invoice lands before the first post has run
+        host.holdPosts = true
+        val invoice = Json.write(mapOf("v" to 2, "req" to "creqAabcdefghijklmnopqrstuv"))
+        send("""{"action":"tapReceiveStart","id":"t1","payload":"","early":true}""")
+        send("""{"action":"tapReceiveStart","id":"t2","payload":${Json.quote(invoice)},"early":false}""")
+        host.runPosts()
+        host.holdPosts = false
+        settle()
+        assertEquals("one receiver", 1, bt.opened.size)
+        assertEquals(listOf(reply("t1", "ok"), reply("t2", "ok")), host.evaluated.filter { it.contains("t1") || it.contains("t2") })
+        val payer = Payer()
+        payer.linkUp()
+        val (text, code) = payer.offer ?: error("the payer was refused: the receiver was made early")
+        assertEquals("M4 carries the invoice, not the empty early offer", invoice, text)
+        assertEquals(tap("code", ",\"code\":\"$code\""), taps.last())
     }
 
     @Test
@@ -420,6 +458,28 @@ class TapBridgeTest {
         settle()
         assertEquals("the same receiver: it has had its payer, and is not put back on the air", 1, bt.opened.size)
         assertFalse(bt.peripheral.onAir)
+    }
+
+    @Test
+    fun aPayerHoldingTheOfferAsFoxyGoesAwayKeepsTheirLinkAndIsAnsweredOnItsReturn() {
+        // iOS lets tapReceiver go only on TAP again, stop and the page going (FoxyBridge+Tap.swift 73, 159-161, 320-328)
+        onTheAir()
+        val payer = Payer()
+        payer.linkUp()
+        assertNotNull("the payer holds M4", payer.offer)
+        bridge.tapAway()
+        assertFalse("the payer's link is kept", bt.peripheral.closed)
+        assertFalse("but nothing is on the air", bt.peripheral.onAir)
+        assertTrue(payer.central.isConnected)
+        bridge.tapBack()
+        settle()
+        assertEquals("the same receiver", 1, bt.opened.size)
+        assertTrue(payer.central.isConnected)
+        val how = payer.pay("{\"proofs\":[{\"amount\":21}]}")
+        send("""{"action":"inboxAnswer","id":"a","answer":"${paidKey()}","status":200,"text":""}""")
+        settle()
+        assertEquals(reply("a", "ok"), host.evaluated.last())
+        assertEquals("{\"v\":2,\"ok\":true,\"code\":200}", (how[0] as TapPayerLink.Handover.Answered).text)
     }
 
     @Test

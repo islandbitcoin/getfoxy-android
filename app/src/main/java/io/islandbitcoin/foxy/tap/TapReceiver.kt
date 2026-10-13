@@ -13,8 +13,9 @@ import java.util.UUID
  * [start] is `CBPeripheralManager(delegate:…)`: the radio's state is told to the
  * link, and from the link to the page, as `peripheralManagerDidUpdateState` does
  * (`off`, `denied`, `unsupported`, or nothing and on the air once armed). Where
- * Foxy has not been given the Bluetooth permissions yet the system asks, as
- * iOS's does when the manager is made. Bluetooth turned off and on again is
+ * Foxy has never had an answer to the Bluetooth permissions the system asks, as
+ * iOS's does when the manager is made; once refused it is `denied` with no
+ * dialog, as iOS's `.unauthorized` is. Bluetooth turned off and on again is
  * followed: off says `off` and lets every connection go, on goes back on the air.
  */
 class TapReceiver(
@@ -60,6 +61,11 @@ class TapReceiver(
         started = true
         val b = bluetooth
         if (!BluetoothAnswer.worthAsking(b.adapter, b.power(), b.advertises) || b.permitted()) return follow()
+        // answered before and not granted: denied, with no dialog, as iOS reads `.unauthorized`
+        if (b.asked()) {
+            diary("[tap] receive: the Bluetooth permissions were refused before; not asking again")
+            return link.radioState(TapStage.DENIED)
+        }
         diary("[tap] receive: asking for the Bluetooth permissions")
         b.ask { granted ->
             if (gone) return@ask

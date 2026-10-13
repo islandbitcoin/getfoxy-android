@@ -72,6 +72,39 @@ class TapReceiverTest {
     }
 
     @Test
+    fun aRefusalIsRememberedAndTheNextReceiverIsDeniedWithNoSecondQuestion() {
+        // iOS asks only while `.notDetermined`; refused, it reads `.unauthorized` and says denied with no dialog
+        val b = FakeBluetooth().apply {
+            granted = false
+            grantOnAsk = false
+        }
+        val (r, stages) = made(b)
+        r.start()
+        r.arm()
+        settle(b)
+        assertEquals(1, b.asks)
+        assertEquals(listOf(TapStage.DENIED), stages)
+        r.stop()
+
+        val (r2, stages2) = made(b)
+        r2.start()
+        r2.arm()
+        settle(b)
+        assertEquals("no second system question once it has been answered", 1, b.asks)
+        assertEquals(listOf(TapStage.DENIED), stages2)
+        assertTrue(b.opened.isEmpty())
+
+        // granted later in Settings: on the air, still with no question
+        b.granted = true
+        val (r3, stages3) = made(b)
+        r3.start()
+        r3.arm()
+        settle(b)
+        assertEquals(1, b.asks)
+        assertEquals(listOf(TapStage.SEARCHING), stages3)
+    }
+
+    @Test
     fun aQuestionAnsweredAfterTheReceiverStoppedMakesNoRadio() {
         val b = FakeBluetooth().apply {
             granted = false

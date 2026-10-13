@@ -200,8 +200,9 @@ class TapBridge(
             read()
         }
         timer = b.clock.after(BluetoothAnswer.WAIT) { finish(BluetoothAnswer.UNKNOWN) }
-        // no question on a phone that could not use the answer, nor when it is already given
-        if (!BluetoothAnswer.worthAsking(b.adapter, b.power(), b.advertises) || b.permitted()) return follow()
+        // no question on a phone that could not use the answer, nor when it is already given, nor again once
+        // answered (a refusal then reads `denied` with no dialog, as iOS's `.unauthorized`)
+        if (!BluetoothAnswer.worthAsking(b.adapter, b.power(), b.advertises) || b.permitted() || b.asked()) return follow()
         b.ask { follow() }
     }
 
@@ -231,8 +232,14 @@ class TapBridge(
             return resolve(id, "ok", null)
         }
         resolve(id, "ok", null)
-        // after the reply, as iOS's peripheral manager says its state after the handler has answered
-        host.post { if (receiver == null && wanted != null) make(payload, early) }
+        // after the reply, as iOS's peripheral manager says its state after the handler has answered. What is
+        // made is what the page wants by then, not what this call carried: a second TAP queued behind this
+        // post (the empty amount screen, then the invoice) would otherwise lose to the first, and iOS, which
+        // makes its receiver in the same block (FoxyBridge+Tap.swift 75-144), has no such window
+        host.post {
+            val w = wanted
+            if (receiver == null && w != null) make(w.first, w.second)
+        }
     }
 
     private fun make(payload: String, early: Boolean) {
@@ -330,14 +337,22 @@ class TapBridge(
 
     // MARK: Foxy away and back, and the page gone
 
-    /** Foxy is put away: nothing on the air, and a receiver not carrying a payment let go. Main thread. */
+    /**
+     * Foxy is put away: nothing on the air, and a receiver with no payer let go. Main thread.
+     *
+     * A receiver whose payer is linked keeps its link, off the air: a payment crossing until it is
+     * answered, and a payer holding the offer (the code on both screens) until they pay or leave. iOS
+     * keeps `tapReceiver` across the background: it is let go only by TAP again, by stop and by the page
+     * going (FoxyBridge+Tap.swift 73, 159-161, 320-328; FoxyBridge.swift 1096). Letting it go here would
+     * close the GATT server under a payer about to send, and with no other road yet (ENG-672) the sale
+     * would be lost, the case [tapReceiveStart] already guards for a payer deciding.
+     */
     fun away() {
         if (!front) return
         front = false
         val r = receiver ?: return
         r.foreground(false)
-        // a payment crossing keeps its link (off the air) until it is answered
-        if (r.busy) return
+        if (r.busy || r.withPayer) return
         Log.line("[tap] receive: Foxy was put away; the receiver is let go")
         r.stop()
         if (receiver === r) receiver = null

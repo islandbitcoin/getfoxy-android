@@ -3,11 +3,15 @@ package io.islandbitcoin.foxy
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothGattService
+import android.bluetooth.le.AdvertiseSettings
+import android.os.ParcelUuid
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.islandbitcoin.foxy.tap.AndroidTapPeripheral
 import io.islandbitcoin.foxy.tap.TapGatt
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.UUID
@@ -42,6 +46,23 @@ class TapGattOnDeviceTest {
                 assertEquals(0, ch.descriptors.size)
             }
         }
+    }
+
+    @Test
+    fun theAdvertisementIsTheServiceAloneAndConnectable() {
+        // the iPhone payer drops an advert with manufacturer data or one not connectable (TapLink.swift 1154-1157: connectable, no manufacturer data, exactly one 128-bit service UUID)
+        val service = UUID.fromString("10111213-1415-1617-1819-1A1B1C1D1E1F")
+        val data = AndroidTapPeripheral.advertiseData(service)
+        assertEquals(listOf(ParcelUuid(service)), data.serviceUuids)
+        assertFalse("no device name", data.includeDeviceName)
+        assertFalse("no TX power level", data.includeTxPowerLevel)
+        assertEquals("no manufacturer data", 0, data.manufacturerSpecificData.size())
+        assertTrue("no service data", data.serviceData.isEmpty())
+        val settings = AndroidTapPeripheral.advertiseSettings()
+        assertTrue("connectable", settings.isConnectable)
+        assertEquals("on the air until taken off", 0, settings.timeout)
+        assertEquals(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY, settings.mode)
+        assertEquals(AndroidTapPeripheral.TX_POWER, settings.txPowerLevel)
     }
 
     @Test
