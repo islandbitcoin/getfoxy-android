@@ -237,7 +237,7 @@ class TapBridgeTest {
         // the key is answered once
         host.evaluated.clear()
         send("""{"action":"inboxAnswer","id":"a2","answer":"$key","status":200,"text":""}""")
-        assertEquals(listOf(reply("a2", null, TapBridge.NO_PAYMENT_WAITING)), host.evaluated.toList())
+        assertEquals(listOf(reply("a2", null, InboxAnswers.NO_PAYMENT_WAITING)), host.evaluated.toList())
     }
 
     @Test
@@ -288,8 +288,8 @@ class TapBridgeTest {
             assertEquals(TapReceiverLink.MOST_WHY, (m6["why"] as String).length)
         }
         // characters as a person reads them, not UTF-16 units or bytes
-        assertEquals("é".repeat(300), TapBridge.prefix("é".repeat(400), TapBridge.MOST_ANSWER_TEXT))
-        assertEquals("😀".repeat(300), TapBridge.prefix("😀".repeat(301), TapBridge.MOST_ANSWER_TEXT))
+        assertEquals("é".repeat(300), InboxAnswers.prefixCharacters("é".repeat(400), InboxAnswers.MOST_TEXT))
+        assertEquals("😀".repeat(300), InboxAnswers.prefixCharacters("😀".repeat(301), InboxAnswers.MOST_TEXT))
     }
 
     @Test
@@ -305,7 +305,7 @@ class TapBridgeTest {
         advance(5.0)
         host.evaluated.clear()
         send("""{"action":"inboxAnswer","id":"late","answer":"$key","status":200,"text":""}""")
-        assertEquals(listOf(reply("late", null, TapBridge.NO_PAYMENT_WAITING)), host.evaluated.toList())
+        assertEquals(listOf(reply("late", null, InboxAnswers.NO_PAYMENT_WAITING)), host.evaluated.toList())
     }
 
     // MARK: change, M9, M11
@@ -541,7 +541,7 @@ class TapBridgeTest {
         host.evaluated.clear()
         send("""{"action":"inboxAnswer","id":"a3","answer":"$tapKey","status":200,"text":""}""")
         send("""{"action":"inboxAnswer","id":"a4","answer":"$onionKey","status":200,"text":""}""")
-        assertEquals(listOf(reply("a3", null, TapBridge.NO_PAYMENT_WAITING), reply("a4", null, TapBridge.NO_PAYMENT_WAITING)), host.evaluated.toList())
+        assertEquals(listOf(reply("a3", null, InboxAnswers.NO_PAYMENT_WAITING), reply("a4", null, InboxAnswers.NO_PAYMENT_WAITING)), host.evaluated.toList())
     }
 
     @Test
@@ -562,7 +562,7 @@ class TapBridgeTest {
         settle()
         host.evaluated.clear()
         send("""{"action":"inboxAnswer","id":"a1","answer":"$onionKey","status":200,"text":""}""")
-        assertEquals("the onion's answer went with its address", listOf(reply("a1", null, TapBridge.NO_PAYMENT_WAITING)), host.evaluated.toList())
+        assertEquals("the onion's answer went with its address", listOf(reply("a1", null, InboxAnswers.NO_PAYMENT_WAITING)), host.evaluated.toList())
         assertEquals(null, onionHeard)
         send("""{"action":"inboxAnswer","id":"a2","answer":"$tapKey","status":200,"text":""}""")
         settle()
@@ -583,7 +583,7 @@ class TapBridgeTest {
         advance(TapBridge.ANSWER_KEPT + 0.1)
         host.evaluated.clear()
         send("""{"action":"inboxAnswer","id":"late","answer":"$tapKey","status":200,"text":""}""")
-        assertEquals(listOf(reply("late", null, TapBridge.NO_PAYMENT_WAITING)), host.evaluated.toList())
+        assertEquals(listOf(reply("late", null, InboxAnswers.NO_PAYMENT_WAITING)), host.evaluated.toList())
     }
 
     @Test
@@ -599,7 +599,7 @@ class TapBridgeTest {
         assertEquals(listOf(true, false), host.shakeSenses.toList())
         host.evaluated.clear()
         send("""{"action":"inboxAnswer","id":"a","answer":"$key","status":200,"text":""}""")
-        assertEquals(listOf(reply("a", null, TapBridge.NO_PAYMENT_WAITING)), host.evaluated.toList())
+        assertEquals(listOf(reply("a", null, InboxAnswers.NO_PAYMENT_WAITING)), host.evaluated.toList())
     }
 
     // MARK: shake and turned

@@ -52,10 +52,6 @@ class TapBridge(
         const val NO_LINK = "That phone is no longer connected."
         const val NO_CHANGE = "There is no change to send."
         const val CHANGE_NOT_KEPT = "The payer's phone did not say it kept the change."
-        const val NO_PAYMENT_WAITING = InboxAnswers.NO_PAYMENT_WAITING
-
-        /** `inboxAnswer`'s text is cut to this many characters (FoxyBridge+Delivery.swift `handleInboxAnswer`). */
-        const val MOST_ANSWER_TEXT = InboxAnswers.MOST_TEXT
 
         /** The tap's answer key is dropped this long after the receiver gave up on it (FoxyBridge+Tap.swift:111-117). */
         const val ANSWER_KEPT = TapReceiverLink.RESULT_WAIT + 5
@@ -82,9 +78,6 @@ class TapBridge(
 
         fun turnedPush(upsideDown: Boolean): String =
             "window.FoxyWallet && window.FoxyWallet._turned && window.FoxyWallet._turned(${if (upsideDown) "true" else "false"})"
-
-        /** The first [n] characters as a person reads them (Swift's `prefix`). */
-        fun prefix(s: String, n: Int): String = InboxAnswers.prefixCharacters(s, n)
     }
 
     private var receiver: TapReceiver? = null

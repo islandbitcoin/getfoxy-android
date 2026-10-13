@@ -295,7 +295,7 @@ class DeliveryBridgeTest {
         assertEquals(listOf(200 to "{\"ok\":true}"), heard)
         // answered once: the key is gone
         send("""{"action":"inboxAnswer","id":"a2","answer":"$key","status":200,"text":""}""")
-        assertEquals(Triple("a2", null, DeliveryBridge.NO_PAYMENT_WAITING), reply("a2"))
+        assertEquals(Triple("a2", null, InboxAnswers.NO_PAYMENT_WAITING), reply("a2"))
     }
 
     @Test
@@ -313,36 +313,36 @@ class DeliveryBridgeTest {
 
     @Test
     fun theTextIsCutAt300CharactersAsAPersonCountsThem() {
-        assertEquals("a".repeat(300), DeliveryBridge.prefixCharacters("a".repeat(400), 300))
-        assertEquals("short", DeliveryBridge.prefixCharacters("short", 300))
+        assertEquals("a".repeat(300), InboxAnswers.prefixCharacters("a".repeat(400), 300))
+        assertEquals("short", InboxAnswers.prefixCharacters("short", 300))
         // a fox is one character, two UTF-16 units: never cut in half
         val foxes = "\uD83E\uDD8A".repeat(301)
-        assertEquals("\uD83E\uDD8A".repeat(300), DeliveryBridge.prefixCharacters(foxes, 300))
+        assertEquals("\uD83E\uDD8A".repeat(300), InboxAnswers.prefixCharacters(foxes, 300))
         // an e with its accent is one character
-        assertEquals("e\u0301".repeat(2), DeliveryBridge.prefixCharacters("e\u0301".repeat(3), 2))
+        assertEquals("e\u0301".repeat(2), InboxAnswers.prefixCharacters("e\u0301".repeat(3), 2))
     }
 
     @Test
     fun appleJsonEscapesAsJsonSerializationDoes() {
-        assertEquals("\"a\\/b\"", DeliveryBridge.appleJsonString("a/b"))
-        assertEquals("\"\\\"\\\\\\n\\r\\t\\b\\f\\u0001\\u001f\"", DeliveryBridge.appleJsonString("\"\\\n\r\t\b\u000C\u0001\u001f"))
-        assertEquals("\"\u00e9\uD83E\uDD8A\u007f\"", DeliveryBridge.appleJsonString("\u00e9\uD83E\uDD8A\u007f"))
-        assertEquals("{\"ok\":true}", DeliveryBridge.answerBody(200, "ignored"))
-        assertEquals("{\"error\":\"\"}", DeliveryBridge.answerBody(422, ""))
+        assertEquals("\"a\\/b\"", InboxAnswers.appleJsonString("a/b"))
+        assertEquals("\"\\\"\\\\\\n\\r\\t\\b\\f\\u0001\\u001f\"", InboxAnswers.appleJsonString("\"\\\n\r\t\b\u000C\u0001\u001f"))
+        assertEquals("\"\u00e9\uD83E\uDD8A\u007f\"", InboxAnswers.appleJsonString("\u00e9\uD83E\uDD8A\u007f"))
+        assertEquals("{\"ok\":true}", InboxAnswers.answerBody(200, "ignored"))
+        assertEquals("{\"error\":\"\"}", InboxAnswers.answerBody(422, ""))
     }
 
     @Test
     fun anUnknownOrExpiredAnswerKeyIsRefused() {
         send("""{"action":"inboxAnswer","id":"a1","answer":"nope","status":200,"text":""}""")
-        assertEquals(Triple("a1", null, DeliveryBridge.NO_PAYMENT_WAITING), reply("a1"))
+        assertEquals(Triple("a1", null, InboxAnswers.NO_PAYMENT_WAITING), reply("a1"))
         send("""{"action":"inboxAnswer","id":"a2","status":200}""")
-        assertEquals(Triple("a2", null, DeliveryBridge.NO_PAYMENT_WAITING), reply("a2"))
+        assertEquals(Triple("a2", null, InboxAnswers.NO_PAYMENT_WAITING), reply("a2"))
         send("""{"action":"inboxOpen","id":"o1"}""")
         made[0].onPayment("p") { _, _ -> }
         val key = paid().single().second
         runTimers()
         send("""{"action":"inboxAnswer","id":"a3","answer":"$key","status":200,"text":""}""")
-        assertEquals(Triple("a3", null, DeliveryBridge.NO_PAYMENT_WAITING), reply("a3"))
+        assertEquals(Triple("a3", null, InboxAnswers.NO_PAYMENT_WAITING), reply("a3"))
     }
 
     // MARK: Put away, and back
@@ -366,7 +366,7 @@ class DeliveryBridgeTest {
         assertEquals("nothing new was made while away", before.size, made.size)
         // the answers went with the addresses
         send("""{"action":"inboxAnswer","id":"a1","answer":"$key","status":200,"text":""}""")
-        assertEquals(Triple("a1", null, DeliveryBridge.NO_PAYMENT_WAITING), reply("a1"))
+        assertEquals(Triple("a1", null, InboxAnswers.NO_PAYMENT_WAITING), reply("a1"))
         // back: a spare warms, and the page gets a fresh address
         bridge.cameBack()
         assertEquals(before.size + 1, made.size)

@@ -87,7 +87,6 @@ class DeliveryBridge(
 
         const val NO_ADDRESS = "No address: Tor is not ready."
         const val NO_ONION = "No onion address: Tor is not ready."
-        const val NO_PAYMENT_WAITING = InboxAnswers.NO_PAYMENT_WAITING
         const val TOO_LARGE = "That payment is too large to send."
 
         /** How long a payment's answer key is kept: past the inbox's own 100 s, after which it answered 504. */
@@ -95,17 +94,6 @@ class DeliveryBridge(
 
         /** The longest hold `inboxClose` honours, in seconds. */
         const val MOST_HOLD_S = 180.0
-
-        /** The longest text a payer is told. */
-        const val MOST_TEXT = InboxAnswers.MOST_TEXT
-
-        fun appleJsonString(value: String): String = InboxAnswers.appleJsonString(value)
-
-        fun answerBody(status: Int, text: String): String = InboxAnswers.answerBody(status, text)
-
-        fun answerStatus(asked: Any?): Int = InboxAnswers.answerStatus(asked)
-
-        fun prefixCharacters(text: String, most: Int): String = InboxAnswers.prefixCharacters(text, most)
 
         /** `hold`, in seconds, within 0..180 (FoxyBridge+Delivery.swift `handleInboxClose`). */
         fun holdSeconds(hold: Any?): Double {
