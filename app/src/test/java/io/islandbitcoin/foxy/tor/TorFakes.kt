@@ -81,6 +81,21 @@ class FakeControl(private val sched: FakeScheduler) : TorControl {
         sched.post { done(true) }
     }
 
+    /** The ports ADD_ONION was asked to forward to, and what it answers (a service id, or null for an error). */
+    val onionsAdded = mutableListOf<Int>()
+    var onionAnswer: String? = "abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwd"
+    val onionsDeleted = mutableListOf<String>()
+
+    override fun addOnion(localPort: Int, timeoutMs: Long, done: (String?) -> Unit) {
+        onionsAdded.add(localPort)
+        val answer = onionAnswer
+        sched.post { done(answer) }
+    }
+
+    override fun delOnion(serviceId: String) {
+        onionsDeleted.add(serviceId)
+    }
+
     fun last(key: String): String? = setConfs.lastOrNull { s -> s.any { it.first == key } }?.first { it.first == key }?.second
 }
 

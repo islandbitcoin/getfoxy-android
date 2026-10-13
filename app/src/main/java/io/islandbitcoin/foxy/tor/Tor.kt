@@ -17,6 +17,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import io.islandbitcoin.foxy.BuildConfig
 import io.islandbitcoin.foxy.debug.Log
 import io.islandbitcoin.foxy.network.NetworkKind
+import io.islandbitcoin.foxy.network.OnionServices
 import io.islandbitcoin.foxy.network.Route
 import io.islandbitcoin.foxy.network.RouteHttp
 import io.islandbitcoin.foxy.network.TorRoute
@@ -38,7 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Our wrapper is named Tor, not TorService, so it does not clash with
  * tor-android's.
  */
-object Tor : TorRoute {
+object Tor : TorRoute, OnionServices {
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var machine: TorMachine? = null
 
@@ -96,6 +97,19 @@ object Tor : TorRoute {
     /** Foxy is back after `awayS` seconds. Main thread. */
     fun resumed(awayS: Long) {
         machine?.resumed(awayS)
+    }
+
+    /** An onion address for the inbox ([TorMachine.addOnion]); `done` on the main looper. Any thread. */
+    override fun add(localPort: Int, done: (String?) -> Unit) {
+        main.post {
+            val m = machine ?: return@post done(null)
+            m.addOnion(localPort, done)
+        }
+    }
+
+    /** `DEL_ONION` ([TorMachine.removeOnion]). Any thread. */
+    override fun remove(serviceId: String) {
+        main.post { machine?.removeOnion(serviceId) }
     }
 
     /** What the page is told ([Snapshot]), as Tor and the network are now. */
@@ -306,6 +320,18 @@ object Tor : TorRoute {
                 link.extendCircuit("0", "")
                 true
             }
+        }
+
+        /* jtorctl writes `ADD_ONION NEW:ED25519-V3 Flags=DiscardPK,Detach Port=80,127.0.0.1:<port>`
+         * and reads ServiceID into "onionAddress"; an error reply throws, which answers null. */
+        override fun addOnion(localPort: Int, timeoutMs: Long, done: (String?) -> Unit) {
+            call<String?>(timeoutMs, null, done) {
+                link.addOnion(TorOnion.KEY, mapOf(80 to TorOnion.target(localPort)), TorOnion.FLAGS)["onionAddress"]
+            }
+        }
+
+        override fun delOnion(serviceId: String) {
+            call(10_000, Unit, {}) { link.delOnion(serviceId) }
         }
     }
 }
