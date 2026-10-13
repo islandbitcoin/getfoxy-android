@@ -7,7 +7,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test --test-reporter=spec --test-timeout=180000 test/*.test.js"
+    "pretest": "node -e \"require('fs').rmSync('.flows-seen', { recursive: true, force: true })\"",
+    "test": "node --test --test-reporter=spec --test-timeout=180000 test/*.test.js && node --test --test-reporter=spec --test-timeout=180000 test/coverage/*.test.js"
   },
   "devDependencies": {
     "jsdom": "29.1.1"

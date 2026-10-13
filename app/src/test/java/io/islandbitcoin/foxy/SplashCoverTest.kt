@@ -32,6 +32,16 @@ class SplashCoverTest {
         assertEquals(listOf(SplashCover.FADE_MS), fades)
     }
 
+    /** ENG-668: the page is uncovered once, before the fade, so a card tap waiting for it goes (CardTapDelivery.coverChanged). */
+    @Test
+    fun takingItDownSaysThePageIsUncoveredOnce() {
+        val said = mutableListOf<String>()
+        val c = SplashCover(uncovered = { said.add("uncovered") }) { said.add("fade $it") }
+        c.down()
+        c.down()
+        assertEquals(listOf("uncovered", "fade 350"), said)
+    }
+
     @Test
     fun theBackstopIsTheEightSecondsTheBridgeNames() {
         assertEquals(8_000L, SplashCover.BACKSTOP_MS)

@@ -19,8 +19,40 @@ import io.islandbitcoin.foxy.debug.Log
  * system dialog over Foxy (the screen lock's prompt) does not end a tap that is
  * waiting for its card; Foxy put away ends the session itself
  * ([NfcCardLink.putAway]).
+ *
+ * [off] hears reader mode turned off by [stop] (ENG-668): a card still resting on
+ * the phone is then found by Android's own dispatch, and its address is the card
+ * just read, not a tap (CardTapIntake). It runs once per [stop] that ended a
+ * look, and never for a stop with nothing looking (ReaderModeRadioTest).
+ *
+ * The adapter is reached through [ReaderMode], the activity's NfcAdapter on a
+ * phone ([of]) and a fake in the JVM tests.
  */
-class ReaderModeRadio(private val activity: Activity) : CardRadio {
+class ReaderModeRadio(
+    /** The phone's reader mode, or null on a phone with no NFC. */
+    private val reader: ReaderMode?,
+    /** Whether the activity can still take reader mode (not finishing or destroyed). */
+    private val usable: () -> Boolean,
+    private val off: () -> Unit = {},
+) : CardRadio {
+    /** Reader mode on one activity: NfcAdapter's enableReaderMode and disableReaderMode, or a fake. */
+    interface ReaderMode {
+        val isEnabled: Boolean
+
+        /** Reader mode on, each tag to [found]. Throws IllegalStateException when the activity is not in front. */
+        fun enable(found: (Tag) -> Unit)
+
+        /** Reader mode off. May throw IllegalStateException when it was already off. */
+        fun disable()
+    }
+
+    /** On a phone: the activity's own adapter. */
+    constructor(activity: Activity, off: () -> Unit = {}) : this(
+        of(activity),
+        { !activity.isFinishing && !activity.isDestroyed },
+        off,
+    )
+
     companion object {
         const val FLAGS = NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
 
@@ -30,19 +62,28 @@ class ReaderModeRadio(private val activity: Activity) : CardRadio {
          * a card that waits longer than this is taken to have gone.
          */
         const val TRANSCEIVE_MS = 10_000
+
+        /** The activity's NfcAdapter as a [ReaderMode], or null when the phone has none. */
+        fun of(activity: Activity): ReaderMode? {
+            val nfc = NfcAdapter.getDefaultAdapter(activity) ?: return null
+            return object : ReaderMode {
+                override val isEnabled: Boolean get() = nfc.isEnabled
+                override fun enable(found: (Tag) -> Unit) = nfc.enableReaderMode(activity, { found(it) }, FLAGS, null)
+                override fun disable() = nfc.disableReaderMode(activity)
+            }
+        }
     }
 
-    private val adapter: NfcAdapter? = NfcAdapter.getDefaultAdapter(activity)
     private var looking: ((CardTag) -> Unit)? = null
 
-    override fun available(): Boolean = adapter?.isEnabled == true
+    override fun available(): Boolean = reader?.isEnabled == true
 
     override fun start(found: (CardTag) -> Unit): Boolean {
-        val nfc = adapter ?: return false
-        if (!nfc.isEnabled || activity.isFinishing || activity.isDestroyed) return false
+        val nfc = reader ?: return false
+        if (!nfc.isEnabled || !usable()) return false
         looking = found
         return try {
-            nfc.enableReaderMode(activity, { tag -> looking?.invoke(IsoDepTag.of(tag)) }, FLAGS, null)
+            nfc.enable { tag -> looking?.invoke(IsoDepTag.of(tag)) }
             true
         } catch (e: IllegalStateException) {
             // not in front: no reader mode for an activity that is not resumed
@@ -55,18 +96,19 @@ class ReaderModeRadio(private val activity: Activity) : CardRadio {
         if (looking == null) return
         looking = null
         try {
-            adapter?.disableReaderMode(activity)
+            reader?.disable()
         } catch (e: IllegalStateException) {
             Log.line("[card] reader mode was already off")
         }
+        off()
     }
 
     /** The activity is in front again: a sheet still looking looks again (Android ended reader mode on the pause). */
     fun resumed() {
         val found = looking ?: return
-        val nfc = adapter ?: return
+        val nfc = reader ?: return
         try {
-            nfc.enableReaderMode(activity, { tag -> looking?.invoke(IsoDepTag.of(tag)) }, FLAGS, null)
+            nfc.enable { tag -> looking?.invoke(IsoDepTag.of(tag)) }
         } catch (e: IllegalStateException) {
             Log.line("[card] reader mode would not come back on")
         }

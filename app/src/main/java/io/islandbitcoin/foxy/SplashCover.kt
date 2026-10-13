@@ -20,7 +20,11 @@ package io.islandbitcoin.foxy
  *
  * The view is MainActivity's; this is the part the JVM tests run.
  */
-class SplashCover(private val takeDown: (fadeMs: Long) -> Unit) {
+class SplashCover(
+    /** The page is uncovered (ENG-668: a card tap waiting for it goes, CardTapDelivery.coverChanged). Once, before the fade. */
+    private val uncovered: () -> Unit = {},
+    private val takeDown: (fadeMs: Long) -> Unit,
+) {
     companion object {
         /** The intro's first frame, core/web/foxy-splash-still.png, in the APK's assets. */
         const val STILL = "web/foxy-splash-still.png"
@@ -42,6 +46,7 @@ class SplashCover(private val takeDown: (fadeMs: Long) -> Unit) {
     fun down() {
         if (!isUp) return
         isUp = false
+        uncovered()
         takeDown(FADE_MS)
     }
 }

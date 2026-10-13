@@ -158,6 +158,12 @@ class OnionInboxTest {
         val inbox = inbox()
         open(inbox)
         val port = inbox.localPort
+        val listener = inbox.listener ?: error("no listener")
+        // the control: while open, a payment sent to the port reaches the page
+        val first = thread { raw(port, Fixture.request(path = inbox.path)) }
+        val (_, answer) = payments.poll(10, TimeUnit.SECONDS) ?: error("an open inbox took no payment")
+        answer(200, "{\"ok\":true}")
+        first.join(10_000)
         inbox.close()
         assertEquals(listOf(FakeOnionServices.ID), services.removed)
         assertNull(inbox.url)
@@ -165,13 +171,22 @@ class OnionInboxTest {
         // a second close removes nothing more
         inbox.close()
         assertEquals(1, services.removed.size)
-        val refused = try {
-            Socket().use { it.connect(InetSocketAddress(InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)), port), 2_000) }
-            false
+        // the condition itself, which close() has made true by the time it returns: the listener is closed
+        assertTrue("nothing listens once closed", listener.isClosed)
+        assertNull(inbox.listener)
+        assertEquals(0, inbox.localPort)
+        /* And on the wire, the same request reaches nothing. Not "the connection
+         * is refused": once closed the port is the system's again, and another
+         * socket can be given it (or a connect to it can open onto itself), so a
+         * connect that succeeds says nothing about this inbox. That is what
+         * failed once in CI (ENG-672). */
+        val after = try {
+            raw(port, Fixture.request(path = inbox.path), readMs = 1_000)
         } catch (e: IOException) {
-            true
+            null
         }
-        assertTrue("nothing listens once closed", refused)
+        assertNull("no payment reached the page after the close", payments.poll(500, TimeUnit.MILLISECONDS))
+        assertFalse("and nothing answered as the inbox", after != null && HttpAnswer.parse(after)?.status == 200)
     }
 
     // MARK: Answers, byte for byte

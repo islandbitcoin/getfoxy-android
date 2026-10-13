@@ -84,8 +84,9 @@ adb shell am instrument -w -r io.islandbitcoin.foxy.test/androidx.test.runner.An
 | `CameraUnbindTest` | the live pane binds the camera, and the activity stopping unbinds it at once; a second stop does nothing (grants CAMERA) | S25 |
 | `SeedProtectTest` | the `device` key needs the person for every use (API 30+; on API 28-29 it refuses at `Cipher.init` outside the 10 s after a confirmation) and survives a new fingerprint; a move to `device` the person does not approve leaves the `none` seed readable and the protection unchanged. Needs a screen lock | S3, S5 |
 | `OwnPromptTest` | API 28-29 only, with `-e foxyPin <pin>` (skipped otherwise; it types the PIN with `input`): Settings' screen-lock confirmation stops MainActivity, and that stop is not a put-away. The vault's epoch does not move, the seed read under it is kept, the door stays open, and PutAway logs that it put nothing away; taking the guard off within 10 s of that yes still asks (`fresh`); Back on the confirmation after 2.5 s is not a yes, so the skipped put-away runs (the epoch moves) and PutAway logs a return. With a WebView that loads the page, a `seedShow` of a `device` seed opens SHOW WORDS once the PIN is given (skipped on an image whose WebView cannot load the page) | S3, S20, S21 |
-| `BluetoothApproveTest` | what the first-install Bluetooth screen's APPROVE posts (`bluetoothAsk`) comes back through the real shim twice, in iOS's order: `window.__foxyBluetoothAnswer("unsupported")`, which closes the screen, then the reply `unsupported` on its id; and the gate's own screen, launched with `FOXY_SHOW_WARNING` (debug builds) and raised through the banner's `leaveOffline` on a phone with a wallet, closes after PROCEED then APPROVE with `foxy.bt.asked` = `approved, iOS said unsupported` (the two keys are put back). ENG-656; no Bluetooth permission is asked. Passed on a Pixel 8 Pro (Android 17) 2026-10-12, and fails there with the push taken out; by hand on the same day, a fresh install on an API 35 emulator closed the screen on APPROVE | ENG-656 |
-| `TapCryptoOnDeviceTest` | tap to pay's crypto through the phone's own providers: Tink's X25519 in the APK and Conscrypt's ChaCha20-Poly1305 (which the desk JVM does not have) give iOS's bytes from `fixtures/tap-vectors.json` (the keys, the code, every seal, and the first conversation's handshake and offer); the JVM's `TapVectorsTest` checks the whole file. ENG-669; not yet run on a phone, and must pass on one before ENG-670/671's radio merges (the gate below) | ENG-669 |
+| `BluetoothApproveTest` | what the first-install Bluetooth screen's APPROVE posts (`bluetoothAsk`) comes back through the real shim twice, in iOS's order: `window.__foxyBluetoothAnswer(state)`, which closes the screen, then the reply `state` on its id; and the gate's own screen, launched with `FOXY_SHOW_WARNING` (debug builds) and raised through the banner's `leaveOffline` on a phone with a wallet, closes after PROCEED then APPROVE with `foxy.bt.asked` = `approved, iOS said <state>` (the two keys are put back). Since ENG-670 the state is the phone's: BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT are granted to the app first (API 31+, so no dialog comes up), and the answer must be what `BluetoothAnswer` reads from this phone's adapter: `allowed` with Bluetooth on, `off` with it off, `unsupported` on a phone that cannot advertise. Run it once with Bluetooth on and once off. The ENG-656 form (`unsupported` on every phone) passed on a Pixel 8 Pro (Android 17) 2026-10-12; the ENG-670 form is compiled, not yet run on a phone | ENG-656, ENG-670 |
+| `TapGattOnDeviceTest` | the receiver's GATT service as Android's own objects (`AndroidTapPeripheral.service`): one primary service, the four doors in iOS's order with iOS's properties and permissions, a CCCD (read, write, no encryption) on each notify door and none on the in door; and Android's `BluetoothGattCharacteristic`/`BluetoothGatt`/`BluetoothGattDescriptor` constants equal to the ones `TapGatt` spells out for the JVM tests; and the advertisement (`AndroidTapPeripheral.advertiseData`, `advertiseSettings`) as the iPhone payer accepts it (TapLink.swift 1154-1157): exactly one service UUID, the service's, no device name, no TX power level, no manufacturer or service data, connectable, no timeout. Opens no GATT server and needs no permission. ENG-670; compiled, not yet run on a phone | ENG-670 |
+| `TapCryptoOnDeviceTest` | tap to pay's crypto through the phone's own providers: Tink's X25519 in the APK and Conscrypt's ChaCha20-Poly1305 (which the desk JVM does not have) give iOS's bytes from `fixtures/tap-vectors.json` (the keys, the code, every seal, and the first conversation's handshake and offer); the JVM's `TapVectorsTest` checks the whole file. ENG-669; passed on the Pixel 8 Pro (Android 17) 2026-10-12 at main `d856d3b`, `OK (3 tests)`, recorded under "Runs": the gate below is met for ENG-670 | ENG-669 |
 | `TextZoomTest` | with the system font scale set to 1.3 through the shell (the phone's value put back afterwards), a WebView the activity makes and leaves alone starts at `textZoom` 130 (the control), and Foxy's is `WebHost.PAGE_TEXT_ZOOM`, 100: the page is laid out as WKWebView lays it out on iOS, whatever the font size. Skipped, saying why, when the scale cannot be set or a plain WebView does not follow it. ENG-661; compiled, not yet run on a phone | ENG-661 |
 | `NotifyChannelTest` | the payments channel `payments_heads_up` is `IMPORTANCE_HIGH` (heads-up, as iOS's foreground banner), and a phone holding the default-importance `payments` an earlier build made loses it when the channel is made (ENG-665). A channel the person turned off or down in Settings fails the first test: turn it back on | — |
 | `SplashCoverViewTest` | MainActivity's splash cover: the intro's still is an `ImageView` (`CENTER_CROP`, the still read from the APK) as the container's last child, drawn above every sibling (its `translationZ`), a view added after it included; the page's `covered` takes it down and it is out of the view tree within `SplashCover.FADE_MS` plus 1 s; a second `covered` is no news. Fails when MainActivity made no cover; skipped, saying why, only when the cover was made and the page said `covered` before the test could look. ENG-665; compiled, not yet run on a phone | ENG-665 |
@@ -102,6 +103,10 @@ would fail on a phone while every JVM test stayed green. Putting Conscrypt on
 the JVM test classpath (`org.conscrypt:conscrypt-openjdk-uber`) would move the
 check into CI, but it is a new pin and needs the person's supply-chain sign-off
 first, as Tink did; until then this run is the gate (ENG-669 review).
+**Met 2026-10-12**: `TapCryptoOnDeviceTest` passed on the Pixel 8 Pro
+(42201FDJG00048, Android 17) at main `d856d3b`, whose `TapCrypto` and
+`TapCryptoOnDeviceTest` ENG-670 leaves unchanged; the row is under "Runs". A
+change to `TapCrypto` or its providers needs the run again.
 
 P2 starts Tor with the page, so `PageBootTest`, `PutAwayTest` and
 `NetBlockTest` wait for the page to boot in whatever state Tor is in
@@ -203,7 +208,10 @@ wallet. (This replaces ENG-661's advice to use testnut.cashu.space.)
    words; a phrase copied inside Foxy is refused when pasted.
 
 8. **The receive screen's TAP (ENG-656). Pending: the architect's on-device
-   check; no phone was used for this change.** RECEIVE → an amount → NEXT, and
+   check; no phone was used for this change.** Since ENG-670 this is what a
+   phone *without* a Bluetooth LE peripheral shows (an emulator without
+   Bluetooth will do); on the Pixel the receive screen goes on the air, which
+   is the check *Tap to pay: the Pixel receives* below. RECEIVE → an amount → NEXT, and
    press TAP on the invoice screen: the TAP HERE card says HOLD A PHONE HERE,
    never UNKNOWN ACTION: TAPRECEIVESTART, and the TAP button keeps the accent
    colour (not greyed). On a debug build,
@@ -238,6 +246,94 @@ wallet. (This replaces ENG-661's advice to use testnut.cashu.space.)
     Pixel, Safari's Web Inspector on the iPhone): the two `pub` answers are the
     same 130 characters. `cardTime` answers the phone's clock and a signature.
     No card is needed and nothing moves; the card itself is A5 (the NFC link).
+
+## Tap to pay: the Pixel receives (ENG-670)
+
+**Pending: the person's, with two phones. No phone was used for this change,
+and nothing here moves money unless the person chooses to (step 6).** The JVM
+tests run the receiver against a paying `TapPayerLink` over a fake GATT stack
+(`TapGattServerTest`, `TapBridgeTest`): every message, long write, CCCD and
+wait. Only two phones prove that CoreBluetooth on an iPhone and Android's GATT
+server agree. **The hard gate above holds first**: `TapCryptoOnDeviceTest`
+must have passed on the Pixel and be recorded under "Runs", or every sealed
+message from M4 on may fail on the phone while the JVM stays green. It has:
+2026-10-12, `OK (3 tests)` (the row under "Runs"). Still pending, the
+person's: `TapGattOnDeviceTest`, `BluetoothApproveTest`'s ENG-670 form, and
+every two-phone step below.
+
+The phones: the iPhone **Max** with Foxy (getfoxy/iOS at `core/PIN`'s commit
+or later, a debug build so its diary prints the `[tap] pay:` lines), funded
+with a few sats at the mint the Pixel's Foxy uses; the **Pixel 8 Pro** with the
+debug build of this branch. Both unlocked, Bluetooth on, Foxy in front on each.
+On the Pixel, follow the diary with
+`adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy) | grep '\[tap\]'`.
+
+1. **The question.** On a fresh install of the Pixel build, PROCEED, then
+   APPROVE on the Bluetooth screen: Android's own dialog asks for "Nearby
+   devices" (API 31+). Allow: the screen closes, and `foxy.bt.asked` (read over
+   WebView debugging, `tools/cdp-eval.js`) is `approved, iOS said allowed`. A
+   second install where the dialog is refused: `approved, iOS said denied`, and
+   the receive screen's TAP button is greyed (the page took `denied`). With
+   Bluetooth off before APPROVE: `approved, iOS said off`.
+2. **On the air, and nothing else.** RECEIVE → an amount → NEXT on the Pixel.
+   The diary says `[tap] receive: on the air as <UUID>`. With a BLE scanner on a
+   third device (nRF Connect, or the iPhone's own scan in step 3), the Pixel's
+   advertisement carries that 128-bit service UUID and nothing else: no name, no
+   TX power, no manufacturer data, connectable. Leave the screen: the
+   advertisement stops (`tapReceiveStop`). Put Foxy away on the invoice screen
+   (HOME): it stops within a second (`Foxy was put away; off the air`), and
+   comes back with a **new** UUID when Foxy is in front again.
+3. **The iPhone finds the Pixel.** Pixel on the invoice screen, on the air.
+   Bring the iPhone, Foxy on its home screen, towards it: the iPhone's diary
+   says `[tap] pay: something at <n> dBm, not close enough` as it nears, then
+   TAP TO PAY on its screen, and the Pixel's TAP card shows CONNECT TO PAY at
+   the edge the iPhone chose (`nearby` with `left` or `right`). A filter line
+   `[tap] pay: the filter passed by …` that counts the Pixel as not Foxy is a
+   failure: the advertisement is not what iOS expects.
+4. **The link.** Touch the phones (back to back, tops together, as two iPhones
+   are held): both screens show the same four digits (the Pixel's page heard
+   `connecting`, then `code`), the Pixel's diary says `a phone is listening;
+   its first word takes the place`, and the iPhone shows the Pixel's offer. The iPhone's writes are 512 bytes, so the Pixel's
+   GATT server took prepared writes (Android logs nothing for them: a link that
+   reaches the four digits has carried M1 and M3 that way).
+5. **A payment, only with the person's go (docs/DEVICE-TESTS.md "Real money":
+   at most 100 sats, the person's own mint).** The iPhone pays the Pixel's
+   invoice screen for a small amount with change due (the iPhone's ecash larger
+   than the amount): PAYMENT RECEIVED on the Pixel, the iPhone's change
+   written down (`tapChange` answered `ok`, not the 7 s "did not say it kept
+   the change"), and both balances agree with what was paid.
+6. **Shake and turn.** On the Pixel's invoice screen with something to offer,
+   shake the phone twice, sharply: TAP is pressed (`[foxy] tap: shaken; pressing
+   TAP`). Off that screen a shake does nothing. Turn the Pixel upside down and
+   back: the invoice screen turns round and back (`_turned`).
+
+**The near threshold on the Pixel (for the upstream table, A12).** iOS takes a
+payer as touching at a median of **−33 dBm** (`nearDbm`,
+`Foxy/Bluetooth/TapProtocol.swift:278`), measured between two iPhones; the
+Pixel advertises at `AndroidTapPeripheral.TX_POWER` (`ADVERTISE_TX_POWER_HIGH`)
+through its own antenna, so the same distance reads differently. Measure it and
+record the method with the numbers:
+
+- Receiver: the Pixel on its invoice screen, on the air, lying face up on a
+  wooden table, nothing metal within 30 cm, Wi-Fi left as it is (note it).
+- Payer: the iPhone Max, Foxy on its home screen, its diary followed (Xcode's
+  console or the LOGS screen), reading the `[tap] pay: something at <n> dBm`
+  and `a receiver at <n> dBm (needs …)` lines, which are the medians the
+  proximity rule decides on.
+- Positions, each held still for 10 s, three times, phones swapped round
+  between runs: back to back touching; touching, tops together, the iPhone's
+  top edge over the Pixel's camera bar; 1, 2, 5, 10 and 20 cm apart, faces
+  parallel; the iPhone in a case and without.
+- Record per position the median and the spread of the readings, and the
+  closest position that reaches −33 dBm. Repeat once with the Pixel on
+  `ADVERTISE_TX_POWER_MEDIUM` (a debug build with `TX_POWER` changed; do not
+  commit it) so the table says what the setting buys.
+- Write the table under "Runs" below with the date, both phones' OS versions,
+  the commit, and whether each position counted as touching on the iPhone
+  (TAP TO PAY taken without pressing it). It feeds the edge and threshold
+  table upstream (`TapEdges`, `TapProximity` thresholds per receiver model):
+  the iPhone has to learn the Pixel as a receiver, which is an upstream
+  change, not this one.
 
 ## The card (ENG-667)
 
@@ -291,9 +387,8 @@ log or `adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy)` for the
    (the line says "Hold one card to the back of the phone" if the card is not
    one that speaks commands, or the page refuses it as NOT A FOXY CARD), and no
    other app or browser opens. (f) With the sheet down and Foxy in front, hold
-   the Flashcard to the phone: note what Android does (opening Foxy from a card
-   is ENG-668; until then the system may offer the card's address
-   `https://getfoxy.io/card` to a browser).
+   the Flashcard to the phone: Foxy opens its Flashcard screen and the card
+   sheet (ENG-668; the full checks are in "A card held to the phone" below).
 3. **ADD FUNDS (real money: the person's go, 100 sats or less).** With the
    card on the FLASHCARD screen: ADD FUNDS, an amount of 100 or less, the PIN
    if the card has one, TAP CARD, hold the card until the tick. **Pass:** the
@@ -328,6 +423,145 @@ log or `adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy)` for the
 
 Report each step's pass or fail, the read and signing times, the phone, the
 card's software (`01 14` is 1.20) and the build's commit.
+
+## A card held to the phone (ENG-668)
+
+**Pending: the person's on-device check; no phone and no card were used for
+this change, and nothing here moves money.** What runs without them:
+`CardAddressTest` and `CardTapDeliveryTest` (iOS's `CardAddressTests` and
+`CardTapDeliveryTests`, case for case, plus a question out across a dead page
+and a slow answer never asked twice), `CardTapIntakeTest` (the two intent
+actions, a replayed intent, no tap while a card is being read),
+`CardTapRouteTest` (a new page, the page on top of its task, or dropped with a
+seed screen or the scanner over it), `ReaderModeRadioTest` (reader mode off is
+said once per look ended), `PageHooksTest` (the reload order and the wiring),
+`PutAwayCardTapTest` (`_resumed` before the delivery hears of the return),
+`ManifestTest` (the two filters on `CardTapActivity` only, exactly
+`https://getfoxy.io/card`; MainActivity takes neither), and the
+conformance flows *the card tap (`_cardTapped`, P3) …* (the page's answer and
+`cardTapRule`). What only a phone, a card and a hand can show is below.
+
+Needs the debug build on the Pixel 8 Pro (`./gradlew assembleDebug`, `adb
+install -r app/build/outputs/apk/debug/app-debug.apk`), NFC on, the person's
+provisioned Flashcard of software 1.19 or later with its tag switched on (the
+default; FLASHCARD → the owner's settings if it was switched off), a wallet
+already set up on the Pixel, and the field log or `adb logcat
+--pid=$(adb shell pidof io.islandbitcoin.foxy)` open for the `[foxy] card tap:`
+lines (`a card's address arrived`, `told the page`, `given up …`, `… not a
+tap`; the address itself is never logged). Hold the card flat to the back of
+the phone near the middle, for about a second, and lift it, unless a step
+says to leave it. Read the page's own `[foxy] card tap:` console lines (the
+page's `cardTapRule`) in the field log too.
+
+1. **Foxy closed (cold start).** Force-stop Foxy (Settings → Apps → Foxy →
+   Force stop), the screen on and unlocked on the home screen. Hold the card.
+   **Pass:** Foxy starts by itself (no browser, no chooser; if Android shows a
+   chooser, another installed app also claims the address: note which), the
+   splash and the PIN lock if one is set, and once unlocked the FLASHCARD
+   screen opens with the card sheet up, as MENU → FLASHCARD → TAP CARD would.
+   The log has `a card's address arrived` then `told the page` once.
+2. **Foxy in the background.** Open Foxy, go Home, wait ten seconds, hold the
+   card. **Pass:** Foxy comes to the front (the same activity: no second
+   splash), the PIN lock comes up first if one is set (the page heard
+   `_resumed` before the tap), then the Flashcard screen and the sheet. One
+   `told the page` line.
+3. **Foxy open on HOME.** Hold the card with Foxy in front on HOME. **Pass:**
+   the Flashcard screen and the sheet at once; the card on the phone is then
+   read by the sheet (lift and hold again if it is not), and the screen shows
+   the card.
+4. **Foxy open on a send or a payment in progress (ignored).** Start a SEND
+   (or RECEIVE with an amount) and hold the card at the confirmation. **Pass:**
+   nothing moves on screen; the page logs that it ignored the tap; the send
+   goes on as before.
+5. **A card being read never re-opens the screen.** MENU → FLASHCARD → TAP
+   CARD, hold the card until the tick and **leave it on the phone** for ten
+   seconds after the sheet goes. **Pass:** the sheet does not come back and
+   the Flashcard screen stays as it is; the log may show `… not a tap` (the
+   card found again as reader mode went off). Lift the card, wait five
+   seconds, hold it again: a tap again (the screen acts as in step 3).
+6. **Locked.** Lock the phone (screen off), wake it to the lock screen
+   without unlocking, hold the card. Note what Android does: with "Require
+   device unlock for NFC" on (the default on Android 12+), nothing until
+   unlock. Then unlock within a minute and hold it again. **Pass:** nothing
+   opens on the lock screen, and the tap after unlocking opens Foxy as in
+   step 1 or 2. Separately: hold the card while unlocked, then lock the phone
+   at once before Foxy is up, and unlock within a minute: the kept tap opens
+   the Flashcard screen; after more than a minute it does not (`given up`).
+7. **Twice quickly.** On HOME, hold the card, lift, hold again within a
+   second. **Pass:** one Flashcard screen and one sheet (the page treats the
+   second as the same tap or as a card for the sheet already up).
+8. **Recents does not replay it.** After step 1, Back out of Foxy (the
+   activity finishes), then open Foxy from Recents. **Pass:** Foxy opens on
+   HOME, not the Flashcard screen; no `a card's address arrived` line.
+9. **The address in a browser.** On the Pixel, open
+   `https://getfoxy.io/card` in Chrome from a note or a message. Note what
+   happens: with no verified App Link Chrome stays on the page (expected
+   today); Settings → Apps → Foxy → Open by default → add `getfoxy.io` and
+   try again: Foxy opens as in step 3.
+10. **foxy://card (debug only).** `adb shell am start -a
+   android.intent.action.VIEW -d foxy://card` with Foxy on HOME. **Pass:** as
+   step 3, and the log has `[deeplink] a card tap`.
+11. **A card held while the seed words or the scanner is up (dropped, never a
+   second page).** a) MENU → the seed words (SHOW WORDS, past the screen
+   lock), and with the twelve words on screen hold the card. b) Start a scan
+   (SEND → SCAN), and with the camera up hold the card. **Pass:** in both, the
+   screen in front stays exactly as it is: no splash, no second Foxy over it,
+   no Flashcard screen; the log has `[foxy] card tap: dropped`. Close the
+   screen (Back): Foxy's page is under it, as it was, and Recents shows one
+   Foxy. Then on HOME hold the card: a tap as in step 3 (`delivered`).
+   `dropped` holds only while the words are live on screen (the hold in a).
+   Then repeat a) with the card left resting on the phone, turn the screen
+   off and on and unlock. **Pass:** the seed screen closed when the screen
+   went off (S20, the log has `[foxy] a seed screen was left; closed`), so on
+   unlock the words are gone, the tap is `delivered` and handled as in step
+   3, and Recents still shows one Foxy. A seed screen still up after unlock
+   is a fail (S20), and so is a second Foxy.
+12. **A card resting on the phone while another app is in front.** Put the card
+   in the phone's case (or tape it to the back) so it rests on the reader. Open
+   Foxy on HOME, then open another app (Settings or Chrome) so Foxy is in the
+   background. Lock the phone, wake it and unlock with that app in front; do it
+   three times. **Record what Android does**: whether Foxy jumps to the front
+   over the other app on each unlock (expected: Android's tag dispatch finds
+   the card on every wake and `CardTapActivity` brings the page back,
+   `delivered`), whether a chooser shows, and what the page then does
+   (Flashcard screen, or nothing). Repeat with Foxy force-stopped
+   (`launched`). On iOS a background read only raises a banner the person must
+   tap, so Foxy never comes over another app by itself; the spec
+   (sandbox/plans/foxy-card-android.md) says nothing about a resting card. If
+   Foxy does jump to the front, raise it with the iOS team (Mike Greff) as a
+   parity decision, with this step's notes: keep it, or ask before opening
+   (a notification the person taps, as iOS's banner). Do not leave it
+   undecided.
+
+Report each step's pass or fail, the phone, the Android version, the card's
+software and the build's commit.
+
+**Follow-up: the App Link (getfoxy.io, Mike Greff).** The link filter is
+`autoVerify="false"` today: Android verifies an App Link against
+`https://getfoxy.io/.well-known/assetlinks.json`, which must list the package
+`io.islandbitcoin.foxy` with the SHA-256 fingerprint of the **release** signing
+certificate, and there is no release key yet (debug builds only). Once a
+release key is decided: send Mike Greff (getfoxy/iOS developer, who controls
+getfoxy.io and already serves its apple-app-site-association) the fingerprint
+(`keytool -list -v -keystore <release keystore>`) and this file:
+
+```json
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "io.islandbitcoin.foxy",
+    "sha256_cert_fingerprints": ["<RELEASE SHA-256, AA:BB:…>"]
+  }
+}]
+```
+
+then set `android:autoVerify="true"` on the link filter in
+`app/src/main/AndroidManifest.xml` and change `ManifestTest`'s expectation with
+it, and check with `adb shell pm verify-app-links --re-verify
+io.islandbitcoin.foxy` and `adb shell pm get-app-links io.islandbitcoin.foxy`
+(`getfoxy.io: verified`). The NDEF filter does not depend on it: the tag
+dispatch opens Foxy without any verification.
 
 ## The native design checks (ENG-665)
 
@@ -603,6 +837,7 @@ is not a pass; the device exit needs a run with nothing skipped but
 | 2026-10-11 | ENG-649 review fixes (on `f856566`) | AVD `foxy_api29` (API 29 `default` arm64-v8a, emulator; PIN 1234 by `locksettings set-pin`) | `OwnPromptTest -e foxyPin 1234`: `theConfirmationIsNotAPutAway…` passed, `seedShowUnderTheScreenLock…` skipped (the image's AOSP WebView lacks a feature Foxy needs, `[foxy] this phone's WebView lacks a feature Foxy needs; the page is not loaded`). With `ownPrompt = { false }` (the fix taken out) it fails: "the epoch did not move expected:<3> but was:<4>". `SeedProtectTest` alone: `OK (2 tests)`; before its fix it failed on API 29 (`UserNotAuthenticatedException` at `Cipher.init`, outside its `runCatching`), and run straight after `OwnPromptTest` it fails because the 10 s of that confirmation still open a new time-bound key. `PutAwayTest`: 3 failed, the page never loads on this image (`Page.STARTED`). SHOW WORDS under `device` on API 28-29 is still to be run on an image or phone whose WebView loads the page | not run (P1's) |
 | 2026-10-11 | ENG-649 review round 2 (yes-only confirmation rule) | AVD `foxy_api29` (API 29 `default` arm64-v8a), `/product/app/webview/webview.apk` replaced (`-writable-system`, `adb remount`) with Chromium snapshot 1716552's `SystemWebView.apk` (`com.android.webview` 157.0.8101.0; `dumpsys webviewupdate` shows it current); PIN 1234 | **SHOW WORDS under `device` on API 28-29: still no passing run.** With WebView 157 the page loads on this image (`seedShowUnderTheScreenLock…` got past its `Page.STARTED` assumption for the first time) but the run did not complete: its `guardOn` confirmation never came up (state left by an earlier interrupted run; `pm clear` afterwards), and every later `ActivityScenario.launch` hung in `Instrumentation.startActivitySync` with the main thread drawing frames without end (`-gpu host`, `-no-window` and `swiftshader_indirect` alike), so the main looper never went idle. `theConfirmationIsNotAPutAway…` and the new `aCancelledConfirmationIsAReturnAndPutsAway` hung the same way. The yes-only rule is covered by the unit tests in `PutAwayLeavingTest` and `ScreenLockConfirmationTest` only. **The API 28-29 screen-lock confirmation path (`DeviceAuth.confirm`, PutAway's yes-only rule, MainActivity's ActivityResult launcher) is unproven on a device: it has never run on an Android 9 or 10 phone. Tracked in Linear ENG-654 (High; blocks the store release, not this PR): run `OwnPromptTest -e foxyPin <pin>` on a physical Android 9/10 phone and record it here.** |
 | 2026-10-11 | ENG-649 rebased on main `43dc3e5` (ENG-652), app at `39938f6` | Pixel 8 Pro (42201FDJG00048), **unlocked**, Android 17, APKs uninstalled and installed fresh, CAMERA and POST_NOTIFICATIONS granted | first full run on the fresh install: 31 run, 1 failed, `TorRouteTest.torLeavingTheNetworkMidRequest…` ("answered over Tor: Foxy is not connected to Tor."): the retry and the test's restart joined the running set-up (one SOCKS listener, `circuit established`), the page's first requests went through, then every SOCKS handshake timed out (7 `SocketTimeoutException`s) until the test's own deadline; logcat kept. The full suite again: `OK (31 tests)`, no SOCKS timeout. Skipped as designed both times: `DeviceExitTest` (no `-e foxyExit true`), `KeystoreTest.onALockedPhone…` (phone unlocked), the three `OwnPromptTest`s (API 28-29 only). Then `pm clear` and a launch: Tor up (`transport: "direct"`) 11 s after `SOCKS on`, and a mint of 8 on testnut.cashu.space over Tor claimed (`8`, after one `Quote not paid` retry) | not run |
+| 2026-10-12 | main `d856d3b78456fe69a891135363bab3d25f70787c` (ENG-669's `TapCrypto` and `TapCryptoOnDeviceTest`, unchanged on ENG-670), run by the architect | Pixel 8 Pro (42201FDJG00048), Android 17 | `am instrument -e class io.islandbitcoin.foxy.TapCryptoOnDeviceTest`: `OK (3 tests)`. Tink's X25519 and Conscrypt's ChaCha20-Poly1305 give iOS's bytes from `fixtures/tap-vectors.json`: the tap to pay hard gate (ENG-670, ENG-671) is met. `TapGattOnDeviceTest`, `BluetoothApproveTest`'s ENG-670 form and the two-phone steps: pending, the person's | not run |
 
 ### P2 device exit, 2026-10-11 (Pixel 8 Pro 42201FDJG00048, debug builds of ENG-648)
 

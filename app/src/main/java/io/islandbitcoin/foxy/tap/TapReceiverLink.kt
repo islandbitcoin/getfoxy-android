@@ -12,10 +12,11 @@ import java.util.UUID
  * page and M6 sealed from its answer, M9, M11, the change leg, M12, and a stop
  * that waits for a payment in flight.
  *
- * The GATT server (ENG-670) plugs in underneath as a [Radio]: it puts the
- * service up and on the air, says who subscribed to and wrote on which door,
- * and carries notifications. The near doors (CONNECT TO PAY, the turned and
- * early byte) are the radio's and are not in here.
+ * The GATT server ([TapGattServer], ENG-670) plugs in underneath as a
+ * [Radio]: it puts the service up and on the air, says who subscribed to and
+ * wrote on which door, and carries notifications. The near doors (CONNECT TO
+ * PAY, the turned and early byte) are the radio's and are not in here;
+ * [TapReceiver] puts the two together as iOS's `TapReceiver` is one.
  *
  * One payment's worth of radio: the service UUID is made once, and a receiver
  * that has handed an offer to somebody ([takenOne]) is never armed again.
@@ -157,6 +158,18 @@ class TapReceiverLink(
         advertise()
     }
 
+    /** The radio put the service up: on the air now, if armed (TapLink.swift `didAdd` → `advertise`). */
+    fun serviceAdded() {
+        if (finished) return
+        advertise()
+    }
+
+    /**
+     * Nobody holds this receiver's place and no link is made: a payer that says
+     * it is near may be shown CONNECT TO PAY (TapLink.swift:538, `!linked, talkingTo == nil`).
+     */
+    val idle: Boolean get() = !linked && talkingTo == null
+
     /** The radio says the advertisement went up. */
     fun advertising() {
         if (finished) return
@@ -278,6 +291,13 @@ class TapReceiverLink(
         reallyStop()
         return true
     }
+
+    /**
+     * Ends it now, a payment in flight or not: the page that would answer it is
+     * gone (FoxyBridge+Tap.swift `stopTap`, where letting go of the receiver
+     * takes its peripheral manager, and every connection, with it).
+     */
+    fun stopNow() = reallyStop()
 
     private fun reallyStop() {
         changeAnswered(false)

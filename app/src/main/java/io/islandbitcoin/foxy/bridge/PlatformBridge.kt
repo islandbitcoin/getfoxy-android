@@ -8,11 +8,10 @@ import java.util.concurrent.Executor
  * The P3 platform actions (FoxyBridge.swift): the camera (full screen and the
  * live pane), the paste button and the clipboard, copy, share, notifications,
  * the PIN lock's biometric, this app's settings and the four company sites, and
- * whether the screen is captured; and the first-install Bluetooth screen's
- * APPROVE (`bluetoothAsk`) and the receive screen's TAP (`tapReceiveStart`,
- * `tapReceiveStop`), answered "unsupported" until tap to pay is built
- * (ENG-650, ENG-656). The rules are [PlatformRules], [TapRules] and
- * [ClipboardFilter]; the doors are [PageHost]'s (WebHost on a phone, FakeHost
+ * whether the screen is captured. The first-install Bluetooth screen's
+ * APPROVE and the receive screen's TAP, answered "unsupported" in ENG-656, are
+ * [TapBridge]'s since tap to pay's receiver (ENG-670). The rules are
+ * [PlatformRules] and [ClipboardFilter]; the doors are [PageHost]'s (WebHost on a phone, FakeHost
  * in the tests). Nothing the page writes is shown, opened or notified: it picks
  * from native's fixed lists or gets the default or a refusal (S24), and a
  * native surface it positions must sit where it is allowed (S25).
@@ -28,12 +27,12 @@ class PlatformBridge(
         val ACTIONS = setOf(
             "captured", "scan", "previewStart", "previewStop", "pasteStart", "pasteStop",
             "clipboard", "copy", "share", "notify", "biometric", "openSettings", "openCompany",
-            "bluetoothAsk", "tapReceiveStart", "tapReceiveStop",
         )
 
         /**
-         * What `bluetoothAsk` answers until BLE tap to pay lands (ENG-650): one of
-         * the contract's states, and the one that asks nothing of the phone.
+         * What `bluetoothAsk` answers on a phone with no Bluetooth Foxy can use
+         * (ENG-656; [TapBridge] since ENG-670): one of the contract's states,
+         * and the one that asks nothing of the phone.
          */
         const val BLUETOOTH_UNSUPPORTED = "unsupported"
 
@@ -50,16 +49,6 @@ class PlatformBridge(
 
     private val throttle = PlatformRules.NotifyThrottle(clock)
 
-    /**
-     * Whether the page holds a receiver: set by a `tapReceiveStart` that was not
-     * refused, cleared by `tapReceiveStop` and when the page goes ([pageGone]),
-     * not when Foxy is put away. iOS's `tapReceiver` (FoxyBridge+Tap.swift),
-     * which on a phone without Bluetooth says `unsupported` once, when it is
-     * made, and which only `tapReceiveStop` and `pageGone` → `stopTap`
-     * (FoxyBridge.swift:1087-1096) let go; going to the background leaves it.
-     * Main thread only.
-     */
-    private var receiverHeld = false
 
     private fun evaluate(js: String) = host.post { host.evaluate(js) }
 
@@ -78,15 +67,9 @@ class PlatformBridge(
         host.pasteStop()
     }
 
-    /**
-     * The page went (its process ended, or it is loading again): what [letGo]
-     * lets go, and the receiver too, as iOS's `pageGone` → `stopTap`
-     * (FoxyBridge.swift:1087-1096). Putting Foxy away is [letGo] alone: iOS
-     * keeps `tapReceiver` across the background. Main thread.
-     */
+    /** The page went (its process ended, or it is loading again): what [letGo] lets go. Main thread. */
     fun pageGone() {
         letGo()
-        receiverHeld = false
     }
 
     fun handle(action: String, id: String, body: Map<String, Any?>) {
@@ -138,57 +121,7 @@ class PlatformBridge(
                     if (refused == null) resolve(id, "ok", null) else resolve(id, null, refused)
                 }
             }
-            "bluetoothAsk" -> bluetoothAsk(id)
-            "tapReceiveStart" -> tapReceiveStart(id, body["payload"] as? String ?: "")
-            "tapReceiveStop" -> host.post {
-                receiverHeld = false
-                resolve(id, "ok", null)
-            }
             else -> resolve(id, null, "Unknown action: $action")
-        }
-    }
-
-    /**
-     * The first-install Bluetooth screen's APPROVE (foxy-tor-gate.js): the page
-     * sets `asking` and leaves only when `__foxyBluetoothAnswer(state)` is
-     * called, so a reply alone keeps the screen up for good (ENG-656). Answered
-     * twice, in iOS's order (FoxyBridge+Tap.swift `handleBluetoothAsk`): the
-     * gate's global first, then the action's own id. Android has no tap to pay
-     * yet (ENG-650), so the state is always "unsupported": no Bluetooth
-     * permission is asked or declared, nothing scans or advertises, and the
-     * page writes `foxy.bt.asked` and moves on.
-     */
-    private fun bluetoothAsk(id: String) = host.post {
-        Log.line("[foxy] bluetooth: asked; no tap to pay on Android yet, answering $BLUETOOTH_UNSUPPORTED")
-        host.evaluate(bluetoothAnswer(BLUETOOTH_UNSUPPORTED))
-        resolve(id, BLUETOOTH_UNSUPPORTED, null)
-    }
-
-    /**
-     * The receive screen's TAP (FoxyBridge+Tap.swift `handleTapReceiveStart`),
-     * which the page also asks by itself on every receive screen (auto-arm,
-     * `foxy.tap.auto` on by default). An "Unknown action" here was a refusal
-     * the page retries every 1.2 s while the screen is up, with the error in
-     * the TAP card (ENG-656). Android answers what iOS answers on an iPhone
-     * whose Bluetooth is `unsupported`: a payload iOS would refuse is refused
-     * with its words and nothing else; otherwise "ok", and when this makes the
-     * receiver (none held yet) `_tap({side:"receive",stage:"unsupported"})`
-     * after the reply, as iOS's peripheral manager reports its state after the
-     * handler has answered. A receiver already held answers "ok" alone, as
-     * iOS's `update` and `arm` do. Nothing is advertised, no Bluetooth
-     * permission is asked or declared, until BLE tap to pay (ENG-650).
-     */
-    private fun tapReceiveStart(id: String, payload: String) {
-        if (payload.isNotEmpty() && !TapRules.isPayload(payload)) return resolve(id, null, TapRules.NOT_PAYABLE)
-        host.post {
-            val made = !receiverHeld
-            receiverHeld = true
-            resolve(id, "ok", null)
-            if (made) {
-                Log.line("[tap] receive: no tap to pay on Android yet; telling the page ${TapRules.UNSUPPORTED}")
-                // posted after the reply's own post, so the page hears the answer first
-                evaluate(TapRules.push("receive", TapRules.UNSUPPORTED))
-            }
         }
     }
 

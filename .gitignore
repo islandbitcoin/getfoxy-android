@@ -41,3 +41,6 @@ node_modules/
 *.pcap
 # leak-test leftover change (tools/leak-test.sh): bearer ecash, never committed
 *.leftover.token
+
+# conformance flow files' record of what they posted, read by the coverage check (npm test)
+.flows-seen/

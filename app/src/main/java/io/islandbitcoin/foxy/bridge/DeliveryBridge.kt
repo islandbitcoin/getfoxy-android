@@ -6,8 +6,6 @@ import io.islandbitcoin.foxy.network.InboxAnswer
 import io.islandbitcoin.foxy.network.MintCircuit
 import io.islandbitcoin.foxy.network.OnionInbox
 import io.islandbitcoin.foxy.network.OnionPost
-import java.text.BreakIterator
-import java.util.Locale
 
 /**
  * What the onion actions need from the rest of the app, passed in so the JVM
@@ -56,7 +54,8 @@ class DeliveryEnvironment(
  * Receiving: `inboxOpen` hands out an onion address for the request on screen
  * ([OnionInbox]); a payment posted there reaches the page as
  * `FoxyWallet._requestPaid(body, answerId)`, the page redeems it and says how
- * that went with `inboxAnswer`; `inboxClose` ends the address, after `hold`
+ * that went with `inboxAnswer` (answered from the one registry tap payments
+ * wait in too, [InboxAnswers]); `inboxClose` ends the address, after `hold`
  * seconds if a payment may be on its way. One spare address is kept warm and
  * handed to nobody until a request asks, so a payer finds it published.
  *
@@ -79,13 +78,16 @@ class DeliveryBridge(
     private val env: DeliveryEnvironment,
     private val host: PageHost,
     private val resolve: (id: String, text: String?, error: String?) -> Unit,
+    /** The answers the page owes, the onion's and the tap's in one table (FoxyBridge.swift `inboxAnswers`). */
+    private val answers: InboxAnswers,
 ) {
     companion object {
-        val ACTIONS = setOf("inboxOpen", "inboxClose", "inboxAnswer", "onionPost")
+        /** And `inboxAnswer`, which [InboxAnswers] answers for this bridge and [TapBridge] alike. */
+        val ACTIONS = setOf("inboxOpen", "inboxClose", InboxAnswers.ACTION, "onionPost")
 
         const val NO_ADDRESS = "No address: Tor is not ready."
         const val NO_ONION = "No onion address: Tor is not ready."
-        const val NO_PAYMENT_WAITING = "No payment is waiting on that answer."
+        const val NO_PAYMENT_WAITING = InboxAnswers.NO_PAYMENT_WAITING
         const val TOO_LARGE = "That payment is too large to send."
 
         /** How long a payment's answer key is kept: past the inbox's own 100 s, after which it answered 504. */
@@ -95,54 +97,15 @@ class DeliveryBridge(
         const val MOST_HOLD_S = 180.0
 
         /** The longest text a payer is told. */
-        const val MOST_TEXT = 300
+        const val MOST_TEXT = InboxAnswers.MOST_TEXT
 
-        /**
-         * A string as Apple's JSONSerialization writes it, so the payer reads
-         * the bytes an iPhone receiver sends: `"`, `\` and `/` escaped (Apple
-         * escapes the slash), \b \f \n \r \t by name, other controls as \u00xx,
-         * everything else as it is.
-         */
-        fun appleJsonString(value: String): String {
-            val out = StringBuilder(value.length + 2).append('"')
-            for (c in value) {
-                when (c) {
-                    '"' -> out.append("\\\"")
-                    '\\' -> out.append("\\\\")
-                    '/' -> out.append("\\/")
-                    '\b' -> out.append("\\b")
-                    '\u000C' -> out.append("\\f")
-                    '\n' -> out.append("\\n")
-                    '\r' -> out.append("\\r")
-                    '\t' -> out.append("\\t")
-                    else -> if (c.code < 0x20) out.append("\\u%04x".format(c.code)) else out.append(c)
-                }
-            }
-            return out.append('"').toString()
-        }
+        fun appleJsonString(value: String): String = InboxAnswers.appleJsonString(value)
 
-        /** What the payer hears for the page's word (FoxyBridge+Delivery.swift `handleInboxAnswer`). */
-        fun answerBody(status: Int, text: String): String =
-            if (status == 200) "{\"ok\":true}" else "{\"error\":" + appleJsonString(text) + "}"
+        fun answerBody(status: Int, text: String): String = InboxAnswers.answerBody(status, text)
 
-        /** Only the statuses a payer is told: 200, 409, 422; anything else is 422. */
-        fun answerStatus(asked: Any?): Int {
-            val n = (asked as? Number)?.toDouble()?.takeIf { it.isFinite() }?.toInt() ?: 422
-            return if (n == 200 || n == 409 || n == 422) n else 422
-        }
+        fun answerStatus(asked: Any?): Int = InboxAnswers.answerStatus(asked)
 
-        /** The first `most` characters as a person sees them (Swift's `prefix` counts grapheme clusters). */
-        fun prefixCharacters(text: String, most: Int): String {
-            val it = BreakIterator.getCharacterInstance(Locale.ROOT)
-            it.setText(text)
-            var end = 0
-            for (i in 0 until most) {
-                val next = it.next()
-                if (next == BreakIterator.DONE) return text
-                end = next
-            }
-            return text.substring(0, end)
-        }
+        fun prefixCharacters(text: String, most: Int): String = InboxAnswers.prefixCharacters(text, most)
 
         /** `hold`, in seconds, within 0..180 (FoxyBridge+Delivery.swift `handleInboxClose`). */
         fun holdSeconds(hold: Any?): Double {
@@ -174,9 +137,6 @@ class DeliveryBridge(
     /** Addresses the screen finished with that still answer, because a payment may be on its way. */
     private val retiring = mutableListOf<Inbox>()
 
-    /** The payments waiting on the page's answer, by the key the page was handed. */
-    private val answers = HashMap<String, InboxAnswer>()
-
     /** Put away: no address is made until Foxy is back. */
     private var away = false
 
@@ -184,14 +144,14 @@ class DeliveryBridge(
         when (action) {
             "inboxOpen" -> inboxOpen(id)
             "inboxClose" -> inboxClose(id, body)
-            "inboxAnswer" -> inboxAnswer(id, body)
+            InboxAnswers.ACTION -> answers.handle(id, body)
             "onionPost" -> onionPost(id, body)
             else -> resolve(id, null, "Unknown action: $action")
         }
     }
 
     /** Whether an answer key is waiting: for the tests. */
-    internal fun waiting(key: String): Boolean = key in answers
+    internal fun waiting(key: String): Boolean = answers.waiting(key)
 
     internal val spareInbox: Inbox? get() = spare
     internal val openInbox: Inbox? get() = inbox
@@ -249,8 +209,12 @@ class DeliveryBridge(
         if (inbox == null) return
         inbox?.close()
         inbox = null
-        // the onion's answers go with its address (no tap answer is kept on Android yet: ENG-670)
-        answers.clear()
+        /* The onion's answers go with its address. A tap's does not
+         * (FoxyBridge+Delivery.swift `closeInboxForBackground`, `tapAnswerKeys`):
+         * the payer deletes its only copy of a tap payment on this answer, and
+         * the link is still up, so the page that takes the money must still be
+         * able to say so. */
+        answers.dropOnion()
         Log.line("[foxy] onion inbox closing: Foxy is leaving the foreground")
     }
 
@@ -266,8 +230,8 @@ class DeliveryBridge(
      * lives as long as the activity's page, so its addresses go with it.
      */
     fun pageGone() {
+        // the answers owed, the tap's too, go in FoxyBridge.pageGone
         closeForBackground()
-        answers.clear()
     }
 
     // MARK: inboxOpen
@@ -350,24 +314,14 @@ class DeliveryBridge(
         warmSpare()
     }
 
-    // MARK: inboxAnswer and _requestPaid
-
-    /** The page's word on a payment: {answer, status, text}. Only 200, 409 and 422, and 300 characters. */
-    private fun inboxAnswer(id: String, body: Map<String, Any?>) {
-        val key = body["answer"] as? String
-        val answer = key?.let { answers.remove(it) } ?: return resolve(id, null, NO_PAYMENT_WAITING)
-        val status = answerStatus(body["status"])
-        val text = prefixCharacters(body["text"] as? String ?: "", MOST_TEXT)
-        answer(status, answerBody(status, text))
-        resolve(id, "ok", null)
-    }
+    // MARK: _requestPaid
 
     /** A payment reached an address: the page is handed it and a key to answer by. Main thread. */
     private fun paymentArrived(payment: String, answer: InboxAnswer) {
         val key = MintCircuit.label(null)
-        answers[key] = answer
+        answers.onion(key, answer)
         // unanswered, the inbox answers 504 on its own; the key goes too
-        env.after(ANSWER_KEPT_MS) { answers.remove(key) }
+        env.after(ANSWER_KEPT_MS) { answers.drop(key) }
         Log.line("[foxy] onion inbox: a payment arrived (${payment.toByteArray(Charsets.UTF_8).size} bytes)")
         val js = "window.FoxyWallet && window.FoxyWallet._requestPaid && window.FoxyWallet._requestPaid(" +
             FoxyBridge.literal(payment) + ", " + FoxyBridge.literal(key) + ")"

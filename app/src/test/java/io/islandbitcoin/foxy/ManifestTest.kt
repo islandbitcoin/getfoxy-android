@@ -13,8 +13,10 @@ import javax.xml.parsers.DocumentBuilderFactory
  * every domain excluded from both, the permissions P3 needs and no other,
  * tor-android's service bound and never exported or in the foreground (audit
  * finding 4), Safe Browsing and WebView metrics off, every activity portrait
- * and only the page's reachable from outside; and the release manifest
- * registers no deep-link scheme at all (BRIDGE.md `deepLink`).
+ * and only the page's and the card's door reachable from outside; and the release manifest
+ * registers no deep-link scheme at all (BRIDGE.md `deepLink`), only the card's
+ * one address, https://getfoxy.io/card, from the tag dispatch and as a link (ENG-668),
+ * on CardTapActivity, never on MainActivity (review of PR #15: a second page).
  */
 class ManifestTest {
     private val android = "http://schemas.android.com/apk/res/android"
@@ -63,7 +65,8 @@ class ManifestTest {
         assertEquals(
             "INTERNET (Tor and Route), ACCESS_NETWORK_STATE (NetworkKind), and P3's CAMERA (the scanner), " +
                 "POST_NOTIFICATIONS (payments), USE_BIOMETRIC (the PIN lock, the seed's device protection) and " +
-                "DETECT_SCREEN_CAPTURE (_screenshot), NFC (a card session, ENG-667), and nothing else: $permissions",
+                "DETECT_SCREEN_CAPTURE (_screenshot), NFC (a card session, ENG-667), ENG-670's BLUETOOTH_ADVERTISE and " +
+                "BLUETOOTH_CONNECT (tap to pay's receiver; BLUETOOTH and BLUETOOTH_ADMIN before API 31), and nothing else: $permissions",
             setOf(
                 "android.permission.INTERNET",
                 "android.permission.ACCESS_NETWORK_STATE",
@@ -71,6 +74,10 @@ class ManifestTest {
                 "android.permission.POST_NOTIFICATIONS",
                 "android.permission.USE_BIOMETRIC",
                 "android.permission.DETECT_SCREEN_CAPTURE",
+                "android.permission.BLUETOOTH_ADVERTISE",
+                "android.permission.BLUETOOTH_CONNECT",
+                "android.permission.BLUETOOTH",
+                "android.permission.BLUETOOTH_ADMIN",
                 "android.permission.NFC",
                 "io.islandbitcoin.foxy.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
             ),
@@ -89,17 +96,119 @@ class ManifestTest {
 
     /**
      * ENG-667: a card is read only in a session the page opened, in reader mode
-     * (flashcard/ReaderModeRadio.kt). No activity takes a card from Android's tag
-     * dispatch (a card held to a phone that opens Foxy is ENG-668), in either build.
+     * (flashcard/ReaderModeRadio.kt). No activity takes a card's technology or a
+     * bare tag from Android's dispatch, in either build. ENG-668: the one
+     * exception is NDEF, on the card's door only (CardTapActivity, which routes
+     * it, CardTapRoute), and only for the card's own address (CardAddress), no
+     * prefix, pattern or MIME type that would take anything more.
      */
     @Test
-    fun noActivityIsHandedACardByTheSystem() {
+    fun noActivityIsHandedACardByTheSystemButThePageItsAddress() {
         for (manifest in listOf(merged, release)) {
             val actions = elements(manifest, "action").map { it.getAttributeNS(android, "name") }
-            for (dispatch in listOf("android.nfc.action.NDEF_DISCOVERED", "android.nfc.action.TECH_DISCOVERED", "android.nfc.action.TAG_DISCOVERED")) {
+            for (dispatch in listOf("android.nfc.action.TECH_DISCOVERED", "android.nfc.action.TAG_DISCOVERED")) {
                 assertFalse("$dispatch is not filtered for", dispatch in actions)
             }
+            assertEquals("no tech list for TECH_DISCOVERED", 0,
+                elements(manifest, "meta-data").count { it.getAttributeNS(android, "name") == "android.nfc.action.TECH_DISCOVERED" })
+            val ndef = filters(manifest).filter { f -> actionsOf(f).contains("android.nfc.action.NDEF_DISCOVERED") }
+            assertEquals("one NDEF filter", 1, ndef.size)
+            val f = ndef.single()
+            assertEquals("on the card's door, never the page's activity", door, (f.parentNode as Element).getAttributeNS(android, "name"))
+            assertEquals("the filter takes NDEF and nothing else", listOf("android.nfc.action.NDEF_DISCOVERED"), actionsOf(f))
+            assertEquals(listOf("android.intent.category.DEFAULT"), categoriesOf(f))
+            assertTheCardsAddressOnly(f)
         }
+    }
+
+    /**
+     * ENG-668: the card's address as a link, from a browser or an NFC stack that offers
+     * it as one. Not verified (autoVerify false) until getfoxy.io publishes an
+     * assetlinks.json for the release key; the same exact address, in both builds.
+     */
+    @Test
+    fun theCardsAddressIsALinkToThePageUnverified() {
+        for (manifest in listOf(merged, release)) {
+            val links = filters(manifest).filter { f -> dataOf(f).any { it.getAttributeNS(android, "scheme") == "https" } }
+                .filter { f -> actionsOf(f).contains("android.intent.action.VIEW") }
+            assertEquals("one https link filter", 1, links.size)
+            val f = links.single()
+            assertEquals(door, (f.parentNode as Element).getAttributeNS(android, "name"))
+            assertEquals(listOf("android.intent.action.VIEW"), actionsOf(f))
+            assertEquals(setOf("android.intent.category.DEFAULT", "android.intent.category.BROWSABLE"), categoriesOf(f).toSet())
+            assertEquals("not an App Link until getfoxy.io's assetlinks.json names the release key", "false", f.getAttributeNS(android, "autoVerify"))
+            assertTheCardsAddressOnly(f)
+        }
+    }
+
+    private val door = "io.islandbitcoin.foxy.CardTapActivity"
+
+    /**
+     * Review of PR #15: a card's address never starts MainActivity, which singleTop
+     * would duplicate under a seed screen or the scanner. Its door draws nothing,
+     * keeps no history or Recents entry, and has a task of its own, so being started
+     * never by itself brings Foxy's task, and whatever is over the page, forward.
+     */
+    @Test
+    fun theCardsDoorDrawsNothingAndKeepsNoPlace() {
+        for (manifest in listOf(merged, release)) {
+            val a = elements(manifest, "activity").single { it.getAttributeNS(android, "name") == door }
+            assertEquals("true", a.getAttributeNS(android, "exported"))
+            assertEquals("@android:style/Theme.NoDisplay", a.getAttributeNS(android, "theme"))
+            assertEquals("a task of its own", "", a.getAttributeNS(android, "taskAffinity"))
+            assertTrue("taskAffinity is set, empty", a.hasAttributeNS(android, "taskAffinity"))
+            assertEquals("true", a.getAttributeNS(android, "excludeFromRecents"))
+            assertEquals("true", a.getAttributeNS(android, "noHistory"))
+            val page = elements(manifest, "activity").single { it.getAttributeNS(android, "name") == "io.islandbitcoin.foxy.MainActivity" }
+            val pageData = elements(page, "data").map { it.getAttributeNS(android, "scheme") }
+            assertFalse("the page's activity takes no https address", "https" in pageData)
+            assertFalse("nor the tag dispatch", elements(page, "action").any { it.getAttributeNS(android, "name").startsWith("android.nfc.") })
+        }
+    }
+
+    private fun filters(root: Element): List<Element> = elements(root, "intent-filter")
+    private fun actionsOf(f: Element) = elements(f, "action").map { it.getAttributeNS(android, "name") }
+    private fun categoriesOf(f: Element) = elements(f, "category").map { it.getAttributeNS(android, "name") }
+    private fun dataOf(f: Element) = elements(f, "data")
+
+    /** https, getfoxy.io and the path /card exactly: no port, prefix, pattern or MIME type. */
+    private fun assertTheCardsAddressOnly(f: Element) {
+        val data = dataOf(f).single()
+        assertEquals("https", data.getAttributeNS(android, "scheme"))
+        assertEquals("getfoxy.io", data.getAttributeNS(android, "host"))
+        assertEquals("/card", data.getAttributeNS(android, "path"))
+        for (wide in listOf("port", "pathPrefix", "pathPattern", "pathAdvancedPattern", "pathSuffix", "mimeType", "ssp", "sspPrefix", "sspPattern")) {
+            assertEquals("no $wide", "", data.getAttributeNS(android, wide))
+        }
+    }
+
+    /**
+     * ENG-670: the receiver advertises and serves and never scans, so no
+     * BLUETOOTH_SCAN and no location, on any API; the two runtime permissions
+     * from API 31 with no ceiling, the install-time pair only up to API 30, and
+     * Bluetooth LE never required (a phone without it answers "unsupported").
+     */
+    @Test
+    fun bluetoothIsTheReceiversTwoAndTheLegacyPairOnlyBefore31() {
+        val uses = elements(merged, "uses-permission").associateBy { it.getAttributeNS(android, "name") }
+        for (name in listOf("android.permission.BLUETOOTH_ADVERTISE", "android.permission.BLUETOOTH_CONNECT")) {
+            assertEquals("$name holds on every API from 31", "", uses.getValue(name).getAttributeNS(android, "maxSdkVersion"))
+        }
+        for (name in listOf("android.permission.BLUETOOTH", "android.permission.BLUETOOTH_ADMIN")) {
+            assertEquals("$name only where it is the permission (API 28-30)", "30", uses.getValue(name).getAttributeNS(android, "maxSdkVersion"))
+        }
+        val never = listOf(
+            "android.permission.BLUETOOTH_SCAN", "android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION",
+            "android.permission.ACCESS_BACKGROUND_LOCATION", "android.permission.BLUETOOTH_PRIVILEGED",
+        )
+        for (name in never) assertFalse("$name is never asked: the receiver does not scan", name in uses)
+        assertEquals("nothing is declared for a Bluetooth permission's sake but these", 0,
+            elements(merged, "uses-permission-sdk-23").size)
+        val le = elements(merged, "uses-feature").single { it.getAttributeNS(android, "name") == "android.hardware.bluetooth_le" }
+        assertEquals("Bluetooth LE is used where there is one, never required", "false", le.getAttributeNS(android, "required"))
+        assertFalse("nor plain Bluetooth required", elements(merged, "uses-feature").any {
+            it.getAttributeNS(android, "name") == "android.hardware.bluetooth" && it.getAttributeNS(android, "required") != "false"
+        })
     }
 
     @Test
@@ -134,7 +243,10 @@ class ManifestTest {
 
     @Test
     fun everyActivityIsPortraitAndOnlyThePagesIsReachable() {
-        val activities = elements(merged, "activity").filter { it.getAttributeNS(android, "name").startsWith("io.islandbitcoin.foxy") }
+        val all = elements(merged, "activity").filter { it.getAttributeNS(android, "name").startsWith("io.islandbitcoin.foxy") }
+        // the card's door draws nothing and has no orientation of its own (theCardsDoorDrawsNothingAndKeepsNoPlace)
+        assertEquals(1, all.count { it.getAttributeNS(android, "name") == door })
+        val activities = all.filter { it.getAttributeNS(android, "name") != door }
         assertEquals(
             setOf(
                 "io.islandbitcoin.foxy.MainActivity",
@@ -156,18 +268,26 @@ class ManifestTest {
     private fun schemes(root: Element): List<String> = elements(root, "data").map { it.getAttributeNS(android, "scheme") }.filter { it.isNotEmpty() }
 
     @Test
-    fun theReleaseBuildRegistersNoScheme() {
-        assertEquals("a release Foxy has no deep link to be reached through", emptyList<String>(), schemes(release))
+    fun theReleaseBuildRegistersNoSchemeButTheCardsAddress() {
+        assertEquals("a release Foxy has no deep link to be reached through: https for the card's address, twice (ENG-668), and nothing else",
+            listOf("https", "https"), schemes(release))
         val page = elements(release, "activity").single { it.getAttributeNS(android, "name") == "io.islandbitcoin.foxy.MainActivity" }
-        assertEquals("the launcher only", listOf("android.intent.action.MAIN"),
+        assertEquals("the page's activity: the launcher and nothing else", listOf("android.intent.action.MAIN"),
             elements(page, "action").map { it.getAttributeNS(android, "name") })
+        val cardDoor = elements(release, "activity").single { it.getAttributeNS(android, "name") == door }
+        assertEquals("the card's address, from the tag and as a link, at its door",
+            listOf("android.nfc.action.NDEF_DISCOVERED", "android.intent.action.VIEW"),
+            elements(cardDoor, "action").map { it.getAttributeNS(android, "name") })
+        assertEquals("a tap handed to the page on top of its task reaches that page (onNewIntent), not a second one", "singleTop", page.getAttributeNS(android, "launchMode"))
     }
 
     @Test
-    fun theDebugBuildRegistersFoxyOnly() {
-        assertEquals(listOf("foxy"), schemes(merged))
+    fun theDebugBuildRegistersFoxyOnlyBesideTheCardsAddress() {
+        assertEquals(listOf("foxy", "https", "https"), schemes(merged).sorted())
         val page = elements(merged, "activity").single { it.getAttributeNS(android, "name") == "io.islandbitcoin.foxy.MainActivity" }
         assertEquals("a link reaches the page that is up, not a second one", "singleTop", page.getAttributeNS(android, "launchMode"))
+        val foxy = filters(merged).single { f -> dataOf(f).any { it.getAttributeNS(android, "scheme") == "foxy" } }
+        assertEquals("foxy:// is a link and nothing else", listOf("android.intent.action.VIEW"), actionsOf(foxy))
     }
 
     @Test

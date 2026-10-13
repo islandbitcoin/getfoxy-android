@@ -139,6 +139,9 @@ class OnionInbox(
     /** The loopback port Tor forwards to, 0 before the listener is up: a debug build's log, and the tests. */
     val localPort: Int get() = server?.localPort ?: 0
 
+    /** The listener itself, null before it is up and once closed: the tests ask it whether it is closed. */
+    internal val listener: ServerSocket? get() = server
+
     override val isOpen: Boolean
         get() = url != null && server?.let { it.isBound && !it.isClosed } == true
 
