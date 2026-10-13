@@ -7,10 +7,14 @@ import java.util.Locale
  * (TapProtocol.swift `TapProximity`). Signal strength only chooses the phone;
  * the code proves who owns it.
  *
- * The numbers are iOS's, measured iPhone to iPhone. A Pixel paying an iPhone,
- * and an iPhone paying a Pixel, need their own measured thresholds; that is the
- * radio's work (ENG-671), and these are the starting point. Times are seconds,
- * as `TimeInterval`; ids are whatever the radio names a phone by.
+ * The numbers are iOS's as they are (TapProtocol.swift at 8df0bb1), measured
+ * iPhone to iPhone, and the Android payer ([TapPayer], ENG-671) decides on them
+ * unchanged. **Pixel values: to be measured** — a Pixel paying an iPhone, an
+ * iPhone paying a Pixel, and Pixel to Pixel read differently through different
+ * antennas, and the method is docs/DEVICE-TESTS.md "Tap to pay: the Pixel pays"
+ * (A12). Per-model thresholds are an upstream change that Android then follows.
+ * Times are seconds, as `TimeInterval`; ids are whatever the radio names a
+ * phone by.
  */
 class TapProximity {
     /** The median reading, in dBm, a phone must reach: touching, on the iPhones it was set on. */

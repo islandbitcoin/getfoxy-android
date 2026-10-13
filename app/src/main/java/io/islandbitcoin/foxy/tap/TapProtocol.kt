@@ -156,8 +156,10 @@ object TapProtocol {
 /**
  * Which edges to hold together, by the pair of phones (TapProtocol.swift
  * `TapEdges`). The payer works out both edges and names the receiver's by its
- * choice of near door. Android models are not measured yet (ENG-671): an
- * unknown receiver takes the default, as on iOS.
+ * choice of near door. The table is iOS's as it is. **Pixel models: to be
+ * measured** (docs/DEVICE-TESTS.md "Tap to pay: the Pixel pays", A12): an
+ * Android receiver serves no model and an unknown one takes the default, as on
+ * iOS; Pixels in this table are an upstream change.
  */
 object TapEdges {
     /** Receivers a payer holds its right edge against (the receiver's left). */
