@@ -213,9 +213,10 @@ wallet. (This replaces ENG-661's advice to use testnut.cashu.space.)
    `Permission denied`) shows `foxy-seed.device.v1.bin` and no
    `foxy-seed.v1.bin`. Force-stop and open:
    the wallet asks for the finger before it opens. Turn it off again: asked
-   once more, and the files are back the other way. The page's own labels
-   still say Face ID on Android (core/web, ENG-663); the system prompt is what
-   this checks.
+   once more, and the files are back the other way. Since the pin to
+   getfoxy/iOS `e35eacf7f9941f9a00b611d0a580d08d6defb426` the menu's switch
+   reads FACE / FINGER LOCK; the page's other labels still say Face ID on
+   Android (core/web, ENG-663). The system prompt is what this checks.
 7. **SHOW WORDS and RESTORE.** BACKUP → SHOW WORDS: the native screen ("On this
    phone · not the web page"), the words behind TAP TO REVEAL, VERIFY with the
    quiz; HOME while it is up and back: the screen is gone. RESTORE: type twelve

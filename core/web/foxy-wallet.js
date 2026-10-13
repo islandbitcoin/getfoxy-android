@@ -26058,7 +26058,7 @@
      * face might stand in for the digits, and kept that answer by itself with
      * no switch anywhere. So somebody set a PIN, let iOS scan their face when
      * it asked, and from then on Foxy opened by face without the PIN screen
-     * ever showing, under a menu whose USE FACE ID switch was off; the only
+     * ever showing, under a menu whose FACE / FINGER LOCK switch was off; the only
      * way to change it was to remove the PIN (reported from a phone). A lock
      * setting the menu cannot show is a lock the person cannot reason about.
      * The switch is the whole of it now: off, a PIN is typed every time; on,

@@ -2,7 +2,7 @@
 
 The launcher icon, the splash icon, the notification icon and the Play Store
 icon are cut from the art of [getfoxy/iOS](https://github.com/getfoxy/iOS) at
-the commit in `core/PIN` (`8df0bb19992cceda44d04e947bce211e1415975e`), by
+the commit in `core/PIN` (`e35eacf7f9941f9a00b611d0a580d08d6defb426`), by
 `tools/make-art.py`. Reusing it for Android was the person's decision of
 2026-10-12 (ENG-665). `ArtTest` checks every file below.
 
