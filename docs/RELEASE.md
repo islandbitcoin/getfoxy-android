@@ -1,6 +1,6 @@
 # RELEASE.md — Foxy for Android on Google Play internal testing
 
-Foxy Android 0.1.0 goes to **Google Play internal testing** under the Island
+Foxy Android goes to **Google Play internal testing** under the Island
 Bitcoin developer account (ENG-680). The package (`applicationId`) is
 `io.islandbitcoin.getfoxy`: the Play Console app is bound to that name, so a
 bundle with any other package is refused. The Kotlin `namespace` and the source
@@ -8,12 +8,12 @@ packages stay `io.islandbitcoin.foxy` (so `BuildConfig`, `R` and every class
 name, such as `io.islandbitcoin.foxy.MainActivity`, keep that name), and iOS
 keeps its bundle id `io.islandbitcoin.foxy`. `ReleaseBuildTest` pins the
 applicationId.
-The GitHub release is the tag `v0.1.0` and its notes only: no APK or AAB is
+Each GitHub release is a tag (`v0.1.2` now) and its notes only: no APK or AAB is
 attached anywhere public.
 
 | | debug | release (Play) |
 |---|---|---|
-| versionCode / versionName | 1 / 0.1.0 | 1 / 0.1.0 |
+| versionCode / versionName | 3 / 0.1.2 | 3 / 0.1.2 |
 | minSdk | 28 (Android 9) | **30 (Android 11)** until ENG-654 proves the API 28-29 screen-lock confirmation on a phone |
 | targetSdk | 36 | 36 |
 | signed by | the debug key | the **upload key** (Play App Signing re-signs it for the store) |
@@ -144,11 +144,15 @@ classes with `javap` and checks each row.
    generate and hold the app signing key (the default). The first AAB uploaded
    registers its signer as the **upload key**: upload only a bundle signed by
    the key in §1. Note both certificates' SHA-256 from this page. The App Link
-   (`docs/DEVICE-TESTS.md`, "Follow-up: the App Link") needs the **app signing**
-   certificate's SHA-256 in `assetlinks.json`, not the upload key's.
+   (`docs/DEVICE-TESTS.md`, "The App Link") is verified against
+   `https://getfoxy.io/.well-known/assetlinks.json`, which lists both: the
+   **app signing** certificate for Play installs, the upload key's for a build
+   installed by hand. A debug build never verifies. If either key changes, the
+   file on getfoxy.io changes with it, or Play installs stop opening the card's
+   address without a chooser.
 3. **Internal testing.** *Test and release → Testing → Internal testing →
    Create new release*: upload `app/build/outputs/bundle/release/app-release.aab`,
-   release name `0.1.0 (1)`, release notes from the GitHub release. Every
+   release name `<versionName> (<versionCode>)`, such as `0.1.2 (3)`, release notes from the GitHub release. Every
    upload needs a new versionCode: bump it in `app/build.gradle.kts` for the
    next one.
 4. **Testers.** *Internal testing → Testers*: create an email list (up to 100
@@ -276,9 +280,17 @@ The upload:
 
 The tag (by the human or the architect, not by an agent):
 
-- [ ] Tag the exact commit the AAB was built from: `git tag -s v0.1.0 <commit>`
-      and `git push origin v0.1.0`.
-- [ ] `gh release create v0.1.0 --title "Foxy Android 0.1.0" --notes-file <notes>`:
+- [ ] Tag the exact commit the AAB was built from: `git tag -s v0.1.2 <commit>`
+      and `git push origin v0.1.2` (the versionName of that build).
+- [ ] `gh release create v0.1.2 --title "Foxy Android 0.1.2" --notes-file <notes>`:
       notes only, **no APK or AAB attached**.
 - [ ] Bump `versionCode` (and `versionName` as needed) on `main` for the next
       upload.
+
+## 9. Release history
+
+| Version (code) | What changed |
+|---|---|
+| 0.1.0 (1) | The first release build: upload-key signing, minSdk 30, R8 off (ENG-680, #21). |
+| 0.1.1 (2) | The first Google Play internal-testing upload (#22); the package becomes `io.islandbitcoin.getfoxy` (#23); the store listing, privacy policy, graphics and screenshots (#24). |
+| 0.1.2 (3) | `core/` re-pinned to getfoxy/iOS `e35eacf7f9941f9a00b611d0a580d08d6defb426` (Build 15): the menu's switch reads FACE / FINGER LOCK. The card's link `https://getfoxy.io/card` is a verified App Link (`autoVerify="true"`) now that getfoxy.io serves `assetlinks.json` for the Play app signing and upload keys. |

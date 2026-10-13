@@ -163,8 +163,8 @@ android {
         applicationId = "io.islandbitcoin.getfoxy"
         minSdk = 28
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.1.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PAGE_HASH", "\"$pageHash\"")
         buildConfigField("String", "TOR_SEED_PLAIN_SHA256", "\"$torSeedPlainSha256\"")

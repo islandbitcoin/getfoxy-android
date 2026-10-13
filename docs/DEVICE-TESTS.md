@@ -213,9 +213,10 @@ wallet. (This replaces ENG-661's advice to use testnut.cashu.space.)
    `Permission denied`) shows `foxy-seed.device.v1.bin` and no
    `foxy-seed.v1.bin`. Force-stop and open:
    the wallet asks for the finger before it opens. Turn it off again: asked
-   once more, and the files are back the other way. The page's own labels
-   still say Face ID on Android (core/web, ENG-663); the system prompt is what
-   this checks.
+   once more, and the files are back the other way. Since the pin to
+   getfoxy/iOS `e35eacf7f9941f9a00b611d0a580d08d6defb426` the menu's switch
+   reads FACE / FINGER LOCK; the page's other labels still say Face ID on
+   Android (core/web, ENG-663). The system prompt is what this checks.
 7. **SHOW WORDS and RESTORE.** BACKUP → SHOW WORDS: the native screen ("On this
    phone · not the web page"), the words behind TAP TO REVEAL, VERIFY with the
    quiz; HOME while it is up and back: the screen is gone. RESTORE: type twelve
@@ -645,10 +646,11 @@ page's `cardTapRule`) in the field log too.
    activity finishes), then open Foxy from Recents. **Pass:** Foxy opens on
    HOME, not the Flashcard screen; no `a card's address arrived` line.
 9. **The address in a browser.** On the Pixel, open
-   `https://getfoxy.io/card` in Chrome from a note or a message. Note what
-   happens: with no verified App Link Chrome stays on the page (expected
-   today); Settings → Apps → Foxy → Open by default → add `getfoxy.io` and
-   try again: Foxy opens as in step 3.
+   `https://getfoxy.io/card` in Chrome from a note or a message. On the debug
+   build the App Link is never verified (debug key), so Chrome stays on the
+   page; Settings → Apps → Foxy → Open by default → add `getfoxy.io` and try
+   again: Foxy opens as in step 3. On a Play install, Foxy opens straight
+   away with no chooser ("The App Link" below).
 10. **foxy://card (debug only).** `adb shell am start -a
    android.intent.action.VIEW -d foxy://card` with Foxy on HOME. **Pass:** as
    step 3, and the log has `[deeplink] a card tap`.
@@ -687,34 +689,29 @@ page's `cardTapRule`) in the field log too.
 Report each step's pass or fail, the phone, the Android version, the card's
 software and the build's commit.
 
-**Follow-up: the App Link (getfoxy.io, Mike Greff).** The link filter is
-`autoVerify="false"` today: Android verifies an App Link against
-`https://getfoxy.io/.well-known/assetlinks.json`, which must list the package
-`io.islandbitcoin.getfoxy` with the SHA-256 fingerprint of the **release** signing
-certificate. The Play build is signed for the store by Play App Signing
-(`docs/RELEASE.md` §4), so that is the **app signing** certificate Play Console
-shows (Setup → App signing), not the upload key's. Once the app exists in Play
-Console: send Mike Greff (getfoxy/iOS developer, who controls
-getfoxy.io and already serves its apple-app-site-association) that fingerprint
-and this file:
+### The App Link (0.1.2)
 
-```json
-[{
-  "relation": ["delegate_permission/common.handle_all_urls"],
-  "target": {
-    "namespace": "android_app",
-    "package_name": "io.islandbitcoin.getfoxy",
-    "sha256_cert_fingerprints": ["<RELEASE SHA-256, AA:BB:…>"]
-  }
-}]
-```
+The link filter is `autoVerify="true"` (`ManifestTest`). Android verifies it
+against `https://getfoxy.io/.well-known/assetlinks.json`, live since
+2026-10-13 (200, `application/json`, no redirect), which lists the package
+`io.islandbitcoin.getfoxy` with two SHA-256 fingerprints:
 
-then set `android:autoVerify="true"` on the link filter in
-`app/src/main/AndroidManifest.xml` and change `ManifestTest`'s expectation with
-it, and check with `adb shell pm verify-app-links --re-verify
-io.islandbitcoin.getfoxy` and `adb shell pm get-app-links io.islandbitcoin.getfoxy`
-(`getfoxy.io: verified`). The NDEF filter does not depend on it: the tag
-dispatch opens Foxy without any verification.
+- the Play **app signing** certificate (`docs/RELEASE.md` §4), which signs what
+  Play installs:
+  `13:FE:CE:6E:F5:84:B3:7D:35:A6:95:7D:2C:16:27:0B:41:93:21:56:5B:A0:A6:77:64:EC:81:9B:43:B4:01:D1`
+- the **upload key** (`docs/RELEASE.md` §1), for a build signed on the release
+  machine and installed by hand:
+  `61:08:F8:6D:DE:5D:94:9C:CE:66:07:1B:DA:D9:CA:5A:69:D8:45:9B:DA:B7:CB:A5:44:DE:DB:4F:A8:78:00:53`
+
+A debug build is signed with the debug keystore, which the file does not name,
+so it never verifies; that is expected, and step 9 above covers it by hand.
+To check a Play install or an upload-key build: `adb shell pm verify-app-links
+--re-verify io.islandbitcoin.getfoxy`, then `adb shell pm get-app-links
+io.islandbitcoin.getfoxy` shows `getfoxy.io: verified`. Then open
+`https://getfoxy.io/card` from a note: Foxy opens with no chooser, as in step 3.
+**Pending: no phone was used for this change.** Verification only skips the
+chooser. The NDEF filter never depended on it, and either way only
+`CardAddress.isCard`'s exact address is acted on.
 
 ## The native design checks (ENG-665)
 
