@@ -129,11 +129,12 @@ class ManifestTest {
 
     /**
      * ENG-668: the card's address as a link, from a browser or an NFC stack that offers
-     * it as one. Not verified (autoVerify false) until getfoxy.io publishes an
-     * assetlinks.json for the release key; the same exact address, in both builds.
+     * it as one; the same exact address, in both builds. Verified (autoVerify true) since
+     * 0.1.2: getfoxy.io/.well-known/assetlinks.json names io.islandbitcoin.getfoxy with
+     * the Play app signing and upload certificates (a debug build never verifies).
      */
     @Test
-    fun theCardsAddressIsALinkToThePageUnverified() {
+    fun theCardsAddressIsAVerifiedLinkToThePage() {
         for (manifest in listOf(merged, release)) {
             val links = filters(manifest).filter { f -> dataOf(f).any { it.getAttributeNS(android, "scheme") == "https" } }
                 .filter { f -> actionsOf(f).contains("android.intent.action.VIEW") }
@@ -142,8 +143,30 @@ class ManifestTest {
             assertEquals(door, (f.parentNode as Element).getAttributeNS(android, "name"))
             assertEquals(listOf("android.intent.action.VIEW"), actionsOf(f))
             assertEquals(setOf("android.intent.category.DEFAULT", "android.intent.category.BROWSABLE"), categoriesOf(f).toSet())
-            assertEquals("not an App Link until getfoxy.io's assetlinks.json names the release key", "false", f.getAttributeNS(android, "autoVerify"))
+            assertEquals("an App Link: getfoxy.io's assetlinks.json names the Play and upload keys", "true", f.getAttributeNS(android, "autoVerify"))
             assertTheCardsAddressOnly(f)
+        }
+    }
+
+    /**
+     * 0.1.2: autoVerify is on for one filter only, the card's link on its door, and that
+     * filter names getfoxy.io and /card and nothing else. Android verifies every host of
+     * an autoVerify filter, and a verified App Link opens Foxy with no chooser, so no
+     * other host or path may ride along with it.
+     */
+    @Test
+    fun onlyTheCardsAddressIsAutoVerified() {
+        for (manifest in listOf(merged, release)) {
+            val verified = filters(manifest).filter { it.getAttributeNS(android, "autoVerify") == "true" }
+            assertEquals("one auto-verified filter", 1, verified.size)
+            val f = verified.single()
+            assertEquals("on the card's door", door, (f.parentNode as Element).getAttributeNS(android, "name"))
+            assertEquals(listOf("android.intent.action.VIEW"), actionsOf(f))
+            assertEquals(listOf("getfoxy.io"), dataOf(f).map { it.getAttributeNS(android, "host") })
+            assertEquals(listOf("/card"), dataOf(f).map { it.getAttributeNS(android, "path") })
+            assertTheCardsAddressOnly(f)
+            val others = filters(manifest).filter { it !== f }
+            assertTrue("no other filter asks to be verified", others.all { it.getAttributeNS(android, "autoVerify") in setOf("", "false") })
         }
     }
 

@@ -38,11 +38,13 @@
      NDEF URI record, https://getfoxy.io/card (getfoxy/card FOXY-CARD-SPEC.md, the
      NDEF file), and CardTapActivity filters Android's tag dispatch for exactly that
      address (NDEF_DISCOVERED; never TECH_ or TAG_DISCOVERED, ManifestTest), and
-     the same address as a link (VIEW, BROWSABLE). The link filter is not verified
-     (autoVerify false): an App Link needs getfoxy.io/.well-known/assetlinks.json
-     with the release key's fingerprint, and there is no release key yet
-     (docs/DEVICE-TESTS.md). Either way only CardAddress.isCard's exact address is
-     acted on, and the page hears only that a card was tapped.
+     the same address as a link (VIEW, BROWSABLE). The link filter is an App Link
+     (autoVerify true): getfoxy.io/.well-known/assetlinks.json names
+     io.islandbitcoin.getfoxy with the Play app signing and upload certificates'
+     SHA-256, so a Play install, or a build signed with the upload key, opens the
+     address without a chooser. A debug build is signed with the debug key and
+     never verifies (docs/DEVICE-TESTS.md). Either way only CardAddress.isCard's
+     exact address is acted on, and the page hears only that a card was tapped.
 
      The filters are not on MainActivity: singleTop reuses it only while it is the
      top of its task, and the scanner and the seed screens are started in that task
@@ -118,8 +120,8 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="https" android:host="getfoxy.io" android:path="/card" />
             </intent-filter>
-            <!-- the same address as a link; not verified until getfoxy.io publishes assetlinks.json for the release key -->
-            <intent-filter android:autoVerify="false">
+            <!-- the same address as a link, verified against getfoxy.io's assetlinks.json (Play and upload-key builds only) -->
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
