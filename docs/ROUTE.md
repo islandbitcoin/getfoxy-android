@@ -20,14 +20,15 @@ The page never fetches. Everything it wants from outside goes over the bridge
 | the newest Bitcoin block header (a card's clock) | `nativeRequest` to two explorer onions, then their clearnet names | `build/wallet/08b-block-headers.js:45-57`, `:170` |
 | the BTC/USD price | `price` | `Web/foxy-wallet.js:15649` |
 | the price chart | `candles` | `Web/foxy-wallet.js:15728` |
-| a payment to another phone's onion | `onionPost` (LATER) | `Web/foxy-wallet.js:8873` |
-| a payment over Nostr | `nostrSend` (LATER) | `Web/foxy-wallet.js:8900` |
+| a payment to another phone's onion | `onionPost` (P3, ENG-672) | `Web/foxy-wallet.js:8873` |
+| a payment over Nostr | `nostrSend` (P3, ENG-677) | `Web/foxy-wallet.js:8900` |
 
 **No WebSocket.** NUT-17 subscriptions are not used: cashu-ts would open
 `wss://<mint>/v1/ws` from the page, which no native route could carry, so the
 wallet polls the quote over `mintRequest` instead (`Web/foxy-wallet.js:17248`).
 The only WebSockets in the app are native ones to Nostr relays, over Tor
-(`Foxy/Network/Route.swift:248-259`, `startSocket`; LATER).
+(`Foxy/Network/Route.swift:248-259`, `startSocket`; on Android
+`network/RouteSocket.kt`, ENG-677).
 **Android keeps this (ENG-648, decided):** no NUT-17 WebSocket. `core/web`
 stays pinned byte for byte and no bridge action is added for one; the wallet
 polls its quotes through `mintRequest`, as on iOS.
@@ -130,9 +131,9 @@ One decision for every native request (`Foxy/Network/Route.swift:38-513`):
 | any mint the person adds | the wallet | `mintRequest` | Tor or unprotected, after an approval alert | `Route.swift:659-805` |
 | any Lightning-address / LNURL server and its callback host | paying an address | `mintRequest` | Tor or unprotected, after an approval alert | `build/wallet/16-sending.js:442` |
 | `mempoolhq…onion`, `explorerzydxu5ecjrkwceayqybizmpjjznk5izmitf2modhcusuqlid.onion`, then `mempool.space`, `blockstream.info` | a card's clock: the newest block header | `mintRequest` | Tor (onions), Tor or unprotected (names) | `Route.swift:672-678`, `build/wallet/08b-block-headers.js:45-57` |
-| `wss://relay.damus.io`, `wss://nos.lol`, `wss://relay.primal.net`, `wss://relay.minibits.cash`, or the relays a request names (at most five) | Nostr payment delivery and the Nostr inbox | `nostrSend`, `inboxOpen` (LATER) | Tor only | `Foxy/Nostr/NostrDelivery.swift:18-19` |
-| another phone's `.onion` | paying a request over Tor | `onionPost` (LATER) | Tor only | `Foxy/Bridge/FoxyBridge+Delivery.swift:292-323` |
-| this phone's own ephemeral `.onion` | receiving a payment | `inboxOpen` (LATER) | Tor hidden service → `127.0.0.1` listener | `FoxyBridge+Delivery.swift:111-150` |
+| `wss://relay.damus.io`, `wss://nos.lol`, `wss://relay.primal.net`, `wss://relay.minibits.cash`, or the relays a request names (at most five) | Nostr payment delivery and the Nostr inbox | `nostrSend`, `inboxOpen` (P3, ENG-677) | Tor only, a circuit per relay | `Foxy/Nostr/NostrDelivery.swift:18-19` |
+| another phone's `.onion` | paying a request over Tor | `onionPost` (P3, ENG-672) | Tor only | `Foxy/Bridge/FoxyBridge+Delivery.swift:292-323` |
+| this phone's own ephemeral `.onion` | receiving a payment | `inboxOpen` (P3, ENG-672) | Tor hidden service → `127.0.0.1` listener | `FoxyBridge+Delivery.swift:111-150` |
 | Tor relays and directory authorities | Tor itself | always, from launch | direct (that is Tor) | `Foxy/Tor/TorService.swift`, `Foxy/TorSeed/` |
 | 7 obfs4 bridges (fixed IPs) | Tor through obfs4 when direct fails | transport ladder | direct to the bridge | `Foxy/Tor/Bridges.swift:24-32` |
 | Snowflake broker via CDN front (`1098762253.rsc.cdn77.org`, fronts `app.datapacket.com`, `www.datapacket.com`), public STUN servers, a volunteer proxy | Tor through Snowflake, last resort | transport ladder | **outside Tor, by how Snowflake works** | `Bridges.swift:34-37` |
@@ -293,8 +294,14 @@ As built in P2 (ENG-648). Kotlin paths are under
   `tools/leak-check.js`, `docs/DEVICE-TESTS.md`) holds every flow of the app's
   to exactly that, per transport, and to the mint only after the person chose
   to continue without Tor.
-- **WebSockets** (Nostr relays, LATER): OkHttp `newWebSocket` on the Tor client
-  only, `wss` only, host rules applied; never unprotected.
+- **WebSockets** (Nostr relays, ENG-677): `network/RouteSocket.kt`, OkHttp
+  `newWebSocket` on the Tor client only (`RouteHttp.torClient(label)`: the
+  SOCKS factory with a fresh circuit label per relay as the login, the relay's
+  name handed to Tor, `TorDns` looking nothing up), `wss` only, a host
+  `Route.hostProblem` passes, not while the door is shut; never unprotected,
+  even with CONTINUE WITHOUT TOR on. `tools/check-no-network.sh` fails on a
+  WebSocket anywhere else. A Nostr inbox's sockets close with its request and
+  when Foxy is put away, and none opens while it is.
 - **The door and backgrounding.** `onStop` starts the putting-away sequence of
   `BRIDGE.md` §2: it waits up to 20 s while a swap, melt, mint or restore is
   out (the bridge's money in flight) or the change top-up runs, 3 s for any
