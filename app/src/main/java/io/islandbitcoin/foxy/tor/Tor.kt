@@ -25,6 +25,7 @@ import net.freehaven.tor.control.RawEventListener
 import net.freehaven.tor.control.TorControlConnection
 import org.torproject.jni.TorService
 import java.io.File
+import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -50,6 +51,9 @@ object Tor : TorRoute, OnionServices {
     override val socksPort: Int get() = machine?.socksPort ?: 0
 
     val transport: TorTransport get() = machine?.transport ?: TorTransport.DIRECT
+
+    /** [TorMachine.daemonGeneration]: an onion address made under an older one is gone. */
+    val daemonGeneration: Int get() = machine?.daemonGeneration ?: 0
 
     /** Off the network because Foxy was put away or its activity finished ([park]); [resumed] brings it back. */
     val parked: Boolean get() = machine?.parked == true
@@ -262,7 +266,7 @@ object Tor : TorRoute, OnionServices {
                 link.addRawEventListener(RawEventListener { keyword, data ->
                     if (keyword == "STATUS_CLIENT" && data != null) main.post { if (gen == generation) machine()?.statusEvent(data) }
                 })
-                machine()?.controlReady(JtorctlControl(link, main))
+                machine()?.controlReady(JtorctlControl(link, MainScheduler(main)))
                 return
             }
             if (SystemClock.elapsedRealtime() - since > 30_000) {
@@ -272,66 +276,78 @@ object Tor : TorRoute, OnionServices {
             main.postDelayed({ waitForControl(gen, since) }, 250)
         }
     }
+}
 
-    /**
-     * jtorctl's blocking calls, made on one thread of their own and answered on
-     * the main looper, with a deadline after which the answer is empty and a
-     * late reply is dropped (TorService.swift `control`).
-     */
-    private class JtorctlControl(private val link: TorControlConnection, private val main: Handler) : TorControl {
-        private val worker: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "foxy-tor-control") }
-
-        private fun <T> call(timeoutMs: Long, empty: T, done: (T) -> Unit, work: () -> T) {
-            val once = AtomicBoolean(false)
-            val token = Any()
-            main.postAtTime({ if (once.compareAndSet(false, true)) done(empty) }, token, SystemClock.uptimeMillis() + timeoutMs)
-            worker.execute {
-                val result = try {
-                    work()
-                } catch (e: Exception) {
-                    empty
-                }
-                main.post {
-                    if (once.compareAndSet(false, true)) {
-                        main.removeCallbacksAndMessages(token)
-                        done(result)
-                    }
-                }
+/**
+ * jtorctl's blocking calls, made on one thread of their own and answered on
+ * the scheduler (the main looper), with a deadline after which the answer is
+ * empty (TorService.swift `control`). A reply that comes after the deadline is
+ * not handed to `done`; [addOnion]'s is not dropped either, because with
+ * Flags=Detach the service it made would stay published for the rest of the
+ * daemon's life with nobody holding its id: it is ended with DEL_ONION.
+ */
+internal class JtorctlControl(
+    private val link: TorControlConnection,
+    private val sched: TorScheduler,
+    private val worker: Executor = Executors.newSingleThreadExecutor { r -> Thread(r, "foxy-tor-control") },
+) : TorControl {
+    private fun <T> call(timeoutMs: Long, empty: T, done: (T) -> Unit, onLate: (T) -> Unit = {}, work: () -> T) {
+        val once = AtomicBoolean(false)
+        val deadline = sched.after(timeoutMs) { if (once.compareAndSet(false, true)) done(empty) }
+        worker.execute {
+            val result = try {
+                work()
+            } catch (e: Exception) {
+                empty
             }
-        }
-
-        override fun setConf(settings: List<Pair<String, String>>, timeoutMs: Long, done: (Boolean, String) -> Unit) {
-            call(timeoutMs, false to "no answer", { (ok, m) -> done(ok, m) }) {
-                try {
-                    link.setConf(settings.map { (k, v) -> "$k $v" })
-                    true to "OK"
-                } catch (e: java.io.IOException) {
-                    false to (e.message ?: e.javaClass.simpleName)
+            sched.post {
+                if (once.compareAndSet(false, true)) {
+                    deadline.cancel()
+                    done(result)
+                } else {
+                    onLate(result)
                 }
             }
         }
+    }
 
-        override fun getInfo(key: String, timeoutMs: Long, done: (String?) -> Unit) {
-            call<String?>(timeoutMs, null, done) { link.getInfo(key) }
-        }
-
-        override fun extendCircuit(timeoutMs: Long, done: (Boolean) -> Unit) {
-            call(timeoutMs, false, done) {
-                link.extendCircuit("0", "")
-                true
+    override fun setConf(settings: List<Pair<String, String>>, timeoutMs: Long, done: (Boolean, String) -> Unit) {
+        call(timeoutMs, false to "no answer", { (ok, m) -> done(ok, m) }) {
+            try {
+                link.setConf(settings.map { (k, v) -> "$k $v" })
+                true to "OK"
+            } catch (e: java.io.IOException) {
+                false to (e.message ?: e.javaClass.simpleName)
             }
         }
+    }
 
-        /* jtorctl writes `ADD_ONION NEW:ED25519-V3 Flags=DiscardPK,Detach Port=80,127.0.0.1:<port>`
-         * and reads ServiceID into "onionAddress"; an error reply throws, which answers null. */
-        override fun addOnion(localPort: Int, timeoutMs: Long, done: (String?) -> Unit) {
-            call<String?>(timeoutMs, null, done) {
-                link.addOnion(TorOnion.KEY, mapOf(80 to TorOnion.target(localPort)), TorOnion.FLAGS)["onionAddress"]
+    override fun getInfo(key: String, timeoutMs: Long, done: (String?) -> Unit) {
+        call<String?>(timeoutMs, null, done) { link.getInfo(key) }
+    }
+
+    override fun extendCircuit(timeoutMs: Long, done: (Boolean) -> Unit) {
+        call(timeoutMs, false, done) {
+            link.extendCircuit("0", "")
+            true
+        }
+    }
+
+    /* jtorctl writes `ADD_ONION NEW:ED25519-V3 Flags=DiscardPK,Detach Port=80,127.0.0.1:<port>`
+     * and reads ServiceID into "onionAddress"; an error reply throws, which answers null.
+     * A service made after the deadline was already answered as none: it is removed at once. */
+    override fun addOnion(localPort: Int, timeoutMs: Long, done: (String?) -> Unit) {
+        call<String?>(timeoutMs, null, done, onLate = { id ->
+            if (id != null) {
+                Log.line("[foxy] tor: an onion address came after its deadline; removed")
+                delOnion(id)
             }
+        }) {
+            link.addOnion(TorOnion.KEY, mapOf(80 to TorOnion.target(localPort)), TorOnion.FLAGS)["onionAddress"]
         }
+    }
 
-        override fun delOnion(serviceId: String) {
-            call(10_000, Unit, {}) { link.delOnion(serviceId) }
-        }
+    override fun delOnion(serviceId: String) {
+        call(10_000, Unit, {}) { link.delOnion(serviceId) }
     }
 }

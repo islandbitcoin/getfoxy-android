@@ -56,12 +56,15 @@ class DeliveryBridgeTest {
     private val made = mutableListOf<StubInbox>()
     private var autoOpen = true
     private var tor = true
+    /** The Tor daemon's generation: one more is a relaunch, which takes every address with the old one. */
+    private var generation = 0
     private val timers = mutableListOf<Pair<Long, () -> Unit>>()
     private val posts = mutableListOf<List<Any>>()
     private var postAnswer: OnionPost.Result = OnionPost.Result.Done(200, "{\"ok\":true}")
 
     private val env = DeliveryEnvironment(
         torRunning = { tor },
+        daemonGeneration = { generation },
         newInbox = { note, onPayment -> StubInbox(note, onPayment).also { made.add(it) } },
         post = { url, body, circuit, timeoutMs, done ->
             posts.add(listOf(url, String(body), circuit, timeoutMs))
@@ -132,6 +135,62 @@ class DeliveryBridgeTest {
         // Tor changing again starts nothing more while a spare is there
         bridge.torChanged()
         assertEquals(2, made.size)
+    }
+
+    /**
+     * tor-android's thread ended and Tor was launched again: the spare's
+     * listener is still up, so it says it is open, but its address died with
+     * the old daemon. It is never handed out as already published; a new one is
+     * made, and the Tor change starts a fresh spare too.
+     */
+    @Test
+    fun aDaemonRelaunchedSpareIsNotHandedOut() {
+        bridge.torChanged()
+        val stale = made.single()
+        assertTrue("its listener still says open", stale.isOpen)
+        generation += 1
+        send("""{"action":"inboxOpen","id":"o1"}""")
+        assertTrue("the old daemon's spare is closed", stale.closed)
+        assertTrue("the answer is a new address", onion("o1") != stale.url)
+        assertEquals("a new inbox was made for the request", 2, made.size)
+        assertEquals(made[1].url, onion("o1"))
+        // and the Tor change after the relaunch warms a spare of the new daemon's
+        bridge.torChanged()
+        assertEquals(3, made.size)
+        assertEquals("the spare", made[2].note)
+    }
+
+    @Test
+    fun aDaemonRelaunchedSpareIsReplacedWhenTorChanges() {
+        bridge.torChanged()
+        val stale = made.single()
+        generation += 1
+        bridge.torChanged()
+        assertTrue("the old daemon's spare is closed", stale.closed)
+        assertEquals("and a new one warms", 2, made.size)
+        send("""{"action":"inboxOpen","id":"o1"}""")
+        assertEquals("the new daemon's spare is handed over", made[1].url, onion("o1"))
+    }
+
+    @Test
+    fun theOpenInboxOfARelaunchedDaemonIsNotAnsweredAgain() {
+        send("""{"action":"inboxOpen","id":"o1"}""")
+        val first = made.single()
+        generation += 1
+        send("""{"action":"inboxOpen","id":"o2"}""")
+        assertTrue("the old daemon's inbox is closed", first.closed)
+        assertTrue(onion("o2") != onion("o1"))
+        assertEquals(made.last().url, onion("o2"))
+    }
+
+    @Test
+    fun anAddressThatArrivesAfterARelaunchIsNotUsed() {
+        autoOpen = false
+        send("""{"action":"inboxOpen","id":"o1"}""")
+        generation += 1
+        made.single().give(true)
+        assertEquals(Triple("o1", null, DeliveryBridge.NO_ONION), reply("o1"))
+        assertTrue(made.single().closed)
     }
 
     @Test

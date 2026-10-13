@@ -22,6 +22,12 @@ class DeliveryEnvironment(
     val post: (url: String, body: ByteArray, circuit: String, timeoutMs: Long, done: (OnionPost.Result) -> Unit) -> Unit,
     /** A run on the main thread after `ms`. */
     val after: (Long, () -> Unit) -> Unit,
+    /**
+     * Which Tor daemon is running ([io.islandbitcoin.foxy.tor.TorMachine.daemonGeneration]):
+     * an address made under an older one died with that daemon, though its
+     * listener is still up and the inbox still says it is open.
+     */
+    val daemonGeneration: () -> Int = { 0 },
 ) {
     companion object {
         /** No Tor: no address is made and no post leaves. What a host with nothing wired answers. */
@@ -158,6 +164,13 @@ class DeliveryBridge(
     /** An address opened ahead of being wanted, and handed to nobody. */
     private var spare: Inbox? = null
 
+    /** The Tor daemon [inbox] and [spare] were made under: an address outlives no daemon. */
+    private var inboxGeneration = 0
+    private var spareGeneration = 0
+
+    /** Made under the daemon running now: under an older one the address is gone with it. */
+    private fun current(generation: Int): Boolean = generation == env.daemonGeneration()
+
     /** Addresses the screen finished with that still answer, because a payment may be on its way. */
     private val retiring = mutableListOf<Inbox>()
 
@@ -195,11 +208,21 @@ class DeliveryBridge(
      * spare's has been given to nobody, so nobody can probe whether it is up.
      */
     fun warmSpare() {
-        if (spare != null || away || !env.torRunning()) return
+        if (away) return
+        spare?.let { old ->
+            if (current(spareGeneration)) return
+            // its address died with the Tor daemon it was made under (a relaunch): never handed out
+            Log.line("[foxy] onion inbox: the spare's Tor daemon ended; making another")
+            spare = null
+            old.close()
+        }
+        if (!env.torRunning()) return
         val made = env.newInbox("the spare", ::paymentArrived)
+        val generation = env.daemonGeneration()
         spare = made
+        spareGeneration = generation
         made.open { url ->
-            if (url == null || spare !== made) {
+            if (url == null || spare !== made || !current(generation)) {
                 if (spare === made) spare = null
                 made.close()
             }
@@ -261,7 +284,14 @@ class DeliveryBridge(
         if (away) return resolve(id, null, NO_ONION)
         inbox?.let { open ->
             val url = open.url
-            if (open.isOpen && url != null) return answerInboxOpen(id, url)
+            if (open.isOpen && url != null && current(inboxGeneration)) return answerInboxOpen(id, url)
+        }
+        // a spare made under a Tor daemon that has since ended is no address: replaced, below or by warmSpare
+        spare?.let { old ->
+            if (!current(spareGeneration)) {
+                spare = null
+                old.close()
+            }
         }
         // the warm one, if it got as far as an address: handed over and replaced in the same breath
         spare?.let { ready ->
@@ -270,6 +300,7 @@ class DeliveryBridge(
                 inbox?.close()
                 ready.note = "for the request on screen"
                 inbox = ready
+                inboxGeneration = spareGeneration
                 spare = null
                 Log.line("[foxy] onion inbox handed the spare, already published")
                 answerInboxOpen(id, url)
@@ -279,9 +310,11 @@ class DeliveryBridge(
         }
         inbox?.close()
         val made = env.newInbox("for the request on screen", ::paymentArrived)
+        val generation = env.daemonGeneration()
         inbox = made
+        inboxGeneration = generation
         made.open { url ->
-            if (url == null || inbox !== made) {
+            if (url == null || inbox !== made || !current(generation)) {
                 if (inbox === made) inbox = null
                 made.close()
                 return@open resolve(id, null, NO_ONION)

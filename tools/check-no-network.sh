@@ -9,7 +9,8 @@
 # placeholder OkHttp is handed; it never looks a name up), and
 # network/OnionInbox.kt the one place a socket is listened on (the onion
 # inbox's, bound to 127.0.0.1, which only Tor's onion service forwards to from
-# outside the phone; it dials nothing and names no InetAddress). Nothing else may
+# outside the phone; it dials nothing and names no InetAddress; checked below
+# line by line: every ServerSocket( there binds Socks5SocketFactory.TOR_HOST). Nothing else may
 # open a connection, a socket, a download or a DNS lookup, and no WebView may
 # load anything but the asset URL. getByName and getAllByName are refused
 # everywhere, network/ included. The exceptions: the instrumented net-block
@@ -91,6 +92,17 @@ rule "InetAddress" 'InetAddress' "$socks" "$listener" "$networkTests" "$cardsim"
 rule "sockets" '(^|[^A-Za-z])(Server|SSL)?Socket\(|DatagramSocket|SocketChannel|(^|[^A-Za-z0-9])(SSL)?SocketFactory' "$socks" "$listener" "$networkTests" "$cardsim" "$cardTests" "$inbox"
 # the onion inbox only listens: no client socket, datagram, channel, factory or TLS listener there either
 rule "a socket other than a listener in the onion inbox" '(^|[^A-Za-z])(SSL)?Socket\(|DatagramSocket|SocketChannel|(^|[^A-Za-z0-9])(SSL)?SocketFactory|SSLServerSocket' "$socks" "$listener" "$networkTests" "$cardsim" "$cardTests"
+
+# the onion inbox's listener: 127.0.0.1 only. Every line of it that makes a
+# server socket names Socks5SocketFactory.TOR_HOST as the bind address in that
+# same call (ServerSocket(0) or ServerSocket(0, 8) would listen on every
+# interface, the LAN included), and nothing in it rebinds one with .bind(.
+ib="$src/$inbox"
+if [ -f "$ib" ]; then
+  wild="$(grep -nE 'ServerSocket\(|\.bind\(' "$ib" \
+    | grep -vE '^[0-9]+:.*ServerSocket\([[:space:]]*[^,()]+,[[:space:]]*[^,()]+,[[:space:]]*(Socks5SocketFactory\.)?TOR_HOST[[:space:]]*\)' || true)"
+  if [ -n "$wild" ]; then report "the onion inbox listening on anything but 127.0.0.1 ($inbox)" "$wild"; fi
+fi
 
 # the card simulator link: loopback only. Every line of it that names an address
 # or makes a socket is one of these three, and nothing else: the import, an

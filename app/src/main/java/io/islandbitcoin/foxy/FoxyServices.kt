@@ -126,6 +126,7 @@ class FoxyServices(context: Context) {
     /** What the onion inbox and post use (ENG-672): Tor's onion services, a loopback listener per address, OnionPost. */
     fun delivery(main: (Runnable) -> Unit, after: (Long, () -> Unit) -> Unit): DeliveryEnvironment = DeliveryEnvironment(
         torRunning = { Tor.isRunning },
+        daemonGeneration = { Tor.daemonGeneration },
         newInbox = { note, onPayment -> OnionInbox(note, Tor, main, onPayment = onPayment) },
         post = { url, body, circuit, timeoutMs, done -> OnionPost.send(url, body, circuit, timeoutMs, done = done) },
         after = after,

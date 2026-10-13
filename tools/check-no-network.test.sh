@@ -105,6 +105,21 @@ expect fail "the platform SocketFactory"
 inbox="$net/OnionInbox.kt"
 plant "$inbox" 'val listener = ServerSocket(0, 8, Socks5SocketFactory.TOR_HOST)'
 expect pass "the onion inbox's loopback listener"
+plant "$inbox" 'val listener = ServerSocket(0, 8, TOR_HOST)'
+expect pass "the onion inbox's listener on TOR_HOST imported by name"
+plant "$inbox" 'val listener = ServerSocket(0)'
+expect fail "the onion inbox listening on every interface"
+plant "$inbox" 'val listener = ServerSocket(0, 8)'
+expect fail "the onion inbox listening on every interface, with a backlog"
+plant "$inbox" 'val listener = ServerSocket(0, 8, null)'
+expect fail "the onion inbox listening on a null (every) address"
+plant "$inbox" 'val listener = ServerSocket(0, 8, wildcard)'
+expect fail "the onion inbox listening on another address"
+plant "$inbox" 'val listener = ServerSocket()
+listener.bind(InetSocketAddress(0))'
+expect fail "the onion inbox's listener bound afterwards"
+plant "$inbox" 'val listener = ServerSocket(0) // Socks5SocketFactory.TOR_HOST'
+expect fail "a line that only mentions TOR_HOST in a comment"
 plant "$inbox" 'val s = Socket("127.0.0.1", 9050)'
 expect fail "a client socket in the onion inbox"
 plant "$inbox" 'val s = SSLServerSocketFactory.getDefault()'

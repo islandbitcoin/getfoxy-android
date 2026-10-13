@@ -156,6 +156,17 @@ class TorMachine(
     private var circuitsCount = true
     var parked = false
         private set
+
+    /**
+     * Which Tor daemon this is: one more each time one is launched, and each
+     * time one's thread ends. Every onion address lives in the daemon that made
+     * it (Flags=Detach ties it to the daemon, not the control link), so an
+     * address made under an older number is gone whatever its listener says
+     * (DeliveryBridge's spare and open inbox). iOS has no relaunch, so no
+     * counterpart.
+     */
+    @Volatile var daemonGeneration = 0
+        private set
     private var socksGen = 0
     private var socksReadingGen = -1
     private var blackout = false
@@ -285,6 +296,7 @@ class TorMachine(
     }
 
     private fun launch() {
+        daemonGeneration += 1
         launched = true
         circuitsCount = true
         transport = forced ?: memory.remembered
@@ -365,6 +377,8 @@ class TorMachine(
     /** Tor's thread ended, or it never started. */
     fun daemonFinished(why: String) {
         Log.line("[foxy] tor: stopped ($why)")
+        // its onion addresses ended with it
+        daemonGeneration += 1
         control = null
         ready = false
         circuitUp = false
@@ -780,8 +794,11 @@ class TorMachine(
     fun addOnion(localPort: Int, done: (String?) -> Unit) {
         val ctrl = control
         if (!ready || ctrl == null || localPort !in 1..65535) return done(null)
+        val gen = daemonGeneration
         ctrl.addOnion(localPort) { id ->
             if (id == null) Log.line("[foxy] tor: no onion address")
+            // made by a daemon that has since ended: the address went with it
+            if (gen != daemonGeneration) return@addOnion done(null)
             done(id?.takeIf { io.islandbitcoin.foxy.network.OnionAddress.isServiceId(it) })
         }
     }
