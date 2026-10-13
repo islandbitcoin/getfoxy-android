@@ -1,0 +1,29 @@
+Foxy Wallet is a bitcoin wallet for Lightning and Cashu ecash. It runs Tor inside the app and keeps your wallet's seed on your phone.
+
+Foxy is early software in open testing. Keep small amounts in it.
+
+HOW YOUR MONEY IS HELD
+Foxy holds your balance as Cashu ecash. Ecash is a bearer claim on the mint that issued it: the mint holds the bitcoin behind your balance, and you are trusting that mint to pay out when you send or withdraw. Foxy shows which mint holds your money. You can switch mints, or move your money to another Lightning wallet.
+
+Your wallet's seed is created on your phone and sealed with the Android Keystore. Write down your twelve recovery words: they restore your wallet on a new phone.
+
+WHAT YOU CAN DO
+- Receive over Lightning: enter an amount, then show the invoice as a QR code or share it.
+- Send to a Lightning invoice, a Lightning address or LNURL, or send ecash directly.
+- Scan QR codes with the camera. Each frame is decoded on the phone.
+- Tap to pay: hold two phones together to pay over Bluetooth. It works between Android phones and iPhones running Foxy.
+- Foxy Flashcard: set up and load a Foxy NFC card, then pay with it by holding it to the back of a phone running Foxy.
+- Payment requests: pay or get paid through a request delivered over a Tor onion address or Nostr relays, encrypted to the person you are paying.
+- See the bitcoin price and chart in dollars.
+- Lock the app with a PIN and your phone's fingerprint or screen lock.
+
+TOR BUILT IN
+Foxy starts Tor when it opens and sends its requests to mints, price sources and payment servers through it, so those services see a Tor connection in place of your IP address. If Tor cannot connect, Foxy asks before using your regular connection, and only for that session. Tor protects your IP address; mints and the people you pay still see the payments you make with them.
+
+PRIVACY
+Foxy works without an account, sign-up or email. The app talks to the mints, payment servers, price sources and Tor relays it needs, and the privacy policy lists each one.
+
+REQUIREMENTS
+Android 11 or later. Tap to pay needs Bluetooth Low Energy, and paying by tap needs Android 12 or later. The Flashcard needs NFC.
+
+Foxy is for adults 18 and over. It is published by Island Bitcoin LLC. Learn more at https://getfoxy.io.

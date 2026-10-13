@@ -1033,6 +1033,40 @@ offers, private ones included (192.168.x, 10.x on the volunteer's side); that is
 Snowflake's, outside Tor by design, and the leak check accepts any UDP in
 snowflake mode for it.
 
+## Store screenshots (an emulator)
+
+Foxy's windows are FLAG_SECURE (S19), so a screenshot of them is black. A debug
+build launched with the `FoxyAllowCapture` extra leaves FLAG_SECURE off the
+page's window (`MainActivity`) for that run, so the Play listing's screenshots
+(`docs/store/screenshots/`) can be taken. The seed screens, the scanner and the
+native dialogs keep FLAG_SECURE: they show black, and no seed word can be
+captured. A release build never reads the extra (`MainActivity.onCreate` sets
+FLAG_SECURE before any branch), and `ReleaseBuildTest.aReleaseCannotLiftFlagSecure`
+reads the release classes to prove it: FLAG_SECURE set on all four windows, set
+first thing in `MainActivity.onCreate` with no branch or intent read before it,
+never cleared, and the extra's name loaded by no release class.
+
+```sh
+avdmanager create avd -n foxy_store -k "system-images;android-35;google_apis;arm64-v8a" -d pixel_2   # 1080 x 1920, 9:16
+emulator -avd foxy_store -no-snapshot -no-audio -port 5580 -gpu host &   # -gpu host: the default left stale WebView tiles
+./gradlew assembleDebug
+export ANDROID_SERIAL=emulator-5580   # never the phone
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n io.islandbitcoin.getfoxy/io.islandbitcoin.foxy.MainActivity --ez FoxyAllowCapture true
+# a clean status bar: System UI demo mode
+adb shell settings put global sysui_demo_allowed 1
+adb shell am broadcast -a com.android.systemui.demo -e command clock -e hhmm 0941
+adb shell am broadcast -a com.android.systemui.demo -e command network -e mobile hide
+adb exec-out screencap -p > docs/store/screenshots/phone-NN-<name>.png
+adb emu kill
+```
+
+The 2026-10-13 set was taken this way on a fresh wallet with Tor up: the home
+screen, a receive amount and its Lightning invoice (a quote from the default
+mint, never paid), the tap to pay card, the send screen (camera refused, so its
+pane is empty), the Tor sheet, the Flashcard screen and the mint notice. No
+money moved and no seed word was on screen.
+
 ## Runs
 
 Each run: the commit, the phone, and what each test answered. The rows are

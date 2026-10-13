@@ -32,6 +32,8 @@ dialog, to continue without Tor for the session.
 | `tools/cardsim-test.sh`, `tools/cardsim.PIN` | the card session end to end: getfoxy/card's applet at the pinned commit, built with that repository's own tooling and run in jCardSim, driven through the bridge and the debug build's simulator link (`CardSimEndToEndTest`) |
 | `docs/DEVICE-TESTS.md` | what is checked on a phone: the instrumented tests and the checks by hand |
 | `docs/RELEASE.md` | the Play internal-testing release: the upload key (read from outside the repository), R8 off, what a release leaves out, the Play Console steps, the Data safety answers and the checklist |
+| `docs/PRIVACY.md` | the public privacy policy (the URL Play links) |
+| `docs/store/` | the Play listing: its text (`en-US/`), icon and feature graphic (`graphics/`, `tools/make-art.py --store`), screenshots, and the App content answers (`app-content.md`); its README says what goes where |
 | `tools/release-signing.test.sh` | the release signing, with a throwaway keystore and a stub for the Keychain: the key read only when a release is signed, a missing or wrong one failing clearly, a signed and an unsigned bundle |
 | `app/art/NOTICE.md`, `tools/make-art.py` | the app's icons and splash, cut from the iOS art at `core/PIN`'s commit: each source, its sha256 and the upstream licence; the script that cuts them (Pillow, by hand) |
 

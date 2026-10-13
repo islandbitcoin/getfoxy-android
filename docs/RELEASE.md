@@ -124,6 +124,7 @@ Every debug-only path, and how the release build leaves it out:
 | WebView debugging | `WebHost.configure`: `setWebContentsDebuggingEnabled(BuildConfig.DEBUG)` | called with the constant `false` |
 | `window.FOXY_DEBUG`, the `FOXY_SHOW_WARNING` extra | `WebHost.create` | not loaded; the release console silence is added instead |
 | the `FoxyNoTor` and `FoxyForceTransport` extras | `MainActivity.onCreate` | not read |
+| the `FoxyAllowCapture` extra (FLAG_SECURE off the page's window, for the store screenshots) | `MainActivity.onCreate` | not read; FLAG_SECURE is set unconditionally (`ReleaseBuildTest.aReleaseCannotLiftFlagSecure`) |
 | the `FoxyCardSim` extra | `WebHost.cardLink` (through `CardSim.ENABLED`) | not read |
 | the seed thread's self-check, the bridge's `isDebug` | `FoxyServices`, `FoxyBridge` | `BuildConfig.DEBUG` is `false`: off, and `isDebug` answers `no` |
 | the tests' hooks (`droppedScript`, `afterRename`, `afterWriteBeforeDelete`, `afterSeal`, `Log.console`) | `internal var … = null` in main | never set by any release class |
@@ -219,7 +220,11 @@ required, for *App functionality*, not linked to an identity (there is none).
 Play requires a privacy-policy URL (Foxy asks for the camera, and it is a
 financial app). It must be a public web page, not a PDF, and say what §5 says.
 
-    Privacy policy URL: <PRIVACY_POLICY_URL — to be decided and published before rollout>
+    Privacy policy URL: https://github.com/islandbitcoin/getfoxy-android/blob/main/docs/PRIVACY.md
+
+The policy is `docs/PRIVACY.md`; it is public once this repository's `main`
+carries it. The store listing's text, graphics, screenshots and the App content
+answers are in `docs/store/` (its README says what goes where).
 
 ## 7. The crypto wallet (financial features) declaration
 
