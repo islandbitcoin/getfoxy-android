@@ -15,9 +15,11 @@ import java.util.concurrent.Executor
 
 /**
  * S15: the bridge serves exactly the P3 contract. Every name in the table is in
- * conformance/contract.json; the 18 P1 actions, the 7 P2 actions, the 26 P3
+ * conformance/contract.json; the 18 P1 actions, the 7 P2 actions, the 33 P3
  * actions (`bluetoothAsk`, `tapReceiveStart` and `tapReceiveStop` P3 since
- * ENG-656; `cardOwnerKey`, `cardOwnerSign` and `cardTime` since ENG-666) and the `p1` stubs of the LATER
+ * ENG-656; `cardOwnerKey`, `cardOwnerSign` and `cardTime` since ENG-666; tap to
+ * pay's receiving side, `tapChange`, `tapAsking`, `tapChangeDue`, `tapTerms`,
+ * `shakeStart`, `shakeStop` and `inboxAnswer`, since ENG-670) and the `p1` stubs of the LATER
  * actions are all there, and no P3 action is answered by its stub (four have
  * one: the real handler wins); each LATER stub answers the contract's text or
  * error byte for byte; every P3 answer is one the contract lists; with no Tor,
@@ -74,8 +76,13 @@ class BridgeContractTest {
         val laterStubs = entries.filter { it["kind"] == "action" && it["p1"] != null && it["phase"] !in served }.map { it["name"] as String }.toSet()
         assertEquals(18, p1.size)
         assertEquals(setOf("privacy", "torRetry", "unprotected", "mintRequest", "price", "candles", "hostsKnown"), p2)
-        assertEquals(26, p3.size)
+        assertEquals(33, p3.size)
         assertTrue("bluetoothAsk is P3 (ENG-656)", "bluetoothAsk" in p3)
+        assertTrue(
+            "tap to pay's receiving side is P3 (ENG-670)",
+            p3.containsAll(setOf("tapChange", "tapAsking", "tapChangeDue", "tapTerms", "shakeStart", "shakeStop", "inboxAnswer")),
+        )
+        assertEquals("exactly those are the tap bridge's", TapBridge.ACTIONS, p3.intersect(TapBridge.ACTIONS))
         assertTrue("a card's owner key and its signed time are P3 (ENG-666)", p3.containsAll(setOf("cardOwnerKey", "cardOwnerSign", "cardTime")))
         assertTrue("the receive screen's TAP is P3 (ENG-656)", p3.containsAll(setOf("tapReceiveStart", "tapReceiveStop")))
         assertEquals(setOf("captured", "orbotRefresh", "orbotAccess", "seedProtection", "tapPayStart", "pasteStart", "pasteStop"), stubs)
@@ -129,6 +136,8 @@ class BridgeContractTest {
             "cardOwnerKey" to ""","key":"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"""",
             "cardOwnerSign" to ""","key":"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","label":"load","nonce":"000102030405060708090a0b0c0d0e0f","value":""""",
             "cardTime" to "",
+            "tapChange" to ""","body":"cashuBx"""", "tapAsking" to "", "tapChangeDue" to "", "tapTerms" to ""","body":"{}"""",
+            "shakeStart" to "", "shakeStop" to "", "inboxAnswer" to ""","answer":"00112233445566778899aabbccddeeff","status":200,"text":""""",
         )
         assertEquals(FoxyBridge.P3_ACTIONS, bodies.keys)
         // and each again with what the page should not send, which must still be a listed answer
@@ -137,6 +146,7 @@ class BridgeContractTest {
             "copy" to ""","text":""""", "share" to ""","text":""""", "notify" to ""","kind":"lure"""",
             "openCompany" to ""","which":"evil"""", "seedProtect" to ""","mode":"faceid"""", "seedAdopt" to "",
             "seedCandidateForget" to "", "tapReceiveStart" to ""","payload":"not an offer"""",
+            "tapChange" to ""","body":""""", "inboxAnswer" to ""","answer":5,"status":"x"""",
             "cardOwnerKey" to ""","key":"04"""", "cardOwnerSign" to ""","key":"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","label":"lock","nonce":"000102030405060708090a0b0c0d0e0f","value":""""",
         )
         for (round in listOf(bodies, wrong)) {
@@ -211,24 +221,25 @@ class BridgeContractTest {
         // narrowed in P3: the later actions are now the LATER phase's only (seedShow, which this asked before, is served);
         // narrowed again in ENG-656: bluetoothAsk is P3, answered "unsupported" with its push (BluetoothAskTest),
         // and tapReceiveStart and tapReceiveStop are P3, answered as an iPhone without Bluetooth answers (TapReceiveTest);
-        // and in ENG-666: cardOwnerKey, cardOwnerSign and cardTime are P3, answered as iOS answers them (CardBridgeTest).
+        // and in ENG-666: cardOwnerKey, cardOwnerSign and cardTime are P3, answered as iOS answers them (CardBridgeTest);
+        // and in ENG-670: tap to pay's receiving side is P3 (TapBridgeTest), the payer's (ENG-671) is still unknown.
         // Named one by one, so a later action that stops being unknown has to be taken off here by hand.
         val later = entries.filter { it["kind"] == "action" && it["phase"] !in served && it["p1"] == null }.map { it["name"] as String }
         assertEquals(
             setOf(
-                "inboxOpen", "inboxClose", "inboxAnswer", "onionPost", "nostrSend",
-                "tapSend", "tapChange", "tapChangeKept", "tapAsking", "tapChangeDue",
-                "tapQuote", "tapTerms", "tapPayStop", "shakeStart", "shakeStop",
+                "inboxOpen", "inboxClose", "onionPost", "nostrSend",
+                "tapSend", "tapChangeKept", "tapQuote", "tapPayStop",
                 "cardBegin", "cardSend", "cardSay", "cardAgain", "cardEnd",
             ),
             later.toSet(),
         )
-        assertEquals(20, later.size)
+        assertEquals(13, later.size)
         assertTrue(later.contains("inboxOpen"))
         assertFalse("bluetoothAsk is no longer unknown", later.contains("bluetoothAsk"))
         assertFalse("tapReceiveStart is no longer unknown", later.contains("tapReceiveStart"))
         assertFalse("tapReceiveStop is no longer unknown", later.contains("tapReceiveStop"))
         for (name in listOf("cardOwnerKey", "cardOwnerSign", "cardTime")) assertFalse("$name is no longer unknown", later.contains(name))
+        for (name in TapBridge.ACTIONS) assertFalse("$name is no longer unknown", later.contains(name))
         assertTrue(later.none { it in FoxyBridge.P3_ACTIONS })
         for (name in later) {
             host.evaluated.clear()
