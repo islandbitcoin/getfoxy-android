@@ -103,7 +103,8 @@ function askAsPage(s, action, extra) {
 }
 
 /* Tap to pay's receiving side over a link (ENG-670): P3, asked by the flows that
- * make one. */
+ * make one. (`inboxAnswer` is the onion inbox's too since ENG-672, asked by the
+ * two-phone flow of flows-onion.test.js.) */
 const IN_A_TAP_LINK = ['tapChange', 'tapAsking', 'tapChangeDue', 'tapTerms', 'inboxAnswer', 'shakeStart', 'shakeStop'];
 
 /* Tap to pay's paying side (ENG-671): P3, asked by the flows that listen on a funded
@@ -113,10 +114,10 @@ const IN_A_PAY_LINK = ['tapPayStart', 'tapPayStop', 'tapSend', 'tapChangeKept', 
 /* The receive invoice screen, as a person reaches it, on a P3 host: through the
  * first-install screens (the gate is up until then, and nothing arms under it),
  * an invoice made, the screen up, and TAP pressed, which raises the TAP HERE card
- * over the QR the screen armed for itself. The receive screen also asks the onion
- * inbox, LATER and "Unknown action" on Android (`unknown`), not part of what this
- * counts; shake to TAP is P3 since ENG-670 and answered. Returns the app. */
-const RECEIVE_ALSO_ASKS = new Set(['inboxOpen', 'inboxClose']);
+ * over the QR the screen armed for itself. Everything else the receive screen asks
+ * is answered on a P3 host now: shake to TAP since ENG-670 and the onion inbox
+ * since ENG-672, so nothing is left for `unknown`. Returns the app. */
+const RECEIVE_ALSO_ASKS = new Set();
 async function toReceiveScreenWithTapPressed(s) {
   const W = s.W, w = s.window;
   (await toBluetoothScreen(s)).click();

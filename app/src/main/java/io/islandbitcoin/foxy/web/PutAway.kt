@@ -80,8 +80,11 @@ class PutAway(
         val moneyInFlight: Int
         fun pushUptime()
 
-        /** No camera pane, paste button or seed screen is left up for a page put away (P3). */
+        /** No camera pane, paste button, seed screen or onion address is left up for a page put away (P3, ENG-672). */
         fun letGo() {}
+
+        /** Foxy is back after being put away: an onion address may be made again (ENG-672). */
+        fun cameBack() {}
     }
 
     companion object {
@@ -213,6 +216,7 @@ class PutAway(
         Route.openDoor()
         // Tor was never taken off the network for this stop: there is nothing to set up again
         val h = host() ?: return
+        h.cameBack()
         h.pushUptime()
         h.evaluate("window.FoxyWallet && window.FoxyWallet._resumed($away)")
         resumedTold()
@@ -316,6 +320,7 @@ class PutAway(
         backgroundedAt = null
         torBack(away)
         val h = host() ?: return
+        h.cameBack()
         h.pushUptime()
         h.evaluate("window.FoxyWallet && window.FoxyWallet._resumed($away)")
         resumedTold()

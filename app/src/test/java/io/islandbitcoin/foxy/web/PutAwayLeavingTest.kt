@@ -35,6 +35,11 @@ class PutAwayLeavingTest {
         override fun letGo() {
             letGo++
         }
+        /** Each return told to the page's side (ENG-672: the onion inbox may make an address again). */
+        var cameBack = 0
+        override fun cameBack() {
+            cameBack++
+        }
         override fun keepAwake(on: Boolean) {}
         override fun evaluate(js: String) {
             evaluated.add(js)
@@ -291,5 +296,42 @@ class PutAwayLeavingTest {
         away.back()
         assertEquals("the seconds away count from the first stop", listOf(5L), backs)
         assertTrue(page.evaluated.any { it.contains("_resumed(5)") })
+    }
+
+    /**
+     * ENG-672: the onion inbox's addresses go with [PutAway.Page.letGo] as Foxy is
+     * put away, before Tor parks, and a return is told (`cameBack`) before
+     * `_resumed`, so an address is made again only once Foxy is back; a stop
+     * under Foxy's own confirmation that is given tells neither.
+     */
+    @Test
+    fun aPutAwayLetsGoBeforeTorParksAndAReturnSaysItCameBackBeforeResumed() {
+        away.back()
+        assertEquals("the first start is no return", 0, page.cameBack)
+        away.away()
+        assertEquals("let go at once, as the leave begins", 1, page.letGo)
+        assertEquals("Tor not parked yet", 0, parks)
+        sched.advance(PutAway.FIRST_LOOK_MS + 1_000)
+        assertEquals(1, parks)
+        assertEquals("nothing comes back while away", 0, page.cameBack)
+        away.back()
+        assertEquals(1, page.cameBack)
+        assertTrue(page.evaluated.last().contains("_resumed("))
+        // a stop under the confirmation, given: nothing let go, nothing come back
+        confirming = true
+        away.away()
+        confirming = false
+        away.back()
+        away.promptAnswered(true)
+        assertEquals(1, page.letGo)
+        assertEquals(1, page.cameBack)
+        // and one not given is a return: let go, then come back
+        confirming = true
+        away.away()
+        confirming = false
+        away.back()
+        away.promptAnswered(false)
+        assertEquals(2, page.letGo)
+        assertEquals(2, page.cameBack)
     }
 }

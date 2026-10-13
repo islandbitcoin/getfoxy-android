@@ -743,6 +743,88 @@ for this change.**
    title and button label still fits its line or wraps cleanly inside its
    button, nothing clipped.
 
+## The onion inbox and post between two phones (ENG-672)
+
+Payment requests paid phone to phone over Tor, between the iPhone "Max"
+(Foxy for iOS at `core/PIN`'s commit or later) and the Pixel 8 Pro (this
+branch's debug build). The JVM tests hold Android to iOS's bytes
+(`OnionHttpTest`, `OnionInboxTest`, `OnionPostTest`, `DeliveryBridgeTest`,
+`TorOnionWireTest`) and the conformance flow *P3 two phones* pays one page
+from another through the Android host; only two real phones and the real Tor
+network show that an iPhone and an Android phone find each other's addresses
+and read each other's answers. **Pending: written for the person, not run. No
+phone was used for this change.**
+
+These checks move real ecash between the person's own two wallets, under
+"Real money" above: the person's go for the run, 100 sats or less a payment,
+both phones on the same mint (the default,
+`https://mint.minibits.cash/Bitcoin`), each funded beforehand with a mint of
+its own (P3 check 5) paid from the person's wallet. Nothing is melted. The
+Pixel's log is the debug build's LOGS screen (or `adb logcat -s foxy` from the
+person's machine); the iPhone's is its own LOGS screen.
+
+Before each: both phones show CONNECTED (Tor up), the Pixel's Foxy has been
+open for a minute (so its warm spare is published), and neither is on Orbot.
+
+1. **iPhone pays a Pixel request over the onion.** Pixel: RECEIVE, 21 sats,
+   the ecash request (the QR that is a `creqA…`). Its log says
+   `onion inbox handed the spare, already published` (or, the first time
+   after Tor came up, `onion inbox open — for the request on screen`), and
+   never `Unknown action: inboxOpen`; leave the screen up for 30 s and the log
+   shows no new `inboxOpen` (it is not asked again). iPhone: SEND, scan the
+   Pixel's QR, confirm. Expected: within about ten seconds (a live rendezvous
+   measured about three on iOS) the iPhone says the payment was delivered and
+   the Pixel says 21 sats received; the Pixel's log has
+   `onion inbox: a payment arrived (<n> bytes)` and no `504`; the iPhone's has
+   no `onion http:` failure. Both balances move by 21 (the iPhone's by 21 plus
+   any mint fee).
+2. **Pixel pays an iPhone request over the onion.** iPhone: RECEIVE, 21 sats,
+   the ecash request (it names a Nostr key first and the onion second). Pixel:
+   SEND, scan it, confirm. Expected: delivered within about ten seconds; the
+   Pixel posts to the onion, not to Nostr (its page prefers the onion,
+   `deliveryFor`, and Android has no Nostr yet); the Pixel's log has no
+   `onion post failed`; the iPhone shows 21 received.
+3. **The hold after the screen closes.** Pixel: RECEIVE, 13 sats, the ecash
+   request. iPhone: scan it and confirm, and **at once** on the Pixel tap back
+   to the home screen. Expected: the Pixel's log says
+   `onion inbox kept answering for 90s: a payment may be on its way`, the
+   payment still arrives (the Pixel's balance moves by 13), and about
+   ninety seconds later the log says `onion inbox closed — for the request on
+   screen`. Repeat 3 the other way round (iPhone receiving, Pixel paying,
+   iPhone back to home at once): the same.
+4. **Put away ends the address.** Pixel: RECEIVE, 8 sats, the ecash request.
+   iPhone: SEND, scan it and stop at the confirmation (do not confirm yet).
+   Pixel: press Home. Expected in the Pixel's log, before
+   `tor: off the network while Foxy is in the background`: `onion inbox
+   closing: Foxy is leaving the foreground` and an `onion inbox closed` for the
+   request's address and for the spare. Wait ten seconds, then confirm on the
+   iPhone: it fails with "Their phone could not be reached over Tor." (or
+   "That request is no longer open on their phone."), within about thirty
+   seconds, and the 8 sats stay in the iPhone's history as a token (the money
+   is never lost; claim it back on the iPhone). Back on the Pixel: the receive screen draws a new QR naming a
+   new address (the log: a new `onion inbox open` after `back after <n>s`);
+   pay that one from the iPhone: delivered.
+5. **No Tor, no address.** Pixel in airplane mode, then RECEIVE, 8 sats, the
+   ecash request: the QR still appears (a request with no address in it: the
+   payer shows a token to scan instead), the log has no `onion inbox open`,
+   and the screen does not ask `inboxOpen` more than once every four seconds
+   (no burst of `onion inbox closed` lines). Airplane mode off: within a
+   minute the screen's request names an address again.
+6. **Nostr, both ways (the ENG-672 follow-up; not on this build).** This build
+   has no Nostr: a Pixel request names only its onion, and the Pixel cannot
+   pay a request that names only a Nostr key (a browser wallet's, such as
+   cashu.me's), which it answers by showing the token instead. When the
+   follow-up lands: (a) the Pixel's request names `nostr` as well (decode the
+   QR on the iPhone: two transports, Nostr first); (b) with the Pixel's onion
+   unreachable (its request's onion address changed by hand to another valid
+   v3 address before the iPhone scans it, or paid from cashu.me), the iPhone
+   pays over Nostr and the Pixel's log says a Nostr payment arrived, the
+   request is paid and nothing waits on an answer; (c) the Pixel pays an
+   iPhone request over Nostr the same way (an iPhone request with its onion
+   spoiled), its log saying how many relays took it (at least one), and the
+   iPhone shows it received; (d) every relay connection is over Tor (the leak
+   test, below, with a Nostr leg added).
+
 ## The P2 device exit (ENG-648)
 
 On the phone, debug build, unlocked, online, with the person's go for the run

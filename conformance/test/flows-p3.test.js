@@ -59,11 +59,14 @@ test('P3: a host serving P1, P2 and P3 actions answers every platform door the s
     const app = s.logic();
     assert.equal(app.copySecret('cashuBconformance-token'), true);
     app.haptic('success', true);
+    // the onion inbox (ENG-672): an address for a request, and done with it
+    assert.match(String((await W.openInbox()).onion), /^http:\/\/[a-z2-7]{55}d\.onion\//);
+    await W.closeInbox(0);
     await W.wipeDevice().catch(() => {});
     await s.settle(800);
   });
   const p3 = CONTRACT.filter((e) => e.kind === 'action' && e.phase === 'P3').map((e) => e.name);
-  assert.equal(p3.length, 43);
+  assert.equal(p3.length, 46);
   // The page asks a card's owner key and its signed time only inside a card session, which
   // opens with cardBegin: they are asked of a P3 host, as the page's card code asks them, by
   // the ENG-666 flows, and the session itself by the ENG-667 flows (both flows-card.test.js).
@@ -72,7 +75,10 @@ test('P3: a host serving P1, P2 and P3 actions answers every platform door the s
   // Bluetooth: asked of a P3 host by the ENG-670 flows (IN_A_TAP_LINK, flows-tap-ble.test.js).
   // And tap to pay's paying side only from a listen on a funded wallet, and over the link it makes:
   // asked of a P3 host by the ENG-671 flows (IN_A_PAY_LINK, flows-tap-pay.test.js).
-  assert.deepEqual(p3.filter((a) => !inACardSession.includes(a) && !IN_A_TAP_LINK.includes(a) && !IN_A_PAY_LINK.includes(a) && !(s.host.asked.get(a) > 0)), [], 'every other P3 action was asked of the P3 host');
+  // A payment arriving and a payment sent need a second phone: asked by the flow *P3 two phones* (ENG-672, flows-onion.test.js).
+  const betweenTwoPhones = ['inboxAnswer', 'onionPost'];
+  assert.deepEqual(p3.filter((a) => !inACardSession.includes(a) && !IN_A_TAP_LINK.includes(a) && !IN_A_PAY_LINK.includes(a) && !betweenTwoPhones.includes(a) && !(s.host.asked.get(a) > 0)), [],
+    'every other P3 action was asked of the P3 host');
   assert.ok(s.host.asked.get('haptic') > 0, 'and a haptic');
 });
 

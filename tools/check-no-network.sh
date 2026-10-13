@@ -6,7 +6,11 @@
 # RouteHttp.kt build it; RouteUrl lets the bridge carry a URL without it), and
 # network/Socks5SocketFactory.kt the one place a socket is opened or an
 # InetAddress made (to Tor's SOCKS port on 127.0.0.1, and the name-keeping
-# placeholder OkHttp is handed; it never looks a name up). Nothing else may
+# placeholder OkHttp is handed; it never looks a name up), and
+# network/OnionInbox.kt the one place a socket is listened on (the onion
+# inbox's, bound to 127.0.0.1, which only Tor's onion service forwards to from
+# outside the phone; it dials nothing and names no InetAddress; checked below
+# line by line: every ServerSocket( there binds Socks5SocketFactory.TOR_HOST). Nothing else may
 # open a connection, a socket, a download or a DNS lookup, and no WebView may
 # load anything but the asset URL. getByName and getAllByName are refused
 # everywhere, network/ included. The exceptions: the instrumented net-block
@@ -29,6 +33,7 @@ src="${1:-$root/app/src}"
 route='main/java/io/islandbitcoin/foxy/network/Route.kt'
 network='main/java/io/islandbitcoin/foxy/network/'
 socks='main/java/io/islandbitcoin/foxy/network/Socks5SocketFactory.kt'
+inbox='main/java/io/islandbitcoin/foxy/network/OnionInbox.kt'
 networkTests='test/java/io/islandbitcoin/foxy/network/'
 listener='androidTest/java/io/islandbitcoin/foxy/ListenerService.java'
 cardsim='debug/java/io/islandbitcoin/foxy/flashcard/SimCardLink.kt'
@@ -84,7 +89,20 @@ rule "a DNS lookup (getByName, getAllByName), anywhere" 'getByName|getAllByName'
 rule "InetAddress" 'InetAddress' "$socks" "$listener" "$networkTests" "$cardsim" "$cardTests"
 # a JavaScript `new WebSocket(` inside a test's page script is the page's attempt, not a socket of the app's;
 # Socks5SocketFactory is Foxy's own SOCKS-to-Tor factory, named (not opened) in network/
-rule "sockets" '(^|[^A-Za-z])(Server|SSL)?Socket\(|DatagramSocket|SocketChannel|(^|[^A-Za-z0-9])(SSL)?SocketFactory' "$socks" "$listener" "$networkTests" "$cardsim" "$cardTests"
+rule "sockets" '(^|[^A-Za-z])(Server|SSL)?Socket\(|DatagramSocket|SocketChannel|(^|[^A-Za-z0-9])(SSL)?SocketFactory' "$socks" "$listener" "$networkTests" "$cardsim" "$cardTests" "$inbox"
+# the onion inbox only listens: no client socket, datagram, channel, factory or TLS listener there either
+rule "a socket other than a listener in the onion inbox" '(^|[^A-Za-z])(SSL)?Socket\(|DatagramSocket|SocketChannel|(^|[^A-Za-z0-9])(SSL)?SocketFactory|SSLServerSocket' "$socks" "$listener" "$networkTests" "$cardsim" "$cardTests"
+
+# the onion inbox's listener: 127.0.0.1 only. Every line of it that makes a
+# server socket names Socks5SocketFactory.TOR_HOST as the bind address in that
+# same call (ServerSocket(0) or ServerSocket(0, 8) would listen on every
+# interface, the LAN included), and nothing in it rebinds one with .bind(.
+ib="$src/$inbox"
+if [ -f "$ib" ]; then
+  wild="$(grep -nE 'ServerSocket\(|\.bind\(' "$ib" \
+    | grep -vE '^[0-9]+:.*ServerSocket\([[:space:]]*[^,()]+,[[:space:]]*[^,()]+,[[:space:]]*(Socks5SocketFactory\.)?TOR_HOST[[:space:]]*\)' || true)"
+  if [ -n "$wild" ]; then report "the onion inbox listening on anything but 127.0.0.1 ($inbox)" "$wild"; fi
+fi
 
 # the card simulator link: loopback only. Every line of it that names an address
 # or makes a socket is one of these three, and nothing else: the import, an

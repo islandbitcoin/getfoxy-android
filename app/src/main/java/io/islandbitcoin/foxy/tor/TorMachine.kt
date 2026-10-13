@@ -22,6 +22,16 @@ interface TorControl {
     fun setConf(settings: List<Pair<String, String>>, timeoutMs: Long = 10_000, done: (ok: Boolean, message: String) -> Unit)
     fun getInfo(key: String, timeoutMs: Long = 10_000, done: (String?) -> Unit)
     fun extendCircuit(timeoutMs: Long = 5_000, done: (Boolean) -> Unit)
+
+    /**
+     * `ADD_ONION NEW:ED25519-V3 Flags=DiscardPK,Detach Port=80,127.0.0.1:<localPort>`:
+     * the new service id (56 characters, no ".onion"), or null (TorService.swift
+     * `addOnion`). A control link that cannot make one answers null.
+     */
+    fun addOnion(localPort: Int, timeoutMs: Long = 20_000, done: (String?) -> Unit) = done(null)
+
+    /** `DEL_ONION <id>`, answered by nobody (TorService.swift `removeOnion`). */
+    fun delOnion(serviceId: String) {}
 }
 
 /** Tor itself: tor-android's TorService in this process, bound, never in the foreground. */
@@ -145,6 +155,17 @@ class TorMachine(
      */
     private var circuitsCount = true
     var parked = false
+        private set
+
+    /**
+     * Which Tor daemon this is: one more each time one is launched, and each
+     * time one's thread ends. Every onion address lives in the daemon that made
+     * it (Flags=Detach ties it to the daemon, not the control link), so an
+     * address made under an older number is gone whatever its listener says
+     * (DeliveryBridge's spare and open inbox). iOS has no relaunch, so no
+     * counterpart.
+     */
+    @Volatile var daemonGeneration = 0
         private set
     private var socksGen = 0
     private var socksReadingGen = -1
@@ -275,6 +296,7 @@ class TorMachine(
     }
 
     private fun launch() {
+        daemonGeneration += 1
         launched = true
         circuitsCount = true
         transport = forced ?: memory.remembered
@@ -355,6 +377,8 @@ class TorMachine(
     /** Tor's thread ended, or it never started. */
     fun daemonFinished(why: String) {
         Log.line("[foxy] tor: stopped ($why)")
+        // its onion addresses ended with it
+        daemonGeneration += 1
         control = null
         ready = false
         circuitUp = false
@@ -753,6 +777,36 @@ class TorMachine(
             return
         }
         setUp("back after ${awayS}s")
+    }
+
+    // MARK: Onion services, for payment requests delivered over Tor
+
+    /**
+     * A new onion address forwarding to 127.0.0.1:`localPort`, for as long as
+     * a Cashu payment request is on screen (TorService.swift `addOnion`).
+     *
+     * NEW:ED25519-V3 with DiscardPK: Tor makes a key and nothing keeps it, so
+     * every request gets an address never seen before and never seen again,
+     * and no payer can tell two of this wallet's requests came from one phone.
+     * Detach: the address outlives the control link that made it; [removeOnion]
+     * ends it. Null unless Tor is up (ready) with its control link.
+     */
+    fun addOnion(localPort: Int, done: (String?) -> Unit) {
+        val ctrl = control
+        if (!ready || ctrl == null || localPort !in 1..65535) return done(null)
+        val gen = daemonGeneration
+        ctrl.addOnion(localPort) { id ->
+            if (id == null) Log.line("[foxy] tor: no onion address")
+            // made by a daemon that has since ended: the address went with it
+            if (gen != daemonGeneration) return@addOnion done(null)
+            done(id?.takeIf { io.islandbitcoin.foxy.network.OnionAddress.isServiceId(it) })
+        }
+    }
+
+    /** End an address [addOnion] made. Quietly nothing when Tor is gone, which takes the address with it. */
+    fun removeOnion(serviceId: String) {
+        if (!io.islandbitcoin.foxy.network.OnionAddress.isServiceId(serviceId)) return
+        control?.delOnion(serviceId)
     }
 
     // MARK: The phone's network

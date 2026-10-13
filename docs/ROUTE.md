@@ -193,8 +193,20 @@ As built in P2 (ENG-648). Kotlin paths are under
   Ktor, `WebView.loadUrl` of a remote URL or `InetAddress` lookup anywhere else,
   no `getByName`/`getAllByName` anywhere at all, and no `java.net.URL` built or
   named; a socket is opened, and an `InetAddress` made, only in
-  `network/Socks5SocketFactory.kt`. `tools/check-no-network.sh` greps the
-  sources for each and fails the build (its self-test plants every case).
+  `network/Socks5SocketFactory.kt`, and a socket is listened on only in
+  `network/OnionInbox.kt` (the onion inbox, ENG-672: bound to 127.0.0.1, where
+  only Tor's onion service forwards from outside the phone; it dials nothing).
+  `tools/check-no-network.sh` greps the sources for each and fails the build
+  (its self-test plants every case).
+- **A payment posted to another phone's onion (ENG-672).** `onionPost` does
+  not go through OkHttp: `network/OnionPost.kt` writes iOS's one HTTP/1.1 POST
+  byte for byte down a `Socks5SocketFactory` socket (the circuit label as the
+  login, the `.onion` by name, ATYP `0x03`). It takes `http://<v3>.onion` only,
+  and only while Tor runs: never the open connection, even with CONTINUE
+  WITHOUT TOR on, and not while the door is shut (Foxy being put away). The
+  inbox's addresses are made and ended on tor-android's control link
+  (`ADD_ONION NEW:ED25519-V3 Flags=DiscardPK,Detach`, `DEL_ONION`), only while
+  Tor is up, and every one is ended when Foxy is put away, before Tor parks.
 - **Through Tor's SOCKS port, with Tor resolving names.** OkHttp is given no
   proxy of Java's, a `Dns` that never resolves (`TorDns`: the name kept on a
   0.0.0.0 placeholder, no lookup), and a SOCKS5 socket factory of Foxy's
