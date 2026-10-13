@@ -191,6 +191,55 @@ class TapPayerTest {
         assertNull(TapScanRules.service(TapAdvert("B", true, o.manufacturerData, o.services, o.full, -30)))
     }
 
+    // MARK: ENG-679, the controller's filter
+
+    @Test
+    fun theScanHandsTheControllerNoFilterSoTheReceiverIsHeardAndTaken() {
+        // the Pixel 8 Pro's controller matched nothing with the old "any service UUID" filter (an
+        // all-zero mask): the payer heard no receiver at all. FakeController does as that controller did.
+        val (air, r) = listening()
+        assertTrue("the scan is on", air.c.scanning)
+        air.hear(3.0)
+        assertNotNull("the receiver was heard and its offer came in: ${air.diary.joinToString("\n")}", air.offer)
+        assertEquals(TapAir.OFFER, air.offer?.first)
+        assertEquals(listOf("AA:01"), air.c.connects)
+        assertTrue(r.stages.contains(TapStage.CODE))
+        assertEquals("no hardware filter: every advertisement reaches the software rules", emptyList<TapScanFilter>(), air.c.filters)
+    }
+
+    @Test
+    fun anAdvertisementWithNoServiceAtAllReachesThePayerAndIsDroppedBySoftware() {
+        val air = PayerAir()
+        air.payer.start()
+        air.settle()
+        // a phone or a TV: no service UUID; the controller lets it through, iOS's rules drop it
+        air.noise.add(TapAdvert("TV", true, false, emptyList(), emptyList(), -40))
+        air.hear(1.0)
+        assertTrue(air.c.connects.isEmpty())
+        air.payer.stop()
+        assertTrue(air.diary.joinToString("\n"), air.diary.any { it.contains("passed by 10 advertisement(s)") })
+    }
+
+    @Test
+    fun theFakeControllerMatchesNothingWithAnAllZeroMaskAndEverythingWithNoFilter() {
+        val zero = UUID(0L, 0L)
+        val svc = UUID.randomUUID()
+        val foxy = TapAdvert("AA:01", true, false, listOf(svc), listOf(true), -30)
+        val bare = TapAdvert("TV", true, false, emptyList(), emptyList(), -40)
+        // the ENG-671 filter, as the Pixel 8 Pro's controller treated it
+        val anyService = listOf(TapScanFilter(zero, zero))
+        assertFalse("an all-zero mask matches nothing", FakeController.passes(anyService, foxy))
+        assertFalse(FakeController.passes(anyService, bare))
+        // no filter: everything
+        assertTrue(FakeController.passes(emptyList(), foxy))
+        assertTrue(FakeController.passes(emptyList(), bare))
+        // a full mask on the one service: that service only
+        val full = UUID(-1L, -1L)
+        assertTrue(FakeController.passes(listOf(TapScanFilter(svc, full)), foxy))
+        assertFalse(FakeController.passes(listOf(TapScanFilter(UUID.randomUUID(), full)), foxy))
+        assertFalse(FakeController.passes(listOf(TapScanFilter(svc, full)), bare))
+    }
+
     @Test
     fun aWatchAnHeadsetAndAStandardServiceNearbyAreNeverConnectedTo() {
         val air = PayerAir()

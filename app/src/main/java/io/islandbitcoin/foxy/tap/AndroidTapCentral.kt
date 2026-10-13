@@ -29,10 +29,15 @@ import java.util.UUID
  * callback posted to the main looper and handed to [TapPayer] (TapLink.swift
  * `TapPayer`'s `CBCentralManager` and `CBPeripheral` at 8df0bb1).
  *
- * - **The scan.** Filtered on "a service UUID is present" (a service filter whose
- *   mask is all zeros): the receiver's service is new for every invoice, so it
- *   cannot be named before it is heard. Low latency, every advertisement
- *   reported (iOS's `AllowDuplicates`). What counts as a Foxy is decided from the
+ * - **The scan.** No hardware filter ([TapScanRules.hardwareFilters] is empty):
+ *   the receiver's service is new for every invoice, so it cannot be named
+ *   before it is heard, and the "any service UUID" filter used until ENG-679 (a
+ *   service filter with an all-zero mask) matched nothing on the Pixel 8 Pro's
+ *   controller. An unfiltered scan is allowed in the foreground, and Foxy scans
+ *   only in front ([TapPayer] stops it when Foxy is put away); Android gives an
+ *   unfiltered scan nothing with the screen off, which never happens while Foxy
+ *   is in front. Low latency, every advertisement reported (iOS's
+ *   `AllowDuplicates`). What counts as a Foxy is decided from the
  *   advertisement's own bytes ([TapAdBytes], [TapScanRules]). Android's
  *   five-starts-in-thirty-seconds limit is kept ([TapScanBudget]): a start that
  *   would be one too many is made when it no longer would be.
@@ -66,12 +71,13 @@ class AndroidTapCentral(
         /** A phone that never answers the MTU question is not waited on longer than this before the services are found. */
         const val MTU_WAIT = 2.0
 
-        /** Any service UUID: with [ANY_MASK] the filter matches an advertisement that carries one, whatever it is. */
-        private val ANY_SERVICE: ParcelUuid = ParcelUuid(UUID(0L, 0L))
-        private val ANY_MASK: ParcelUuid = ParcelUuid(UUID(0L, 0L))
-
-        /** The scan's filter: an advertisement with a service UUID (TapCentral.kt, [TapScanRules]). */
-        fun scanFilters(): List<ScanFilter> = listOf(ScanFilter.Builder().setServiceUuid(ANY_SERVICE, ANY_MASK).build())
+        /**
+         * The scan's hardware filters, as Android's objects: [TapScanRules.hardwareFilters], which is
+         * empty (an unfiltered foreground scan; iOS's rules then decide in software, ENG-679).
+         */
+        fun scanFilters(): List<ScanFilter> = TapScanRules.hardwareFilters.map {
+            ScanFilter.Builder().setServiceUuid(ParcelUuid(it.service), ParcelUuid(it.mask)).build()
+        }
 
         /** Low latency, every advertisement, as soon as it is heard. */
         fun scanSettings(): ScanSettings = ScanSettings.Builder()

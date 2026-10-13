@@ -71,6 +71,15 @@ data class TapAdvert(
 )
 
 /**
+ * One hardware scan filter as the controller is handed it: an advertisement
+ * passes when one of its service UUIDs, masked with [mask], equals [service]
+ * masked the same way (`ScanFilter.Builder.setServiceUuid(uuid, mask)`).
+ * Plain Kotlin so the JVM's fake controller (PayerAir) can apply the same
+ * filters the phone is given.
+ */
+data class TapScanFilter(val service: UUID, val mask: UUID)
+
+/**
  * What counts as a Foxy receiver's advertisement, as the iPhone payer decides
  * (TapLink.swift `centralManager(_:didDiscover:…)`, 1154-1158 at 8df0bb1):
  * connectable, no manufacturer data, and exactly one service UUID, a full
@@ -79,11 +88,24 @@ data class TapAdvert(
  * per-invoice one.
  *
  * The scan's own filter cannot name the service: it is new for every invoice
- * (TAP-SPEC §3). So the scan is filtered on "has a service UUID" (a filter on
- * the service field whose mask is all zeros), which keeps it a filtered scan for
- * Android, and these rules decide in software, exactly as iOS's do.
+ * (TAP-SPEC §3). So the scan hands the controller no filter at all
+ * ([hardwareFilters] is empty) and these rules decide in software, from the
+ * advertisement's own bytes, exactly as iOS's do. Until ENG-679 the scan was
+ * filtered on "has a service UUID" (a service filter whose mask is all zeros);
+ * the Pixel 8 Pro's controller matched nothing with it (`dumpsys
+ * bluetooth_manager`: "Number of results 0/0/0"), so the payer heard no
+ * receiver at all.
  */
 object TapScanRules {
+    /**
+     * What the scan asks the Bluetooth controller to filter on: nothing. An
+     * unfiltered scan is allowed while the app is in front, and Foxy scans only
+     * then ([TapPayer] stops it when Foxy is put away). Android gives an
+     * unfiltered scan no results while the screen is off (8.1 and later); with
+     * Foxy in front the screen is on, so that costs nothing here.
+     */
+    val hardwareFilters: List<TapScanFilter> = emptyList()
+
     /** The Bluetooth base UUID's low half: a 16- or 32-bit UUID written out as 128 bits ends in it. */
     private const val BASE_LSB = -0x7fffff7fa064cb05L // 0x800000805F9B34FB
     private const val BASE_MSB_LOW = 0x0000_1000L

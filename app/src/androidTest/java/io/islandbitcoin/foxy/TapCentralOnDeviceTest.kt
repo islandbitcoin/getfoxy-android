@@ -1,39 +1,32 @@
 package io.islandbitcoin.foxy
 
 import android.bluetooth.le.ScanSettings
-import android.os.ParcelUuid
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.islandbitcoin.foxy.tap.AndroidTapCentral
 import io.islandbitcoin.foxy.tap.TapPayer
+import io.islandbitcoin.foxy.tap.TapScanRules
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.UUID
 
 /**
  * ENG-671 on a phone: the payer's scan as Android's own objects
- * (`AndroidTapCentral.scanFilters`, `scanSettings`). One filter, on the service
- * field with an all-zero mask: an advertisement that carries any service UUID,
- * since the receiver's is new for every invoice and cannot be named before it
- * is heard; iOS's rules for what is a Foxy are applied to what it lets through
- * (TapScanRules, held by the JVM's TapPayerTest). Low latency, every
- * advertisement reported, nothing batched. Needs no Bluetooth adapter and no
- * permission, and starts no scan.
+ * (`AndroidTapCentral.scanFilters`, `scanSettings`). No hardware filter at all
+ * (ENG-679): the receiver's service is new for every invoice and cannot be
+ * named before it is heard, and the "any service UUID" filter used before (a
+ * service filter with an all-zero mask) matched nothing on the Pixel 8 Pro's
+ * controller. iOS's rules for what is a Foxy decide in software (TapScanRules,
+ * held by the JVM's TapPayerTest, whose fake controller matches nothing with an
+ * all-zero mask). Low latency, every advertisement reported, nothing batched.
+ * Needs no Bluetooth adapter and no permission, and starts no scan.
  */
 @RunWith(AndroidJUnit4::class)
 class TapCentralOnDeviceTest {
     @Test
-    fun theScanIsFilteredOnAnyServiceAndNothingElse() {
-        val filters = AndroidTapCentral.scanFilters()
-        assertEquals(1, filters.size)
-        val f = filters.single()
-        assertEquals(ParcelUuid(UUID(0L, 0L)), f.serviceUuid)
-        assertEquals("an all-zero mask: any service UUID matches", ParcelUuid(UUID(0L, 0L)), f.serviceUuidMask)
-        assertNull("no address", f.deviceAddress)
-        assertNull("no name", f.deviceName)
-        assertNull("no service data", f.serviceDataUuid)
-        assertEquals("no manufacturer", -1, f.manufacturerId)
+    fun theScanHandsTheControllerNoFilter() {
+        assertEquals("an unfiltered foreground scan", emptyList<Any>(), AndroidTapCentral.scanFilters())
+        assertEquals(emptyList<Any>(), TapScanRules.hardwareFilters)
     }
 
     @Test

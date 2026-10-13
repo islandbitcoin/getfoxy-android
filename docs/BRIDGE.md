@@ -217,8 +217,10 @@ allowlisted, plus the WebRTC removal in every frame.
   `Foxy/Bridge/FoxyBridge+Tap.swift:267-272`, `Foxy/Bridge/FoxyBridge+Tap.swift:429-438`,
   `Foxy/Bridge/FoxyBridge+Tap.swift:474-485`, and `TapPayer` in `Foxy/Bluetooth/TapLink.swift:899-1955`).
   The home and send screens listen with no one acting: `tapPayStart` starts a
-  BLE scan (filtered on "has a service UUID", since the receiver's is new for
-  every invoice; iOS's own rules then decide what is a Foxy: connectable, no
+  BLE scan (no hardware filter, since the receiver's service is new for every
+  invoice and the "has a service UUID" filter, an all-zero mask, matched
+  nothing on the Pixel 8 Pro, ENG-679; iOS's own rules then decide in
+  software what is a Foxy: connectable, no
   manufacturer data, one full 128-bit service UUID), the proximity verdict
   (`TapProximity`, iOS's thresholds), the quiet link and the near doors, and
   answers `{payload, code}` once the nearest receiver's offer is in. It is
@@ -1143,7 +1145,7 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Shape:** page → native, action: `{ action: "tapPayStart", id, now }`
 - **Payload:** `now`: boolean?
 - **Called from:** `Web/foxy-wallet.js:24178`, `Web/foxy-wallet.js:24182`
-- **Native:** Search for a receiver close enough to be touching and answer its offer plus the four-digit code both phones show; now=true only nudges a search already running and answers "ok". Android (ENG-671): the payer listens (TapPayer: a BLE scan filtered on any service UUID, then iOS's rules for a Foxy advert, the near verdict, the quiet link, the near doors) and answers {payload, code} once the nearest receiver's offer is in. A radio that is off, refused or missing is pushed as _tap({side:"pay",stage}) and the call is not answered, so the page has nothing to re-ask (ENG-658); it is answered "Started again." by the next tapPayStart and "Stopped." by tapPayStop or the page going. now=true answers "ok" at once. Nothing scans while Foxy is put away. The p1 stub is for P1 and P2 hosts only.
+- **Native:** Search for a receiver close enough to be touching and answer its offer plus the four-digit code both phones show; now=true only nudges a search already running and answers "ok". Android (ENG-671): the payer listens (TapPayer: a BLE scan with no hardware filter (ENG-679: the all-zero service filter matched nothing on the Pixel), then iOS's rules for a Foxy advert, the near verdict, the quiet link, the near doors) and answers {payload, code} once the nearest receiver's offer is in. A radio that is off, refused or missing is pushed as _tap({side:"pay",stage}) and the call is not answered, so the page has nothing to re-ask (ENG-658); it is answered "Started again." by the next tapPayStart and "Stopped." by tapPayStop or the page going. now=true answers "ok" at once. Nothing scans while Foxy is put away. The p1 stub is for P1 and P2 hosts only.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — json-or-text {payload: string, code: string} or "ok"
 - **Errors:** "Started again."; "Stopped."
 - **In P1:** the error "Stopped.". No Bluetooth tap on Android before LATER: every search ends at once, as a stopped one does, and the page backs off its re-listen (up to a minute). A funded wallet's home screen listens with no one acting, so a host that connects (P2) meets it.
