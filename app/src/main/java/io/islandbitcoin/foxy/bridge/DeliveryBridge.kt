@@ -6,6 +6,9 @@ import io.islandbitcoin.foxy.network.InboxAnswer
 import io.islandbitcoin.foxy.network.MintCircuit
 import io.islandbitcoin.foxy.network.OnionInbox
 import io.islandbitcoin.foxy.network.OnionPost
+import io.islandbitcoin.foxy.nostr.NostrAddress
+import io.islandbitcoin.foxy.nostr.NostrCrypto
+import io.islandbitcoin.foxy.nostr.NostrDelivery
 
 /**
  * What the onion actions need from the rest of the app, passed in so the JVM
@@ -26,6 +29,17 @@ class DeliveryEnvironment(
      * listener is still up and the inbox still says it is open.
      */
     val daemonGeneration: () -> Int = { 0 },
+    /**
+     * A new, unopened Nostr key for the request on screen ([io.islandbitcoin.foxy.nostr.NostrInbox]
+     * on the phone), or null when none can be made. Unset, there is none, and
+     * `inboxOpen` answers the onion alone, as iOS does when no relay would listen.
+     */
+    val newNostrInbox: (onPayment: (body: String) -> Unit) -> NostrAddress? = { null },
+    /**
+     * One [NostrDelivery.send]: `done` on the main thread. Unset, no relay is
+     * reached ([NostrDelivery] with no way out), as on a phone without Tor.
+     */
+    val nostrSend: (payload: String, target: String, done: (NostrDelivery.Result) -> Unit) -> Unit = NO_RELAY,
 ) {
     companion object {
         /** No Tor: no address is made and no post leaves. What a host with nothing wired answers. */
@@ -35,6 +49,11 @@ class DeliveryEnvironment(
             post = { _, _, _, _, done -> done(OnionPost.Result.Failed(OnionPost.Failure.NoTor)) },
             after = after,
         )
+
+        /** A delivery that reaches no relay: every socket refused, as Route refuses one without Tor. */
+        private val NO_RELAY: (String, String, (NostrDelivery.Result) -> Unit) -> Unit = { payload, target, done ->
+            NostrDelivery(connect = { _, _, _ -> null }, main = { it.run() }, after = { _, _ -> }).send(payload, target, done)
+        }
     }
 
     /** An inbox that never opens. */
@@ -48,8 +67,8 @@ class DeliveryEnvironment(
 
 /**
  * Cashu payment requests (NUT-18) paid straight to whoever asked, over an
- * onion address: a port of Foxy/Bridge/FoxyBridge+Delivery.swift's onion half
- * (ENG-672).
+ * onion address or a Nostr key: a port of Foxy/Bridge/FoxyBridge+Delivery.swift
+ * (the onion in ENG-672, Nostr in ENG-677).
  *
  * Receiving: `inboxOpen` hands out an onion address for the request on screen
  * ([OnionInbox]); a payment posted there reaches the page as
@@ -59,18 +78,23 @@ class DeliveryEnvironment(
  * seconds if a payment may be on its way. One spare address is kept warm and
  * handed to nobody until a request asks, so a payer finds it published.
  *
+ * The same request is also paid to a Nostr key made for it alone
+ * ([io.islandbitcoin.foxy.nostr.NostrInbox], ENG-677): `inboxOpen` answers
+ * `{"onion", "nostr"}`, the `nostr` an nprofile naming the key and its relays,
+ * or the onion alone when no relay would listen. A payment that arrives over
+ * Nostr reaches the page as `_requestPaid(body, "")`: nobody waits on an
+ * answer (the payer published and walked away), so no key is put in
+ * [InboxAnswers] and the page's `inboxAnswer("")` is told nothing is waiting.
+ * The key ends with the request (`inboxClose`) and when Foxy is put away.
+ *
  * Paying: `onionPost` sends a payment to another phone's onion address
- * ([OnionPost]). Everything here is Tor only.
+ * ([OnionPost]), `nostrSend` to the relays a request's nprofile names
+ * ([NostrDelivery]). Everything here is Tor only.
  *
- * Put away, every address of this phone's ends, the spare and the retiring
- * ones too ([closeForBackground]), before Tor comes off the network, and none
- * is made again until Foxy is back ([cameBack]). The page forgets its side when
- * it comes back (`inboxWake`) and opens a fresh one.
- *
- * Not yet: the Nostr half (`nostrSend`, the `nostr` field of `inboxOpen`'s
- * answer, Nostr's `_requestPaid` with an empty answer id), which is LATER
- * (ENG-672's follow-up). `inboxOpen` answers `{"onion"}` alone, which the page
- * takes as it takes an iPhone whose relays would not listen.
+ * Put away, every address of this phone's ends, the spare, the retiring ones
+ * and the Nostr key too ([closeForBackground]), before Tor comes off the
+ * network, and none is made again until Foxy is back ([cameBack]). The page
+ * forgets its side when it comes back (`inboxWake`) and opens a fresh one.
  *
  * Every handler runs on the main thread and answers through `resolve`.
  */
@@ -83,11 +107,15 @@ class DeliveryBridge(
 ) {
     companion object {
         /** And `inboxAnswer`, which [InboxAnswers] answers for this bridge and [TapBridge] alike. */
-        val ACTIONS = setOf("inboxOpen", "inboxClose", InboxAnswers.ACTION, "onionPost")
+        val ACTIONS = setOf("inboxOpen", "inboxClose", InboxAnswers.ACTION, "onionPost", "nostrSend")
 
         const val NO_ADDRESS = "No address: Tor is not ready."
         const val NO_ONION = "No onion address: Tor is not ready."
         const val TOO_LARGE = "That payment is too large to send."
+        const val NO_NOSTR_ADDRESS = "That request names no Nostr address."
+        const val TOO_LARGE_FOR_NOSTR = "That payment is too large to send over Nostr."
+        const val NOSTR_FAILED = "The payment could not be sent over Nostr."
+        const val NO_RELAY_TOOK_IT = "No relay took the payment: "
 
         /** How long a payment's answer key is kept: past the inbox's own 100 s, after which it answered 504. */
         const val ANSWER_KEPT_MS = 110_000L
@@ -128,12 +156,18 @@ class DeliveryBridge(
     /** Put away: no address is made until Foxy is back. */
     private var away = false
 
+    /** The Nostr key the request on screen is also paid to; made and thrown away with it. */
+    private var nostr: NostrAddress? = null
+
+    internal val nostrInbox: NostrAddress? get() = nostr
+
     fun handle(action: String, id: String, body: Map<String, Any?>) {
         when (action) {
             "inboxOpen" -> inboxOpen(id)
             "inboxClose" -> inboxClose(id, body)
             InboxAnswers.ACTION -> answers.handle(id, body)
             "onionPost" -> onionPost(id, body)
+            "nostrSend" -> nostrSend(id, body)
             else -> resolve(id, null, "Unknown action: $action")
         }
     }
@@ -192,6 +226,8 @@ class DeliveryBridge(
         away = true
         spare?.close()
         spare = null
+        nostr?.close()
+        nostr = null
         retiring.forEach { it.close() }
         retiring.clear()
         if (inbox == null) return
@@ -224,10 +260,68 @@ class DeliveryBridge(
 
     // MARK: inboxOpen
 
-    /** `{"onion": "..."}` (the Nostr address is LATER), or the error when there is none. */
+    /**
+     * Both addresses the request on screen is paid to, `{"onion": "...",
+     * "nostr": "nprofile1..."}` (FoxyBridge+Delivery.swift `answerInboxOpen`):
+     * either may be missing, the page leaves out what it did not get.
+     */
     private fun answerInboxOpen(id: String, onion: String?) {
-        if (onion.isNullOrEmpty()) return resolve(id, null, NO_ADDRESS)
-        resolve(id, "{\"onion\":" + FoxyBridge.literal(onion) + "}", null)
+        openNostrInbox { nprofile ->
+            val parts = mutableListOf<String>()
+            if (!onion.isNullOrEmpty()) parts.add("\"onion\":" + FoxyBridge.literal(onion))
+            if (nprofile != null) parts.add("\"nostr\":" + FoxyBridge.literal(nprofile))
+            if (parts.isEmpty()) return@openNostrInbox resolve(id, null, NO_ADDRESS)
+            resolve(id, "{" + parts.joinToString(",") + "}", null)
+        }
+    }
+
+    /**
+     * The Nostr key this request is also paid to, or null when no relay would
+     * listen: the open one, or a fresh key (FoxyBridge+Delivery.swift
+     * `openNostrInbox`). Never while Foxy is put away.
+     */
+    private fun openNostrInbox(done: (String?) -> Unit) {
+        nostr?.let { open ->
+            val nprofile = open.nprofile
+            if (open.isOpen && nprofile != null) return done(nprofile)
+        }
+        nostr?.close()
+        nostr = null
+        if (away) return done(null)
+        val made = try {
+            env.newNostrInbox(::nostrPaymentArrived)
+        } catch (e: NostrCrypto.Failure) {
+            null
+        } ?: return done(null)
+        nostr = made
+        made.open { ok ->
+            if (nostr !== made || away) {
+                made.close()
+                return@open done(null)
+            }
+            val nprofile = made.nprofile
+            if (!ok || nprofile == null) {
+                nostr = null
+                made.close()
+                Log.line("[foxy] nostr inbox: no relay would listen; the request goes without it")
+                return@open done(null)
+            }
+            Log.line("[foxy] nostr inbox open, a key made for this request only")
+            done(nprofile)
+        }
+    }
+
+    /**
+     * A payment that came over Nostr. Nobody to answer: the payer published and
+     * walked away, so the answer key is empty and the page's `inboxAnswer` is
+     * told nothing waits on it ([InboxAnswers]). The claim watch is what tells the
+     * payer, as for a token shown rather than delivered. Main thread.
+     */
+    private fun nostrPaymentArrived(payment: String) {
+        Log.line("[foxy] nostr inbox: a payment arrived (${payment.toByteArray(Charsets.UTF_8).size} bytes)")
+        val js = "window.FoxyWallet && window.FoxyWallet._requestPaid && window.FoxyWallet._requestPaid(" +
+            FoxyBridge.literal(payment) + ", \"\")"
+        host.post { host.evaluate(js) }
     }
 
     /** The address already open, the warm spare, or a new one (FoxyBridge+Delivery.swift `handleInboxOpen`). */
@@ -297,6 +391,9 @@ class DeliveryBridge(
             inbox?.close()
         }
         inbox = null
+        // the key dies with the request it was made for (NostrInbox)
+        nostr?.close()
+        nostr = null
         resolve(id, "ok", null)
         // the next receive should not wait for Tor to publish either
         warmSpare()
@@ -329,6 +426,38 @@ class DeliveryBridge(
                 is OnionPost.Result.Failed -> {
                     Log.line("[foxy] onion post failed: ${result.failure}")
                     resolve(id, null, result.failure.text)
+                }
+            }
+        }
+    }
+
+    // MARK: nostrSend
+
+    /**
+     * {target, body}: a payment handed to the relays a request's nprofile names,
+     * over Tor ([NostrDelivery]); answers how many took it
+     * (FoxyBridge+Delivery.swift `handleNostrSend`).
+     */
+    private fun nostrSend(id: String, body: Map<String, Any?>) {
+        val target = (body["target"] as? String)?.takeIf { it.isNotEmpty() } ?: return resolve(id, null, NO_NOSTR_ADDRESS)
+        val payload = body["body"] as? String ?: ""
+        if (payload.isEmpty() || payload.toByteArray(Charsets.UTF_8).size > NostrCrypto.LONGEST_MESSAGE / 2) {
+            return resolve(id, null, TOO_LARGE_FOR_NOSTR)
+        }
+        env.nostrSend(payload, target) { result ->
+            when (result) {
+                is NostrDelivery.Result.Sent -> {
+                    val o = result.outcome
+                    Log.line("[foxy] nostr: ${o.accepted.size} relay(s) took the payment, ${o.refused.size} did not")
+                    if (o.accepted.isEmpty()) {
+                        resolve(id, null, NO_RELAY_TOOK_IT + (o.refused.values.firstOrNull() ?: "no relay took it"))
+                    } else {
+                        resolve(id, o.accepted.size.toString(), null)
+                    }
+                }
+                is NostrDelivery.Result.Failed -> {
+                    Log.line("[foxy] nostr: the payment could not be wrapped: ${result.failure.kind}")
+                    resolve(id, null, NOSTR_FAILED)
                 }
             }
         }

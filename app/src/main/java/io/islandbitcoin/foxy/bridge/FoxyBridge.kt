@@ -118,13 +118,13 @@ interface PageHost {
  *
  * One table: the 18 P1 actions, the 7 P2 actions ([NetBridge]: Tor's snapshot,
  * RETRY, CONTINUE WITHOUT TOR, and the three requests that leave through
- * Route), the 41 P3 actions ([SeedBridge]'s screens, adopting, wiping and
+ * Route), the 42 P3 actions ([SeedBridge]'s screens, adopting, wiping and
  * protection, and a card's owner key; the card's signed time; [CardBridge]'s
  * card session (ENG-667); [PlatformBridge]'s camera, clipboard, share, notifications,
  * biometric and the rest; [TapBridge]'s Bluetooth question, the receive
  * screen's TAP and tap to pay's receiving side, ENG-670; [DeliveryBridge]'s onion
- * inbox and post, ENG-672, whose payments are answered from the same registry as
- * the tap's, [InboxAnswers]), and the `p1` stubs of conformance/contract.json
+ * inbox and post, ENG-672, and its Nostr key and `nostrSend`, ENG-677, whose
+ * payments are answered from the same registry as the tap's, [InboxAnswers]), and the `p1` stubs of conformance/contract.json
  * for the LATER phase ([ContractStubs], generated from it), which answer the
  * actions the page asks before anything else. A P3 action's stub is never put in the table: every P3
  * action is answered by its real handler. Every other action is answered
@@ -165,7 +165,7 @@ class FoxyBridge(
          * card's owner key ([SeedBridge.CARD_ACTIONS]) and the card's signed time
          * (`cardTime`), which need no NFC; ENG-667 the card session ([CardBridge.ACTIONS]:
          * `cardBegin`, `cardSend`, `cardSay`, `cardAgain`, `cardEnd`) over the NFC link; ENG-670 tap to pay's receiving side ([TapBridge.ACTIONS]);
-         * ENG-672 the onion inbox and post ([DeliveryBridge.ACTIONS]).
+         * ENG-672 the onion inbox and post, and ENG-677 `nostrSend` ([DeliveryBridge.ACTIONS]).
          */
         val P3_ACTIONS: Set<String> =
             SeedBridge.P3_ACTIONS + PlatformBridge.ACTIONS + SeedBridge.CARD_ACTIONS + "cardTime" + CardBridge.ACTIONS + TapBridge.ACTIONS +
