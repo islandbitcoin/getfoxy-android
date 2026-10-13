@@ -248,11 +248,11 @@ test('P3: a host serving P1, P2 and P3 actions answers every platform door the s
     await s.settle(800);
   });
   const p3 = CONTRACT.filter((e) => e.kind === 'action' && e.phase === 'P3').map((e) => e.name);
-  assert.equal(p3.length, 30);
+  assert.equal(p3.length, 35);
   // The page asks a card's owner key and its signed time only inside a card session, which
-  // opens with cardBegin (LATER until the NFC link): they are asked of a P3 host, as the
-  // page's card code asks them, by the flow after this one (ENG-666).
-  const inACardSession = ['cardOwnerKey', 'cardOwnerSign', 'cardTime'];
+  // opens with cardBegin: they are asked of a P3 host, as the page's card code asks them, by
+  // the flows after this one (ENG-666), and the session itself by the ENG-667 flows.
+  const inACardSession = ['cardOwnerKey', 'cardOwnerSign', 'cardTime', 'cardBegin', 'cardSend', 'cardSay', 'cardAgain', 'cardEnd'];
   // A payment arriving and a payment sent need a second phone: the flow *P3 two phones* asks them (ENG-672).
   const betweenTwoPhones = ['inboxAnswer', 'onionPost'];
   assert.deepEqual(p3.filter((a) => !inACardSession.includes(a) && !betweenTwoPhones.includes(a) && !(s.host.asked.get(a) > 0)), [],
@@ -314,6 +314,113 @@ test('the card actions on a P2 host are a violation: Android serves them from P3
   try {
     await assert.rejects(askAsPage(s, 'cardTime', {}), /Unknown action: cardTime/);
     assert.ok(s.host.violations.some((v) => v.kind === 'unserved' && v.detail.includes('cardTime')));
+  } finally {
+    s.close();
+  }
+});
+
+/* ENG-667: a card session, as the page runs one, against Android's half of it (lib/card-host.js:
+ * CardBridge.kt and CardGate.kt's rules) with iOS's own model of the card behind it
+ * (lib/flashcard-card.js, getfoxy/iOS tests/flashcard-card.js at the pin). The page's own card code
+ * opens the sheet (cardBegin), chooses the applet and talks to it (cardSend) through the gate, says
+ * how it goes (cardSay), and closes it (cardEnd): a new card set up with an owner and a PIN, money
+ * put on it and its balance read, a payment taken from it at the conformance mint, a card taken away
+ * part way, and a phone that cannot read one. Every message is held to the contract as any flow's. */
+const { makeCard } = require('../lib/flashcard-card');
+const CardHost = require('../lib/card-host');
+
+test('P3 (ENG-667): a card is set up, loaded, read and paid from through the card session, every command through the gate', async () => {
+  // the intro film never ends in jsdom, and the custody notice would sit over home: both as already seen
+  const storage = { 'foxy.intro.seen': '2026-10-12', 'foxy.custody.told': JSON.stringify({ Minibits: true }) };
+  const s = await flow({ seed: true, tor: 'up', phase: 'P3', storage, p2pk: true }, async (s) => {
+    const W = s.W;
+    await fundedWallet(s, 3000);
+    const card = makeCard({ window: s.window, format: 4 });
+    s.host.state.card = card;
+    const tap = (fn) => W.cardSession('Tap behind the phone.', fn);
+    // set up: an owner (this phone's key for it), a PIN, the record of this mint
+    await tap((link) => W.cardSetUp(link, { pin: '1234', recoverable: true }));
+    assert.ok(s.host.asked.get('cardOwnerKey') > 0 && s.host.asked.get('cardOwnerSign') > 0, 'set up under the owner\'s key, from this phone\'s words');
+    // money onto it, and read back
+    const added = await tap((link) => W.cardAdd(link, { sats: 1000, pin: '1234' }));
+    assert.equal(added.sats, 1000);
+    assert.equal(card.balance(), 1000, 'the card holds what was put on it');
+    // the line on the sheet changed as the card screens change it (`link.say`, cardSession's own)
+    const seen = await tap((link) => link.say('Keep the card there').then(() => W.cardLook(link)));
+    assert.ok(s.host.cardSheet.includes('say: Keep the card there'));
+    assert.equal(seen.balance, 1000, 'and the page reads it back through the gate');
+    // a payment from it, taken by this phone at the mint
+    const paid = await tap((link) => W.cardPay(link, { sats: 300, pin: '1234', hold: true }));
+    assert.equal(paid.sats, 300);
+    assert.equal(card.balance(), 700, 'what left the card is what was paid');
+    // what native saw: every command carried was the applet's choosing or one of its 31, after the choosing
+    const carried = s.host.cardCarried;
+    assert.ok(carried.length > 20, carried.length + ' commands carried');
+    let chosen = false;
+    for (const hex of carried) {
+      const c = CardHost.read(Buffer.from(hex, 'hex'));
+      assert.ok(c === 'select' || (chosen && CardHost.INSTRUCTIONS.has(c)), hex.slice(0, 12) + ' went through the gate');
+      if (c === 'select') chosen = true;
+    }
+    assert.ok(!carried.some((h) => /^b052/.test(h) || /^b050/.test(h) || /^b033/.test(h)), 'no SET_TAG, lock or PIN-form limit reached the card');
+    const sheet = s.host.cardSheet;
+    assert.equal(sheet.filter((l) => l.startsWith('begin: ')).length, 4, 'four sheets: ' + sheet.join(' | '));
+    assert.equal(sheet.filter((l) => l.startsWith('connected: Reading the card')).length, 4, 'each told connected');
+    assert.equal(sheet.filter((l) => l.startsWith('end: ')).length, 4, 'and each closed');
+    assert.ok(s.host.asked.get('cardSay') > 0, 'the page said how the tap went on the sheet');
+    assert.ok(s.host.pushes.includes('_card'), 'progress pushed');
+
+    // the card taken away after two commands: the page is told it was lost, and the sheet ends in red
+    s.host.state.cardPull = 2;
+    const lost = await tap((link) => W.cardLook(link)).then(() => 'read', (e) => e);
+    assert.notEqual(lost, 'read', 'a card taken away is not a card read');
+    assert.ok(sheet.includes('lost: the tag was lost'), 'lost pushed: ' + sheet.slice(-4).join(' | '));
+    assert.match(sheet[sheet.length - 1], /^error: /, 'the sheet closes with the reason in red');
+
+    // a phone that cannot read a card, and a sheet nobody holds a card to
+    s.host.state.card = null;
+    const noNfc = await tap((link) => W.cardLook(link)).then(() => null, (e) => e);
+    assert.equal(noNfc && noNfc.card, 'no-nfc', 'NFC is not available on this phone');
+    s.host.state.card = 'away';
+    const none = await tap((link) => W.cardLook(link)).then(() => null, (e) => e);
+    assert.equal(none && none.card, 'cancelled', 'the sheet timed out');
+    assert.equal(none.message, 'No card was tapped.');
+  });
+  for (const a of ['cardBegin', 'cardSend', 'cardSay', 'cardEnd']) assert.ok(s.host.asked.get(a) > 0, a + ' asked of the P3 host');
+});
+
+test('P3 (ENG-667): the card that leaves part way is looked for again by the same sheet (cardAgain), and the applet chosen again', async () => {
+  const storage = { 'foxy.intro.seen': '2026-10-12', 'foxy.custody.told': JSON.stringify({ Minibits: true }) };
+  const s = await flow({ seed: true, tor: 'up', phase: 'P3', storage, p2pk: true }, async (s) => {
+    const W = s.W;
+    await fundedWallet(s, 1000);
+    const card = makeCard({ window: s.window, format: 4 });
+    s.host.state.card = card;
+    await W.cardSession('Tap behind the phone.', (link) => W.cardSetUp(link, { pin: '1234', recoverable: true }));
+    // the page's own retry: its fn fails with the card gone, `opts.again` gives the line, and the sheet looks again
+    let tries = 0;
+    const read = await W.cardSession('Tap behind the phone.', (link) => {
+      tries += 1;
+      if (tries === 1) s.host.state.cardPull = 1;
+      return W.cardLook(link);
+    }, { again: (e) => (e && e.card === 'gone' ? 'Hold the card there again' : '') });
+    assert.equal(tries, 2, 'the read ran again in the same sheet');
+    assert.equal(read.balance, 0);
+    const sheet = s.host.cardSheet;
+    assert.ok(sheet.includes('again: Hold the card there again'), sheet.join(' | '));
+    // after the card came back, the first thing carried was the applet's choosing
+    const carried = s.host.cardCarried;
+    assert.equal(s.host.cardAgainAt.length, 1, 'found again once');
+    assert.equal(CardHost.read(Buffer.from(carried[s.host.cardAgainAt[0]], 'hex')), 'select');
+  });
+  assert.ok(s.host.asked.get('cardAgain') > 0, 'cardAgain asked of the P3 host');
+});
+
+test('the card session on a P2 host is a violation: Android serves it from P3 (ENG-667)', async () => {
+  const s = await boot({ seed: true, tor: 'up', phase: 'P2' });
+  try {
+    await assert.rejects(askAsPage(s, 'cardBegin', { text: 'Tap' }), /Unknown action: cardBegin/);
+    assert.ok(s.host.violations.some((v) => v.kind === 'unserved' && v.detail.includes('cardBegin')));
   } finally {
     s.close();
   }
@@ -798,9 +905,7 @@ const NOT_EXERCISED = {
   p2pkKey: 'opening ecash locked to this phone; checked statically',
   counterAdvance: 'a restore lifting a counter; checked statically',
   nostrSend: 'paying a request that names a Nostr key; checked statically',
-  cardSend: 'a card session needs the NFC sheet to open, which the fake phone refuses (cardBegin is answered with an error)',
-  cardSay: 'as cardSend', cardAgain: 'as cardSend', cardOwnerKey: 'card set-up, after a card answered', cardOwnerSign: 'as cardOwnerKey',
-  cardTime: 'a card of software 1.14 or before, mid-tap',
+  cardTime: 'a card of software 1.14 or before, mid-tap (the ENG-667 flows tap a card of 1.20, which takes block headers)',
 };
 
 test('coverage: every action in the contract was posted by a flow, or is accounted for', (t) => {

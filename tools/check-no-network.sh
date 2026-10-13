@@ -15,7 +15,13 @@
 # everywhere, network/ included. The exceptions: the instrumented net-block
 # test's loopback listener (in the test package's own process), which must
 # record nothing (S8), and the JVM tests of network/ (a fake SOCKS server and
-# MockWebServer on loopback), which never ship.
+# MockWebServer on loopback), which never ship. And, for the card (ENG-667):
+# the debug build's card simulator link, debug/.../flashcard/SimCardLink.kt,
+# which reaches the applet in jCardSim on the loopback address and nowhere
+# else (checked below line by line: one unconnected Socket(), connected only to
+# InetAddress.getLoopbackAddress()), never in main/ or release/, so a release
+# build has no socket outside network/; and the debug JVM tests of flashcard/ (src/testDebug) (a fake
+# card server, and the real one's control port, on loopback), which never ship.
 #
 #   tools/check-no-network.sh            check app/src
 #   tools/check-no-network.sh <dir>      check another tree (the self-test uses this)
@@ -29,6 +35,8 @@ socks='main/java/io/islandbitcoin/foxy/network/Socks5SocketFactory.kt'
 inbox='main/java/io/islandbitcoin/foxy/network/OnionInbox.kt'
 networkTests='test/java/io/islandbitcoin/foxy/network/'
 listener='androidTest/java/io/islandbitcoin/foxy/ListenerService.java'
+cardsim='debug/java/io/islandbitcoin/foxy/flashcard/SimCardLink.kt'
+cardTests='testDebug/java/io/islandbitcoin/foxy/flashcard/'
 
 if [ ! -d "$src" ]; then
   echo "check-no-network: no such folder: $src" >&2
@@ -77,12 +85,24 @@ rule "Ktor" 'io\.ktor|[Kk]tor[A-Z]'
 rule "OkHttp outside network/" 'okhttp3|OkHttp' "$network" "$networkTests"
 rule "java.net.http" 'java\.net\.http'
 rule "a DNS lookup (getByName, getAllByName), anywhere" 'getByName|getAllByName'
-rule "InetAddress" 'InetAddress' "$socks" "$listener" "$networkTests"
+rule "InetAddress" 'InetAddress' "$socks" "$listener" "$networkTests" "$cardsim" "$cardTests"
 # a JavaScript `new WebSocket(` inside a test's page script is the page's attempt, not a socket of the app's;
 # Socks5SocketFactory is Foxy's own SOCKS-to-Tor factory, named (not opened) in network/
-rule "sockets" '(^|[^A-Za-z])(Server|SSL)?Socket\(|DatagramSocket|SocketChannel|(^|[^A-Za-z0-9])(SSL)?SocketFactory' "$socks" "$listener" "$networkTests" "$inbox"
+rule "sockets" '(^|[^A-Za-z])(Server|SSL)?Socket\(|DatagramSocket|SocketChannel|(^|[^A-Za-z0-9])(SSL)?SocketFactory' "$socks" "$listener" "$networkTests" "$cardsim" "$cardTests" "$inbox"
 # the onion inbox only listens: no client socket, datagram, channel, factory or TLS listener there either
-rule "a socket other than a listener in the onion inbox" '(^|[^A-Za-z])(SSL)?Socket\(|DatagramSocket|SocketChannel|(^|[^A-Za-z0-9])(SSL)?SocketFactory|SSLServerSocket' "$socks" "$listener" "$networkTests"
+rule "a socket other than a listener in the onion inbox" '(^|[^A-Za-z])(SSL)?Socket\(|DatagramSocket|SocketChannel|(^|[^A-Za-z0-9])(SSL)?SocketFactory|SSLServerSocket' "$socks" "$listener" "$networkTests" "$cardsim" "$cardTests"
+
+# the card simulator link: loopback only. Every line of it that names an address
+# or makes a socket is one of these three, and nothing else: the import, an
+# unconnected Socket(), and a connect to InetAddress.getLoopbackAddress().
+sim="$src/$cardsim"
+if [ -f "$sim" ]; then
+  wild="$(grep -nE 'InetAddress|Socket\(|InetSocketAddress\(|\.connect\(|\.bind\(|"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"|localhost' "$sim" \
+    | grep -vE '^[0-9]+:import java\.net\.(InetAddress|InetSocketAddress|Socket)$' \
+    | grep -vE '^[0-9]+:[[:space:]]*val [a-z]+ = Socket\(\)$' \
+    | grep -vE '^[0-9]+:[[:space:]]*[a-z]+\.connect\(InetSocketAddress\(InetAddress\.getLoopbackAddress\(\), port\), CONNECT_MS\)$' || true)"
+  if [ -n "$wild" ]; then report "the card simulator link reaching anything but loopback ($cardsim)" "$wild"; fi
+fi
 
 # loadUrl with anything other than the asset page
 loads="$(grep -rnE --include='*.kt' --include='*.java' 'loadUrl\(|loadDataWithBaseURL\(|postUrl\(' "$src" | grep -vE 'loadUrl\(PAGE_URL\)' || true)"

@@ -24,8 +24,9 @@ contract entries in all.
 Phases: **P1** shell (WebView, bridge, lifecycle, seed and counters in the
 Keystore), **P2** Tor (Route, tor-android, IPtProxy, mint/price/chart
 requests), **P3** platform (scanner, clipboard, share, notifications, haptics,
-biometrics, native seed screens; since ENG-672 the onion inbox and post too),
-**LATER** (Nostr, Bluetooth tap, NFC card).
+biometrics, native seed screens, and since ENG-666 and ENG-667 the NFC card's
+owner key, signed time and session, and since ENG-672 the onion inbox and
+post), **LATER** (Nostr, Bluetooth tap, a card held to the phone opening Foxy).
 
 ## 1. How a message travels
 
@@ -193,6 +194,24 @@ allowlisted, plus the WebRTC removal in every frame.
   through the card session: nothing of that is native's. The JVM tests hold
   Kotlin to iOS's `tests/fixtures/card-owner-vectors.json` and to the card's
   own `spec/vectors/owner.json`.
+- **A card session (ENG-667).** `cardBegin`, `cardSend`, `cardSay`,
+  `cardAgain`, `cardEnd` and the `_card` push are P3, ported from
+  `Foxy/Bridge/FoxyBridge+Flashcard.swift` and `Foxy/Flashcard/CardGate.swift`,
+  `CardLink.swift` (`bridge/CardBridge.kt`, `flashcard/CardGate.kt`,
+  `flashcard/NfcCardLink.kt`). One session at a time; every command is read by
+  the gate before it is carried: the SELECT of Foxy's applet by its whole name
+  (`F0 46 4F 58 59 43 41 52 44 01`) first, then only that applet's 31
+  instructions under class `B0` (SET_TAG `52` is not one, as upstream), and
+  the applet chosen again after a card comes back. Android has no system NFC
+  sheet: Foxy draws its own over the page (`flashcard/CardSheetView.kt`, "Ready
+  to Scan", the page's line, Cancel; a tick and a word or the reason in red),
+  and reads the card in reader mode on the resumed activity only
+  (`NfcAdapter.enableReaderMode`, NFC-A/B, IsoDep). The sheet waits 60 s for a
+  card; Cancel or Back cancels; Foxy put away ends it. Progress is pushed
+  (`_card`) only from the session in hand, before the reply it goes with. A
+  debug build with no NFC (the emulator), or started with the `FoxyCardSim`
+  extra, reaches getfoxy/card's applet in jCardSim over loopback instead
+  (`SimCardLink`, ports 47431-47434), as iOS's Simulator build does.
 - **The onion inbox and post (ENG-672).** `inboxOpen`, `inboxClose`,
   `inboxAnswer`, `onionPost` and the `_requestPaid` push are P3: a port of the
   onion half of `Foxy/Bridge/FoxyBridge+Delivery.swift:13-258` and of
@@ -1216,55 +1235,55 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Native:** Tap progress. side receive|pay; stage one of searching, far, connecting, linked, sending, receiving, code, asking, gone, shake, nearby, version, off, denied, unsupported. Android (ENG-656, until BLE tap to pay in ENG-650): pushed only as {side:"receive",stage:"unsupported"}, after the reply to a tapReceiveStart that made the receiver. At the pinned page a receive-side stage other than off and denied leaves tapRecvStage alone, so the TAP card says HOLD A PHONE HERE, as on an iPhone without Bluetooth.
 - **iOS:** `Foxy/Bridge/FoxyBridge+Tap.swift:487-498`, `Foxy/Bluetooth/TapLink.swift:5-24`
 
-### NFC card (LATER)
+### NFC card
 
-#### `cardBegin` — LATER
+#### `cardBegin` — P3
 
 - **Shape:** page → native, action: `{ action: "cardBegin", id, text }`
 - **Payload:** `text`: string
 - **Called from:** `Web/foxy-wallet.js:25566`
-- **Native:** Open the NFC session with one printable line (<=120 chars) of the page's text; answers when a card is there. One session at a time.
+- **Native:** Open the NFC session with one printable line (<=120 chars) of the page's text; answers when a card is there. One session at a time. Android (ENG-667): bridge/CardBridge.kt over a flashcard/CardLink: on a phone with NFC, reader mode (NfcAdapter.enableReaderMode, NFC-A/B, the NDEF check skipped) with Foxy's own card sheet over the page (Android has no system one: "Ready to Scan", the line, Cancel), on the resumed activity only; in a debug build with no NFC (the emulator), or started with the FoxyCardSim extra, the getfoxy/card simulator over loopback (SimCardLink, ports 47431-47434). The sheet waits 60 s for a card ("the session timed out"); Cancel or Back is "the session was cancelled"; no NFC adapter, or NFC switched off, is "NFC is not available on this phone". With no line from the page the sheet says "Hold the card to the back of the phone" (iOS: the top). Foxy put away while the sheet waits ends it "Foxy was put away" (the begin answered "the session was cancelled"); with a card in hand the card is lost.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "<CardLinkError words>"
 - **Timing:** Page waits 63 s.
-- **iOS:** `Foxy/Bridge/FoxyBridge.swift:429`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:27-64`
+- **iOS:** `Foxy/Bridge/FoxyBridge.swift:429`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:27-64`, `Foxy/Flashcard/CardLink.swift:26-44`, `Foxy/Flashcard/CardLink.swift:177-182`, `Foxy/Flashcard/CardLink.swift:288-290`
 
-#### `cardSend` — LATER
+#### `cardSend` — P3
 
 - **Shape:** page → native, action: `{ action: "cardSend", id, apdu }`
 - **Payload:** `apdu`: string
 - **Called from:** `Web/foxy-wallet.js:25491`
-- **Native:** One APDU (hex) and its answer. Only SELECT of Foxy's own applet AID (F0 46 4F 58 59 43 41 52 44 01), then only that applet's 31 instructions (CardGate.instructions, CLA B0): 01, 10, 11, 13-1A, 20, 22-26, 30-32, 34-37, 40-45, 51. 1A (GET_DLEQ, card software 1.20) reads back the mint's NUT-12 proof a card keeps with an unspent piece, two places per command; 30 with P1 = 1 (LOAD_PROOF) writes a piece with its proof, 96 more bytes of data (e, s, r), still a short APDU. 12, 33 and 50, which the applet has, stay out. Never logged: one carries the PIN.
+- **Native:** One APDU (hex) and its answer. Only SELECT of Foxy's own applet AID (F0 46 4F 58 59 43 41 52 44 01), then only that applet's 31 instructions (CardGate.instructions, CLA B0): 01, 10, 11, 13-1A, 20, 22-26, 30-32, 34-37, 40-45, 51. 1A (GET_DLEQ, card software 1.20) reads back the mint's NUT-12 proof a card keeps with an unspent piece, two places per command; 30 with P1 = 1 (LOAD_PROOF) writes a piece with its proof, 96 more bytes of data (e, s, r), still a short APDU. 12, 33 and 50, which the applet has, stay out. Never logged: one carries the PIN. Android (ENG-667): flashcard/CardGate.kt is CardGate.swift's 31 byte for byte (CardGateTest also holds it to the page's CARD_INS, both ways, and tries every class, instruction and P1/P2). SET_TAG (52, card software 1.19) is not carried, as CardGate.swift at the pin does not carry it, though the card's FOXY-CARD-SPEC.md section 7 (docs/FOXY-CARD-SPEC.md:1070-1072) says a phone's gate should. That section's list is stale against iOS in ten more: 17, 18, 19, 22-26, 35 and 51 (RESET_CARD) are carried here and by CardGate.swift, and the page sends them, but section 7 does not name them. All eleven are for getfoxy/iOS and getfoxy/card to settle together; Android follows iOS. The command is carried over IsoDep (10 s for an answer) or the simulator's "apdu HEX"; an answer under two bytes, a dropped card or the simulator's "gone" is "the tag was lost" with a `_card` lost push, and nothing more is carried until cardAgain finds a card and the applet is chosen again.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — text (the response APDU, hex)
   The text is the response APDU, hex.
 - **Errors:** "That is not a command for a card."; "That is not a command Foxy sends to a card."; "<CardLinkError words>"
-- **iOS:** `Foxy/Bridge/FoxyBridge.swift:430`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:69-95`, `Foxy/Flashcard/CardGate.swift:23-51`
+- **iOS:** `Foxy/Bridge/FoxyBridge.swift:430`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:69-95`, `Foxy/Flashcard/CardGate.swift:23-51`, `Foxy/Flashcard/CardGate.swift:33`
 
-#### `cardSay` — LATER
+#### `cardSay` — P3
 
 - **Shape:** page → native, action: `{ action: "cardSay", id, text }`
 - **Payload:** `text`: string
 - **Called from:** `Web/foxy-wallet.js:25495`
-- **Native:** Change the line on the NFC sheet.
+- **Native:** Change the line on the NFC sheet. Android (ENG-667): the line on Foxy's card sheet (CardGate.line: one printable line, 120 characters), and a `_card` say push; "ok" with or without a session.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:431`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:122-128`
 
-#### `cardAgain` — LATER
+#### `cardAgain` — P3
 
 - **Shape:** page → native, action: `{ action: "cardAgain", id, text }`
 - **Payload:** `text`: string
 - **Called from:** `Web/foxy-wallet.js:25512`
-- **Native:** The card left part way: look for it again; the applet must be selected again.
+- **Native:** The card left part way: look for it again; the applet must be selected again. Android (ENG-667): reader mode is turned off and on again, so a card still in the field is found afresh (iOS: restartPolling), with a new 60 s wait; the sheet shows the page's line ("Hold the card here again" with none). No session: "the session was cancelled".
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **Errors:** "<CardLinkError words>"
-- **iOS:** `Foxy/Bridge/FoxyBridge.swift:432`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:101-119`
+- **iOS:** `Foxy/Bridge/FoxyBridge.swift:432`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:101-119`, `Foxy/Flashcard/CardLink.swift:109`
 
-#### `cardEnd` — LATER
+#### `cardEnd` — P3
 
 - **Shape:** page → native, action: `{ action: "cardEnd", id, text, error }`
 - **Payload:** `text`: string?, `error`: string?
 - **Called from:** `Web/foxy-wallet.js:25473`, `Web/foxy-wallet.js:25504`
-- **Native:** Close the sheet with a word or a reason.
+- **Native:** Close the sheet with a word or a reason. Android (ENG-667): a tick and the word (1.2 s), or the reason in red (2.4 s), then the sheet goes; reader mode off and the card let go. A sheet still waiting for a card is answered "the session was cancelled". "ok" with or without a session.
 - **Reply:** FoxyWallet._scanResult(id, text, error) — "ok"
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:433`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:133-145`
 
@@ -1298,12 +1317,12 @@ page (`Web/`) where the call is in a shipped file, or the page's source under
 - **Errors:** "The clock on this phone is not a time a card can be told."
 - **iOS:** `Foxy/Bridge/FoxyBridge.swift:439`, `Foxy/Bridge/FoxyBridge+Flashcard.swift:152-158`, `Foxy/Flashcard/CardTime.swift:110-113`, `Foxy/Flashcard/CardTime.swift:43-46`, `Foxy/Flashcard/CardTime.swift:53-56`
 
-#### `_card` — LATER
+#### `_card` — P3
 
 - **Shape:** native → page, push: `window.FoxyWallet._card({stage, text})`
 - **Payload:** `stage`: string, `text`: string
 - **Called from:** `Web/foxy-wallet.js:25446`
-- **Native:** NFC session progress: stage connected|say|end|lost.
+- **Native:** NFC session progress: stage connected|say|end|lost. Android (ENG-667): pushed by CardBridge through CardGate.progressScript (the text cut to a line and quoted as JSON, `<` `>` `&` and every control escaped) only while the link is the session in hand: connected ("Reading the card") when a card answers, say on cardSay, end when the page closes it, lost when the card leaves mid-command, the wait runs out, the sheet is cancelled or Foxy is put away with a card in hand.
 - **iOS:** `Foxy/Flashcard/CardGate.swift:144-150`
 
 #### `_cardTapped` — LATER
@@ -1442,11 +1461,11 @@ kind, domain, phase, payloadSchema, reply, iosRef, pageRef, behaviour, timing? }
 | `bluetoothAsk` | page → native | action | P3 | — | "allowed" / "denied" / "off" / "unsupported" / "unknown" | Foxy/Bridge/FoxyBridge.swift:426 |
 | `shakeStart` | page → native | action | LATER | — | "ok" | Foxy/Bridge/FoxyBridge.swift:441 |
 | `shakeStop` | page → native | action | LATER | — | "ok" | Foxy/Bridge/FoxyBridge.swift:442 |
-| `cardBegin` | page → native | action | LATER | `text`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:429 |
-| `cardSend` | page → native | action | LATER | `apdu`: string | text (the response APDU, hex) | Foxy/Bridge/FoxyBridge.swift:430 |
-| `cardSay` | page → native | action | LATER | `text`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:431 |
-| `cardAgain` | page → native | action | LATER | `text`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:432 |
-| `cardEnd` | page → native | action | LATER | `text`: string?, `error`: string? | "ok" | Foxy/Bridge/FoxyBridge.swift:433 |
+| `cardBegin` | page → native | action | P3 | `text`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:429 |
+| `cardSend` | page → native | action | P3 | `apdu`: string | text (the response APDU, hex) | Foxy/Bridge/FoxyBridge.swift:430 |
+| `cardSay` | page → native | action | P3 | `text`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:431 |
+| `cardAgain` | page → native | action | P3 | `text`: string | "ok" | Foxy/Bridge/FoxyBridge.swift:432 |
+| `cardEnd` | page → native | action | P3 | `text`: string?, `error`: string? | "ok" | Foxy/Bridge/FoxyBridge.swift:433 |
 | `cardOwnerKey` | page → native | action | P3 | `key`: string | json {pub: string} | Foxy/Bridge/FoxyBridge.swift:436 |
 | `cardOwnerSign` | page → native | action | P3 | `key`: string, `label`: string, `nonce`: string, `value`: string | json {sig: string} | Foxy/Bridge/FoxyBridge.swift:437 |
 | `cardTime` | page → native | action | P3 | — | json {time: integer, sig: string} | Foxy/Bridge/FoxyBridge.swift:439 |
@@ -1470,7 +1489,7 @@ kind, domain, phase, payloadSchema, reply, iosRef, pageRef, behaviour, timing? }
 | `_turned` | native → page | push | LATER | `upsideDown`: boolean | none | Foxy/Bridge/FoxyBridge+Tap.swift:303-307 |
 | `_tapChangeKeptLate` | native → page | push | LATER | — | none | Foxy/Bridge/FoxyBridge+Tap.swift:380 |
 | `_tap` | native → page | push | P3 | `side`: string, `stage`: string, `code`: string?, `edge`: string?, `pct`: integer? | none | Foxy/Bridge/FoxyBridge+Tap.swift:487-498 |
-| `_card` | native → page | push | LATER | `stage`: string, `text`: string | none | Foxy/Flashcard/CardGate.swift:144-150 |
+| `_card` | native → page | push | P3 | `stage`: string, `text`: string | none | Foxy/Flashcard/CardGate.swift:144-150 |
 | `_cardTapped` | native → page | push | LATER | — | none | Foxy/Flashcard/CardAddress.swift:64 |
 | `noWebRTC` | native → page | script | P1 | — | none | Foxy/FoxyWebView.swift:138-141 |
 | `noCallout` | native → page | script | P1 | — | none | Foxy/FoxyWebView.swift:146-156 |

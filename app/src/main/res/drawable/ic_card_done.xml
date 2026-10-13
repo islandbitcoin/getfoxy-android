@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The card sheet's tick: the page closed the sheet with a word (flashcard/CardSheetView.kt). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <path
+        android:strokeColor="#FF0A84FF"
+        android:strokeWidth="4"
+        android:fillColor="#00000000"
+        android:pathData="M48,10 A38,38 0 1,1 47.99,10 Z" />
+    <path
+        android:strokeColor="#FF0A84FF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M31,49 L43,61 L66,36" />
+</vector>

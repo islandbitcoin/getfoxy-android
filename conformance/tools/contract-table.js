@@ -37,7 +37,7 @@ const DOMAINS = [
   ['onion', 'Onion inbox and post'],
   ['nostr', 'Nostr (LATER)'],
   ['bluetooth', 'Bluetooth tap to pay (LATER)'],
-  ['card', 'NFC card (LATER)'],
+  ['card', 'NFC card'],
 ];
 
 const cell = (s) => String(s).replace(/\|/g, '\\|').replace(/\n/g, ' ');
