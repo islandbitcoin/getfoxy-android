@@ -91,14 +91,17 @@ class WebHost(
         /** POST_NOTIFICATIONS (API 33+), asked if not granted; `done(granted)`. */
         fun notifications(done: (Boolean) -> Unit)
 
-        /** BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT (API 31+), asked together; `done` once the system has answered. */
-        fun bluetooth(permissions: List<String>, done: (Boolean) -> Unit)
+        /**
+         * BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT (API 31+), asked together; `done(true)` granted,
+         * `done(false)` refused, `done(null)` when nobody answered (the request was cancelled or interrupted).
+         */
+        fun bluetooth(permissions: List<String>, done: (Boolean?) -> Unit)
 
         companion object {
             val NONE = object : Permissions {
                 override fun camera(done: (Boolean) -> Unit) = done(false)
                 override fun notifications(done: (Boolean) -> Unit) = done(false)
-                override fun bluetooth(permissions: List<String>, done: (Boolean) -> Unit) = done(false)
+                override fun bluetooth(permissions: List<String>, done: (Boolean?) -> Unit) = done(null)
             }
         }
     }

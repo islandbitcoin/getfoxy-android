@@ -201,8 +201,8 @@ class TapBridge(
         }
         timer = b.clock.after(BluetoothAnswer.WAIT) { finish(BluetoothAnswer.UNKNOWN) }
         // no question on a phone that could not use the answer, nor when it is already given, nor again once
-        // answered (a refusal then reads `denied` with no dialog, as iOS's `.unauthorized`)
-        if (!BluetoothAnswer.worthAsking(b.adapter, b.power(), b.advertises) || b.permitted() || b.asked()) return follow()
+        // refused (a refusal then reads `denied` with no dialog, as iOS's `.unauthorized`)
+        if (!BluetoothAnswer.worthAsking(b.adapter, b.power(), b.advertises) || b.permitted() || b.refused()) return follow()
         b.ask { follow() }
     }
 

@@ -105,6 +105,87 @@ class TapReceiverTest {
     }
 
     @Test
+    fun aGrantAndroidTookBackIsAskedAgainNotReadAsARefusal() {
+        // Android 11+ resets the runtime permissions of an app left unused for months; iOS never takes a
+        // CBManager authorization back, so iOS would still be on the air. No refusal was given: ask afresh.
+        val b = FakeBluetooth().apply {
+            granted = false
+            grantOnAsk = true
+        }
+        val (r, stages) = made(b)
+        r.start()
+        r.arm()
+        settle(b)
+        assertEquals(1, b.asks)
+        assertEquals(listOf(TapStage.SEARCHING), stages)
+        r.stop()
+        settle(b)
+
+        b.autoRevoke()
+        assertFalse("a grant taken back is not a refusal", b.refused())
+        val (r2, stages2) = made(b)
+        r2.start()
+        r2.arm()
+        settle(b)
+        assertEquals("asked again, as a never-asked install is", 2, b.asks)
+        assertEquals(listOf(TapStage.SEARCHING), stages2)
+    }
+
+    @Test
+    fun aRefusalGrantedInSettingsThenTakenBackIsAskedAgain() {
+        val b = FakeBluetooth().apply {
+            granted = false
+            grantOnAsk = false
+        }
+        val (r, stages) = made(b)
+        r.start()
+        r.arm()
+        settle(b)
+        assertEquals(listOf(TapStage.DENIED), stages)
+        assertTrue(b.refused())
+        r.stop()
+
+        // granted in Settings and seen granted: the old refusal no longer holds
+        b.granted = true
+        assertTrue(b.permitted())
+        assertFalse(b.kept.value)
+
+        b.autoRevoke()
+        b.grantOnAsk = true
+        val (r2, stages2) = made(b)
+        r2.start()
+        r2.arm()
+        settle(b)
+        assertEquals(2, b.asks)
+        assertEquals(listOf(TapStage.SEARCHING), stages2)
+    }
+
+    @Test
+    fun aQuestionNobodyAnsweredIsNotARefusal() {
+        // the launcher's empty map: the request was cancelled or interrupted, not answered
+        val b = FakeBluetooth().apply {
+            granted = false
+            grantOnAsk = null
+        }
+        val (r, stages) = made(b)
+        r.start()
+        r.arm()
+        b.unanswered()
+        settle(b)
+        assertEquals(listOf(TapStage.DENIED), stages)
+        assertFalse("nothing kept for an unanswered question", b.refused())
+        r.stop()
+
+        b.grantOnAsk = true
+        val (r2, stages2) = made(b)
+        r2.start()
+        r2.arm()
+        settle(b)
+        assertEquals("asked again", 2, b.asks)
+        assertEquals(listOf(TapStage.SEARCHING), stages2)
+    }
+
+    @Test
     fun aQuestionAnsweredAfterTheReceiverStoppedMakesNoRadio() {
         val b = FakeBluetooth().apply {
             granted = false

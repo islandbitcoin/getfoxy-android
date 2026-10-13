@@ -75,9 +75,10 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         notificationsAsked.clear()
         waiting.forEach { it(granted) }
     }
-    private val bluetoothAsked = ArrayList<(Boolean) -> Unit>()
+    private val bluetoothAsked = ArrayList<(Boolean?) -> Unit>()
     private val bluetoothLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        val granted = result.isNotEmpty() && result.values.all { it }
+        // an empty map is a request cancelled or interrupted, not answered: null, so it is not kept as a refusal
+        val granted: Boolean? = if (result.isEmpty()) null else result.values.all { it }
         val waiting = bluetoothAsked.toList()
         bluetoothAsked.clear()
         waiting.forEach { it(granted) }
@@ -197,9 +198,9 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
     }
 
     /** Tap to pay's two (API 31+), asked together in the system's one question (ENG-670). */
-    override fun bluetooth(permissions: List<String>, done: (Boolean) -> Unit) {
+    override fun bluetooth(permissions: List<String>, done: (Boolean?) -> Unit) {
         if (permissions.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) return done(true)
-        if (isFinishing || isDestroyed) return done(false)
+        if (isFinishing || isDestroyed) return done(null)
         bluetoothAsked.add(done)
         if (bluetoothAsked.size == 1) bluetoothLauncher.launch(permissions.toTypedArray())
     }

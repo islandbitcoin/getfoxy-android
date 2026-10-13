@@ -38,7 +38,8 @@ import java.util.UUID
  */
 class AndroidTapBluetooth(
     private val context: Context,
-    private val askPermissions: (List<String>, (Boolean) -> Unit) -> Unit,
+    /** The system's question; `done(true)` granted, `done(false)` refused, `done(null)` not answered. */
+    private val askPermissions: (List<String>, (Boolean?) -> Unit) -> Unit,
 ) : TapBluetooth {
     private val main = Handler(Looper.getMainLooper())
     private val manager: BluetoothManager? = context.getSystemService(BluetoothManager::class.java)
@@ -56,20 +57,31 @@ class AndroidTapBluetooth(
 
     private val needed = BluetoothAnswer.permissions(Build.VERSION.SDK_INT)
 
-    override fun permitted(): Boolean = needed.all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+    private fun granted(): Boolean = needed.all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
-    /** Where the system's question is remembered as answered (no backup: a new install asks afresh). */
+    override fun permitted(): Boolean = granted().also { if (it) refusal.seenGranted() }
+
+    /** Where a refusal of the system's question is kept (no backup: a new install asks afresh). */
     private val prefs by lazy { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
+
+    private val refusal = BluetoothRefusal(
+        object : BluetoothRefusal.Store {
+            override fun get() = prefs.getBoolean(REFUSED, false)
+            override fun put(refused: Boolean) = prefs.edit().putBoolean(REFUSED, refused).apply()
+            override fun clear() = prefs.edit().remove(REFUSED).apply()
+        },
+        ::granted,
+    )
 
     override fun ask(done: (Boolean) -> Unit) {
         if (permitted()) return done(true)
-        askPermissions(needed) {
-            prefs.edit().putBoolean(ASKED, true).apply()
+        askPermissions(needed) { answer ->
+            refusal.answered(answer)
             done(permitted())
         }
     }
 
-    override fun asked(): Boolean = prefs.getBoolean(ASKED, false)
+    override fun refused(): Boolean = refusal.refused()
 
     override fun power(): TapBluetooth.Power = when (bt?.state ?: BluetoothAdapter.STATE_OFF) {
         BluetoothAdapter.STATE_ON -> TapBluetooth.Power.ON
@@ -113,7 +125,7 @@ class AndroidTapBluetooth(
 
     companion object {
         const val PREFS = "foxy.tap"
-        const val ASKED = "bluetoothAsked"
+        const val REFUSED = "bluetoothRefused"
     }
 
     /** The main looper as a [TapClock]. */

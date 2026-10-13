@@ -61,8 +61,8 @@ class TapReceiver(
         started = true
         val b = bluetooth
         if (!BluetoothAnswer.worthAsking(b.adapter, b.power(), b.advertises) || b.permitted()) return follow()
-        // answered before and not granted: denied, with no dialog, as iOS reads `.unauthorized`
-        if (b.asked()) {
+        // refused before and not granted since: denied, with no dialog, as iOS reads `.unauthorized`
+        if (b.refused()) {
             diary("[tap] receive: the Bluetooth permissions were refused before; not asking again")
             return link.radioState(TapStage.DENIED)
         }

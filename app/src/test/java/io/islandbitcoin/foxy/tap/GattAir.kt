@@ -25,10 +25,11 @@ class FakeBluetooth(override val clock: FakeClock = FakeClock()) : TapBluetooth 
     /** Every peripheral's callbacks, carried across by [GattAir.settle]. */
     val pending = ArrayDeque<() -> Unit>()
 
-    /** The system's question has had an answer on this install (AndroidTapBluetooth keeps it in its preferences). */
-    var answered = false
+    /** Where a refusal is kept (AndroidTapBluetooth: its preferences); the logic is the app's own [BluetoothRefusal]. */
+    val kept = MemoryRefusal()
+    private val refusal = BluetoothRefusal(kept) { granted }
 
-    override fun permitted() = granted
+    override fun permitted() = granted.also { if (it) refusal.seenGranted() }
 
     override fun ask(done: (Boolean) -> Unit) {
         asks++
@@ -38,16 +39,29 @@ class FakeBluetooth(override val clock: FakeClock = FakeClock()) : TapBluetooth 
             return
         }
         granted = answer
-        answered = true
+        refusal.answered(answer)
         done(answer)
     }
 
-    override fun asked() = answered
+    override fun refused() = refusal.refused()
+
+    /** A question taken off screen with no answer (the launcher's empty map): nothing is kept. */
+    fun unanswered() {
+        refusal.answered(null)
+        val w = waiting.toList()
+        waiting.clear()
+        w.forEach { it(granted) }
+    }
+
+    /** Android 11+ took back the permissions of an app left unused (no dialog, no refusal). */
+    fun autoRevoke() {
+        granted = false
+    }
 
     /** The question on screen is answered now. */
     fun answer(grant: Boolean) {
         granted = grant
-        answered = true
+        refusal.answered(grant)
         val w = waiting.toList()
         waiting.clear()
         w.forEach { it(grant) }
@@ -73,6 +87,18 @@ class FakeBluetooth(override val clock: FakeClock = FakeClock()) : TapBluetooth 
     }
 
     val peripheral: FakePeripheral get() = opened.last()
+}
+
+/** [BluetoothRefusal.Store] in memory. */
+class MemoryRefusal : BluetoothRefusal.Store {
+    var value = false
+    override fun get() = value
+    override fun put(refused: Boolean) {
+        value = refused
+    }
+    override fun clear() {
+        value = false
+    }
 }
 
 /**
