@@ -1,11 +1,20 @@
 package io.islandbitcoin.foxy
 
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
+import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import io.islandbitcoin.foxy.tap.BluetoothAnswer
+import io.islandbitcoin.foxy.tap.TapBluetooth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -13,10 +22,17 @@ import org.junit.runner.RunWith
  * ENG-656 on a phone: what the first-install Bluetooth screen's APPROVE posts
  * (`{ id: 'bt-…', action: 'bluetoothAsk' }`, foxy-tor-gate.js) reaches native
  * through the real shim and comes back twice, in iOS's order: the gate's
- * `window.__foxyBluetoothAnswer("unsupported")`, which is what closes the
- * screen, and then the reply on the action's own id. The page's own handler is
- * set aside for the test and put back, so a Bluetooth screen up on a fresh
- * install is left as it was.
+ * `window.__foxyBluetoothAnswer(state)`, which is what closes the screen, and
+ * then the reply on the action's own id. The page's own handler is set aside
+ * for the test and put back, so a Bluetooth screen up on a fresh install is
+ * left as it was.
+ *
+ * ENG-670: the state is the phone's, as `BluetoothAnswer` reads it, not a fixed
+ * "unsupported": BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT are granted to the
+ * app before each test (API 31+, so the system's question does not come up),
+ * and the answer must be the one this phone's adapter gives, `allowed` with
+ * Bluetooth on, `off` with it off, `unsupported` on a phone that cannot
+ * advertise. Run it once with Bluetooth on and once with it off.
  *
  * The second case is the screen itself, as a fresh install meets it: the
  * gate's own `#ftg-bt` (foxy-tor-gate.js `showBluetooth`), reached the way the
@@ -28,8 +44,31 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class BluetoothApproveTest {
+    @Before
+    fun grantTheTwo() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val ui = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val app = ApplicationProvider.getApplicationContext<Context>().packageName
+        for (p in BluetoothAnswer.permissions(Build.VERSION.SDK_INT)) ui.grantRuntimePermission(app, p)
+    }
+
+    /** What this phone should answer, read from its adapter as the app reads it. */
+    @SuppressLint("MissingPermission") // granted above; getState and the advertiser need nothing more
+    private fun expected(): String {
+        val adapter = ApplicationProvider.getApplicationContext<Context>().getSystemService(BluetoothManager::class.java)?.adapter
+            ?: return BluetoothAnswer.UNSUPPORTED
+        val power = when (adapter.state) {
+            BluetoothAdapter.STATE_ON -> TapBluetooth.Power.ON
+            BluetoothAdapter.STATE_TURNING_ON -> TapBluetooth.Power.TURNING
+            else -> TapBluetooth.Power.OFF
+        }
+        val advertises = power == TapBluetooth.Power.ON && adapter.isMultipleAdvertisementSupported && adapter.bluetoothLeAdvertiser != null
+        return BluetoothAnswer.answer(true, true, power, advertises) ?: BluetoothAnswer.UNKNOWN
+    }
+
     @Test
-    fun approveIsPushedTheAnswerAndThenRepliedUnsupported() {
+    fun approveIsPushedTheAnswerAndThenRepliedWithIt() {
+        val state = expected()
         ActivityScenario.launch(MainActivity::class.java).use { s ->
             assertTrue("the page boots", Page.until(s, Page.STARTED, 90_000))
             val result = Page.async(s, """
@@ -47,7 +86,7 @@ class BluetoothApproveTest {
                 window.__foxyBluetoothAnswer = page;
                 return heard.join(', ');
             """.trimIndent(), 15_000)
-            assertEquals("\"push unsupported, reply unsupported null\"", result)
+            assertEquals("\"push $state, reply $state null\"", result)
         }
     }
 
@@ -57,6 +96,7 @@ class BluetoothApproveTest {
         // makes the Bluetooth screen due after it (foxy-tor-gate.js bluetoothDue), as on a fresh install
         val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
             .putExtra("FOXY_SHOW_WARNING", true)
+        val state = expected()
         ActivityScenario.launch<MainActivity>(intent).use { s ->
             assertTrue("the page boots", Page.until(s, Page.STARTED, 90_000))
             // what this phone had, put back at the end: PROCEED and APPROVE both write theirs
@@ -76,7 +116,7 @@ class BluetoothApproveTest {
                     "APPROVE closes the Bluetooth screen",
                     Page.until(
                         s,
-                        "!document.getElementById('ftg-bt') && localStorage.getItem('$ASKED') === 'approved, iOS said unsupported'",
+                        "!document.getElementById('ftg-bt') && localStorage.getItem('$ASKED') === 'approved, iOS said $state'",
                         10_000,
                     ),
                 )

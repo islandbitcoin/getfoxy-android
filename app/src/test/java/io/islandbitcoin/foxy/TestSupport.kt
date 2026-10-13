@@ -113,6 +113,13 @@ class FakeHost : PageHost {
     /** Hold the seed screens' answers until [answerScreens] (a screen left up). */
     var holdScreens = false
 
+    /** Tap to pay's Bluetooth (ENG-670): null is a phone with none Foxy can use. */
+    var tapBluetooth: io.islandbitcoin.foxy.tap.TapBluetooth? = null
+
+    /** Each time the accelerometer was asked for (true) or let go, and the shake it hands over while on. */
+    val shakeSenses = CopyOnWriteArrayList<Boolean>()
+    var shake: (() -> Unit)? = null
+
     // P3 doors: what they were asked
     val scans = CopyOnWriteArrayList<String>()
     val previews = CopyOnWriteArrayList<PlatformRules.Rect>()
@@ -259,6 +266,13 @@ class FakeHost : PageHost {
         val phrase = enterWordsAnswer
         if (holdScreens) heldScreens.add(Held({ done(phrase) }, { done(null) })) else done(phrase)
         return true
+    }
+
+    override fun bluetooth() = tapBluetooth
+
+    override fun shakeSense(on: Boolean, onShake: () -> Unit) {
+        shakeSenses.add(on)
+        shake = if (on) onShake else null
     }
 
     override fun closeSeedScreen() {

@@ -3,12 +3,17 @@ package io.islandbitcoin.foxy.web
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.net.Uri
 import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.text.format.DateFormat
+import android.view.OrientationEventListener
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.GeolocationPermissions
@@ -37,6 +42,10 @@ import io.islandbitcoin.foxy.notify.Notifier
 import io.islandbitcoin.foxy.scanner.LivePreview
 import io.islandbitcoin.foxy.scanner.ScannerActivity
 import io.islandbitcoin.foxy.seed.SeedScreenHost
+import io.islandbitcoin.foxy.tap.AndroidTapBluetooth
+import io.islandbitcoin.foxy.tap.ShakeDetector
+import io.islandbitcoin.foxy.tap.TapBluetooth
+import io.islandbitcoin.foxy.tap.TurnDetector
 import io.islandbitcoin.foxy.tor.Tor
 import java.io.ByteArrayInputStream
 
@@ -76,10 +85,14 @@ class WebHost(
         /** POST_NOTIFICATIONS (API 33+), asked if not granted; `done(granted)`. */
         fun notifications(done: (Boolean) -> Unit)
 
+        /** BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT (API 31+), asked together; `done` once the system has answered. */
+        fun bluetooth(permissions: List<String>, done: (Boolean) -> Unit)
+
         companion object {
             val NONE = object : Permissions {
                 override fun camera(done: (Boolean) -> Unit) = done(false)
                 override fun notifications(done: (Boolean) -> Unit) = done(false)
+                override fun bluetooth(permissions: List<String>, done: (Boolean) -> Unit) = done(false)
             }
         }
     }
@@ -148,6 +161,18 @@ class WebHost(
 
     /** DEBUG builds only: a deep link's hash, waiting for a loaded page. */
     private var pendingDeepLink: String? = null
+
+    /** Tap to pay's Bluetooth (ENG-670), made when the page first asks. */
+    private var tapBluetooth: TapBluetooth? = null
+
+    /** Shake to TAP: the accelerometer, listened to only while the page has it armed and Foxy is in front. */
+    private var shakeOn: (() -> Unit)? = null
+    private var shaking: SensorEventListener? = null
+    private var inFront = true
+
+    /** Which way up the phone is, for `_turned`, while Foxy is in front. */
+    private var turning: OrientationEventListener? = null
+    private val turn = TurnDetector { upsideDown -> bridge?.turned(upsideDown) }
 
     // MARK: PageHost
 
@@ -344,6 +369,56 @@ class WebHost(
 
     override fun closeSeedScreen() = SeedScreenHost.closeAll()
 
+    override fun bluetooth(): TapBluetooth? {
+        if (destroyed) return null
+        return tapBluetooth ?: AndroidTapBluetooth(activity) { needed, done -> permissions.bluetooth(needed, done) }
+            .also { tapBluetooth = it }
+    }
+
+    override fun shakeSense(on: Boolean, onShake: () -> Unit) {
+        shakeOn = if (on) onShake else null
+        listenForShakes()
+    }
+
+    private fun listenForShakes() {
+        val sensors = activity.getSystemService(SensorManager::class.java) ?: return
+        val want = shakeOn != null && inFront && !destroyed
+        if (!want) {
+            shaking?.let { sensors.unregisterListener(it) }
+            shaking = null
+            return
+        }
+        if (shaking != null) return
+        val accelerometer = sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) ?: return
+        val detector = ShakeDetector { shakeOn?.invoke() }
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                detector.reading(event.values[0], event.values[1], event.values[2], event.timestamp / 1_000_000)
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        // delivered on the main looper, where shakeOn is read
+        if (sensors.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_UI)) shaking = listener
+    }
+
+    /**
+     * MainActivity started (true) or stopped: the radio comes off the air and the
+     * sensors are let go while Foxy is not in front (ENG-670), and come back with it.
+     */
+    fun foreground(on: Boolean) {
+        if (inFront == on) return
+        inFront = on
+        listenForShakes()
+        if (on) {
+            turn.forget()
+            turning?.enable()
+            bridge?.tapBack()
+        } else {
+            turning?.disable()
+            bridge?.tapAway()
+        }
+    }
+
     /** PutAway: no camera, paste button or seed screen is left for a page put away (FoxyWebView.swift:999-1132). */
     override fun letGo() {
         bridge?.letGo()
@@ -402,6 +477,10 @@ class WebHost(
         val b = FoxyBridge(this, services::environment, services.seedExecutor, BuildConfig.DEBUG,
             services.net { ms, r -> main.postDelayed(r, ms) })
         bridge = b
+        // the receive screen turns itself round for a payer across the table (`_turned`); the activity stays portrait
+        turning = object : OrientationEventListener(activity) {
+            override fun onOrientationChanged(degrees: Int) = turn.reading(degrees)
+        }.also { if (inFront) it.enable() }
         // every change of Tor's or of the network is pushed to the page (_privacy)
         Tor.onChange = { bridge?.pushPrivacy() }
         // a seed written or deleted closes every seed screen, so none shows words from before (L4)
@@ -488,6 +567,10 @@ class WebHost(
     fun destroy() {
         // no camera pane, paste button, seed screen or tap receiver of the page's is left over what comes next (I7)
         bridge?.pageGone()
+        turning?.disable()
+        turning = null
+        shakeOn = null
+        listenForShakes()
         live?.destroy()
         live = null
         paste?.remove()

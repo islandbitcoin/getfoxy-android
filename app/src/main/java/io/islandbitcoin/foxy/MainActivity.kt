@@ -36,8 +36,10 @@ import io.islandbitcoin.foxy.web.WebHost
  * because a launcher cannot be registered after STARTED; `_screenshot` from
  * Android 14's screen-capture callback while Foxy is in front; the clipboard's
  * 120 s clear looked at again whenever the window has focus (Android 10+ shows
- * an app the clipboard only then); the camera let go on every stop; and in
- * debug builds only, the `foxy://` deep link.
+ * an app the clipboard only then); the camera let go on every stop; tap to
+ * pay's receiver off the air and the shake and turn sensors let go on every
+ * stop, and back on every start (ENG-670); and in debug builds only, the
+ * `foxy://` deep link.
  */
 class MainActivity : ComponentActivity(), WebHost.Permissions {
     companion object {
@@ -71,6 +73,13 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
     private val notificationsLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val waiting = notificationsAsked.toList()
         notificationsAsked.clear()
+        waiting.forEach { it(granted) }
+    }
+    private val bluetoothAsked = ArrayList<(Boolean) -> Unit>()
+    private val bluetoothLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val granted = result.isNotEmpty() && result.values.all { it }
+        val waiting = bluetoothAsked.toList()
+        bluetoothAsked.clear()
         waiting.forEach { it(granted) }
     }
     private var confirmed: ((Boolean) -> Unit)? = null
@@ -187,10 +196,20 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         if (notificationsAsked.size == 1) notificationsLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
+    /** Tap to pay's two (API 31+), asked together in the system's one question (ENG-670). */
+    override fun bluetooth(permissions: List<String>, done: (Boolean) -> Unit) {
+        if (permissions.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) return done(true)
+        if (isFinishing || isDestroyed) return done(false)
+        bluetoothAsked.add(done)
+        if (bluetoothAsked.size == 1) bluetoothLauncher.launch(permissions.toTypedArray())
+    }
+
     // MARK: Lifecycle (P3)
 
     override fun onStart() {
         super.onStart()
+        // tap to pay goes back on the air, and the sensors come back, only with the page in front (ENG-670)
+        host?.foreground(true)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             registerScreenCaptureCallback(mainExecutor, screenshotTaken as Activity.ScreenCaptureCallback)
         }
@@ -205,6 +224,8 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         // the camera light never stays on behind anything else, Foxy's own screen-lock confirmation included:
         // stopping it touches no seed, screen or door, so it is not skipped for that confirmation (PutAway's away is)
         host?.stopCamera()
+        // nothing advertises in the background, and no sensor is listened to (ENG-670)
+        host?.foreground(false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             unregisterScreenCaptureCallback(screenshotTaken as Activity.ScreenCaptureCallback)
         }

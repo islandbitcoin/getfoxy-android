@@ -63,7 +63,8 @@ class ManifestTest {
         assertEquals(
             "INTERNET (Tor and Route), ACCESS_NETWORK_STATE (NetworkKind), and P3's CAMERA (the scanner), " +
                 "POST_NOTIFICATIONS (payments), USE_BIOMETRIC (the PIN lock, the seed's device protection) and " +
-                "DETECT_SCREEN_CAPTURE (_screenshot), and nothing else: $permissions",
+                "DETECT_SCREEN_CAPTURE (_screenshot), ENG-670's BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT (tap to pay's " +
+                "receiver; BLUETOOTH and BLUETOOTH_ADMIN before API 31), and nothing else: $permissions",
             setOf(
                 "android.permission.INTERNET",
                 "android.permission.ACCESS_NETWORK_STATE",
@@ -71,6 +72,10 @@ class ManifestTest {
                 "android.permission.POST_NOTIFICATIONS",
                 "android.permission.USE_BIOMETRIC",
                 "android.permission.DETECT_SCREEN_CAPTURE",
+                "android.permission.BLUETOOTH_ADVERTISE",
+                "android.permission.BLUETOOTH_CONNECT",
+                "android.permission.BLUETOOTH",
+                "android.permission.BLUETOOTH_ADMIN",
                 "io.islandbitcoin.foxy.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
             ),
             permissions,
@@ -81,6 +86,35 @@ class ManifestTest {
         })
         val camera = elements(merged, "uses-feature").filter { it.getAttributeNS(android, "name").startsWith("android.hardware.camera") }
         assertTrue("a camera is used where there is one, never required", camera.isNotEmpty() && camera.all { it.getAttributeNS(android, "required") == "false" })
+    }
+
+    /**
+     * ENG-670: the receiver advertises and serves and never scans, so no
+     * BLUETOOTH_SCAN and no location, on any API; the two runtime permissions
+     * from API 31 with no ceiling, the install-time pair only up to API 30, and
+     * Bluetooth LE never required (a phone without it answers "unsupported").
+     */
+    @Test
+    fun bluetoothIsTheReceiversTwoAndTheLegacyPairOnlyBefore31() {
+        val uses = elements(merged, "uses-permission").associateBy { it.getAttributeNS(android, "name") }
+        for (name in listOf("android.permission.BLUETOOTH_ADVERTISE", "android.permission.BLUETOOTH_CONNECT")) {
+            assertEquals("$name holds on every API from 31", "", uses.getValue(name).getAttributeNS(android, "maxSdkVersion"))
+        }
+        for (name in listOf("android.permission.BLUETOOTH", "android.permission.BLUETOOTH_ADMIN")) {
+            assertEquals("$name only where it is the permission (API 28-30)", "30", uses.getValue(name).getAttributeNS(android, "maxSdkVersion"))
+        }
+        val never = listOf(
+            "android.permission.BLUETOOTH_SCAN", "android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION",
+            "android.permission.ACCESS_BACKGROUND_LOCATION", "android.permission.BLUETOOTH_PRIVILEGED",
+        )
+        for (name in never) assertFalse("$name is never asked: the receiver does not scan", name in uses)
+        assertEquals("nothing is declared for a Bluetooth permission's sake but these", 0,
+            elements(merged, "uses-permission-sdk-23").size)
+        val le = elements(merged, "uses-feature").single { it.getAttributeNS(android, "name") == "android.hardware.bluetooth_le" }
+        assertEquals("Bluetooth LE is used where there is one, never required", "false", le.getAttributeNS(android, "required"))
+        assertFalse("nor plain Bluetooth required", elements(merged, "uses-feature").any {
+            it.getAttributeNS(android, "name") == "android.hardware.bluetooth" && it.getAttributeNS(android, "required") != "false"
+        })
     }
 
     @Test
