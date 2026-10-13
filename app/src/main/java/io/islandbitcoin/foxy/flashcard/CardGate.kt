@@ -11,24 +11,62 @@ import java.text.BreakIterator
  * carries them. A phone that carried anything it was handed would let a page
  * that had been got at talk to whatever was held to it: a bank card, a
  * passport, a door key. So the phone reads each command first, and carries two
- * kinds only: the one that chooses this app's own applet, by its full name,
- * and the applet's own instructions, and those not until the applet has
- * answered that it was chosen. Android has no list of applet names in the
- * manifest that narrows which cards the app is handed (iOS's Info.plist does):
- * this gate is the only one.
+ * kinds only: the one that chooses a card's applet, by its full name, and the
+ * applet's own instructions, and those not until the applet has answered that
+ * it was chosen. Android has no list of applet names in the manifest that
+ * narrows which cards the app is handed (iOS's Info.plist does): this gate is
+ * the only one.
+ *
+ * Two names are chosen (ENG-682): the applet of the card protocol Flash and Foxy
+ * share, 2.0 ([CASHU_APPLET]), and Foxy's own 1.x applet ([FOXY_APPLET]), which
+ * the pinned page still chooses. The 1.x name is there for the change-over
+ * only: the page moves to 2.0 in getfoxy/iOS, and the v0.1.3 re-pin to it takes
+ * [FOXY_APPLET] out. The gate does not tell the two apart after the choosing:
+ * both are this app's applets, the instructions are one list, and an applet
+ * answers 6D00 to one it does not have (REFRESH, 53, on a 1.x card; 20 and 35
+ * on a 2.0 card), as the card's own runtime does for any other.
  *
  * Nothing here touches NFC, so the JVM tests hold it to its rules (CardGateTest).
  */
 object CardGate {
-    /** The applet on a Foxy card (applet/build.xml in https://github.com/getfoxy/card): its package's nine bytes and 01. */
-    val APPLET: ByteArray = byteArrayOf(0xF0.toByte(), 0x46, 0x4F, 0x58, 0x59, 0x43, 0x41, 0x52, 0x44, 0x01)
+    /**
+     * The applet of the shared Cashu card protocol 2.0 (applet/build.xml in
+     * https://github.com/lnflash/cashu-javacard, its DECISIONS.md D19 and D25):
+     * its package's ten bytes, F0 and "CASHUCARD", and 01. The package's name
+     * alone is not chosen: on a chip it reaches the opener (…4D), which answers
+     * 9000 and no version.
+     */
+    val CASHU_APPLET: ByteArray = byteArrayOf(0xF0.toByte(), 0x43, 0x41, 0x53, 0x48, 0x55, 0x43, 0x41, 0x52, 0x44, 0x01)
+
+    /**
+     * The applet on a Foxy 1.x card (applet/build.xml in https://github.com/getfoxy/card):
+     * its package's nine bytes and 01. The pinned page chooses it (`CARD_AID`).
+     * For the change-over only: removed at the v0.1.3 re-pin, with the page that
+     * chooses [CASHU_APPLET].
+     */
+    val FOXY_APPLET: ByteArray = byteArrayOf(0xF0.toByte(), 0x46, 0x4F, 0x58, 0x59, 0x43, 0x41, 0x52, 0x44, 0x01)
+
+    /** The applets a SELECT may name, whole: 2.0's, then 1.x's. */
+    val APPLETS: List<ByteArray> = listOf(CASHU_APPLET, FOXY_APPLET)
 
     /** The applet's class byte. */
     const val APPLET_CLASS: Int = 0xB0
 
     /**
-     * The instructions the page uses, and no others the applet has: thirty-one,
-     * exactly CardGate.swift's at 8df0bb1.
+     * The instructions the page uses, and no others the applet has: thirty-two,
+     * CardGate.swift's thirty-one at 8df0bb1 and REFRESH (53) of protocol 2.0
+     * (cashu-javacard DECISIONS.md D20: the owner's proof over a block header,
+     * which renews the daily window's rollover budget). The page at the pin does
+     * not send 53 yet; the 2.0 page will, and the gate carries it now so that
+     * the re-pin moves the page alone.
+     *
+     * Protocol 2.0 adds no other instruction. It drops two the pinned page still
+     * sends to old cards, 20 and 35, which a 2.0 card answers 6D00; they stay
+     * until a page that does not send them is pinned. Two take longer data in
+     * 2.0, both still short commands within [LONGEST], so nothing here reads
+     * their lengths: SET_OWNER (43) may carry an 80-byte block header after the
+     * 65-byte key, and the owner's SET_LIMIT (34) a thirteenth byte, the
+     * rollover budget.
      *
      * Three the applet has stay out, because the page does not send them, so the
      * phone will not carry them for a page that had been got at: the count of
@@ -51,7 +89,7 @@ object CardGate {
      * Section 7 is stale against iOS, and getfoxy/iOS and getfoxy/card are to
      * settle the whole set, not SET_TAG alone. Until they do, Android follows
      * iOS and adds or drops nothing on its own (CardGateTest pins the 31, and
-     * 52 out).
+     * 52 out), but for 53, which is 2.0's and which iOS's 2.0 page sends.
      */
     val INSTRUCTIONS: Set<Int> = setOf(
         0x01, 0x10, 0x11, 0x13, 0x14, 0x15, 0x16, 0x17, // what it is, its key, what it holds, proof it is the card, its record, which pieces it holds
@@ -71,6 +109,7 @@ object CardGate {
         0x44, // a nonce to answer with the owner's proof
         0x45, // the owner's grant to load, in this tap, with no PIN
         0x51, // reset the card to what it was in its packet (software 1.17), under the owner's proof
+        0x53, // REFRESH (2.0): the owner's proof over a block header; the daily window may roll again (D20)
     )
 
     /** A short command at its longest: four of header, a length, 255 of data and the length expected back. */
@@ -134,7 +173,7 @@ object CardGate {
         val cla = apdu[0].toInt() and 0xFF
         val ins = apdu[1].toInt() and 0xFF
         if (cla == 0x00 && ins == 0xA4) {
-            if ((apdu[2].toInt() and 0xFF) != 0x04 || (apdu[3].toInt() and 0xFF) != 0x00 || !data.contentEquals(APPLET)) return null
+            if ((apdu[2].toInt() and 0xFF) != 0x04 || (apdu[3].toInt() and 0xFF) != 0x00 || APPLETS.none { data.contentEquals(it) }) return null
             return Command.Select
         }
         if (cla != APPLET_CLASS || ins !in INSTRUCTIONS) return null

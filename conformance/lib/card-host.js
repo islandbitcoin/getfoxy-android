@@ -5,8 +5,9 @@
  * `_card` push, by the rules of bridge/CardBridge.kt and flashcard/CardGate.kt
  * (FoxyBridge+Flashcard.swift and CardGate.swift at the pin): one session at a
  * time; the page's line cut to one printable line of 120; every command read
- * by the gate before it is carried (the applet chosen by its whole name first,
- * then only its 31 instructions under class B0, SET_TAG not among them); the
+ * by the gate before it is carried (an applet chosen by its whole name first,
+ * 2.0's CASHUCARD or, until the v0.1.3 re-pin, Foxy 1.x's FOXYCARD; then only
+ * the 32 instructions under class B0, SET_TAG not among them); the
  * applet chosen again after a card comes back; progress pushed only from the
  * session in hand, before the reply it goes with; and the link's words for
  * each way a session ends.
@@ -18,11 +19,13 @@
  * the card away, as getfoxy/card's simulator does (`ctl pull N`).
  */
 
-/* flashcard/CardGate.kt */
-const APPLET = 'f0464f58594341524401';
+/* flashcard/CardGate.kt: CASHU_APPLET (card protocol 2.0) and FOXY_APPLET (1.x, the pinned page's CARD_AID, out at the v0.1.3 re-pin) */
+const CASHU_APPLET = 'f043415348554341524401';
+const FOXY_APPLET = 'f0464f58594341524401';
+const APPLETS = [CASHU_APPLET, FOXY_APPLET];
 const APPLET_CLASS = 0xb0;
 const INSTRUCTIONS = new Set([0x01, 0x10, 0x11, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x20, 0x22, 0x23, 0x24, 0x25, 0x26,
-  0x30, 0x31, 0x32, 0x34, 0x35, 0x36, 0x37, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x51]);
+  0x30, 0x31, 0x32, 0x34, 0x35, 0x36, 0x37, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x51, 0x53]);
 const LONGEST = 4 + 1 + 255 + 1;
 const SCANNING = 'Reading the card';
 const STAGES = new Set(['connected', 'say', 'end', 'lost']);
@@ -49,7 +52,7 @@ function read(b) {
     if (lc <= 0 || !(after === 1 + lc || after === 2 + lc)) return null;
     data = b.subarray(5, 5 + lc);
   }
-  if (b[0] === 0x00 && b[1] === 0xa4) return (b[2] === 0x04 && b[3] === 0x00 && data.toString('hex') === APPLET) ? 'select' : null;
+  if (b[0] === 0x00 && b[1] === 0xa4) return (b[2] === 0x04 && b[3] === 0x00 && APPLETS.includes(data.toString('hex'))) ? 'select' : null;
   return (b[0] === APPLET_CLASS && INSTRUCTIONS.has(b[1])) ? b[1] : null;
 }
 
@@ -152,4 +155,4 @@ function cardAnswers(host) {
   return { cardBegin, cardSend, cardSay, cardAgain, cardEnd };
 }
 
-module.exports = { cardAnswers, read, allows, line, bytes, INSTRUCTIONS, APPLET, WORDS, NOT_A_COMMAND, NOT_FOXYS, SCANNING };
+module.exports = { cardAnswers, read, allows, line, bytes, INSTRUCTIONS, APPLETS, CASHU_APPLET, FOXY_APPLET, WORDS, NOT_A_COMMAND, NOT_FOXYS, SCANNING };

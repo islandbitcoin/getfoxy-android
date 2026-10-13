@@ -21,7 +21,8 @@ import java.util.concurrent.Executors
  * and a phone in the other. Here the same commands go over a socket on this
  * device's own loopback to a card that runs on the developer's machine: the
  * applet itself, in a JavaCard simulator (`tools/cardsim` in
- * https://github.com/getfoxy/card), listening on one of four ports (an
+ * https://github.com/getfoxy/card, or in https://github.com/lnflash/cashu-javacard
+ * for card protocol 2.0, the same line protocol), listening on one of four ports (an
  * emulator or a phone reaches it through `adb reverse tcp:47431 tcp:47431`,
  * docs/DEVICE-TESTS.md). So the real page, the real bridge, CardGate and a
  * real mint can be driven against the applet's own code before there is a

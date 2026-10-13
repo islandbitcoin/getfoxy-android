@@ -618,8 +618,10 @@ test('card-owner.js: the owner key and its signatures are the iOS vectors, the l
 /* ENG-667: the fake host's card session is Android's. A fake gate that let more through
  * than CardGate.kt, or less, or said other words, would make the card flows a test of
  * something else, so lib/card-host.js is held here to the Kotlin source (CardGate.kt's
- * applet and instructions, CardLink.kt's words, CardBridge.kt's refusals) and to the
- * page's own CARD_AID and CARD_INS, and walked over every class, instruction and P1. */
+ * applets and instructions, CardLink.kt's words, CardBridge.kt's refusals) and to the
+ * page's own CARD_AID and CARD_INS, and walked over every class, instruction and P1.
+ * ENG-682: the gate carries card protocol 2.0's applet and REFRESH (53) beside the
+ * pinned page's 1.x applet and 31; the page sends every one of those 31. */
 test('card-host.js: the gate is CardGate.kt\'s and the page\'s, every byte, and the words CardLink.kt\'s', () => {
   const CardHost = require('../lib/card-host');
   const KT = path.join(ROOT, 'app', 'src', 'main', 'java', 'io', 'islandbitcoin', 'foxy');
@@ -628,21 +630,24 @@ test('card-host.js: the gate is CardGate.kt\'s and the page\'s, every byte, and 
   const bridgeKt = fs.readFileSync(path.join(KT, 'bridge', 'CardBridge.kt'), 'utf8');
   const listed = /val INSTRUCTIONS: Set<Int> = setOf\(([\s\S]*?)\n    \)/.exec(gateKt)[1].replace(/\/\/.*$/gm, '');
   const kotlin = new Set(Array.from(listed.matchAll(/0x([0-9A-Fa-f]{2})/g), (m) => parseInt(m[1], 16)));
-  assert.equal(kotlin.size, 31);
-  assert.deepEqual([...CardHost.INSTRUCTIONS].sort((a, b) => a - b), [...kotlin].sort((a, b) => a - b), 'CardGate.kt\'s 31');
+  assert.equal(kotlin.size, 32);
+  assert.deepEqual([...CardHost.INSTRUCTIONS].sort((a, b) => a - b), [...kotlin].sort((a, b) => a - b), 'CardGate.kt\'s 32');
+  const ktHex = (name) => Array.from(new RegExp('val ' + name + ': ByteArray = byteArrayOf\\((.*)\\)$', 'm').exec(gateKt)[1].matchAll(/0x([0-9A-Fa-f]{2})/g), (m) => m[1].toLowerCase()).join('');
+  assert.equal(ktHex('CASHU_APPLET'), CardHost.CASHU_APPLET, 'CardGate.kt\'s 2.0 applet');
+  assert.equal(ktHex('FOXY_APPLET'), CardHost.FOXY_APPLET, 'CardGate.kt\'s 1.x applet');
   assert.ok(!CardHost.INSTRUCTIONS.has(0x52), 'no SET_TAG, as upstream');
   const page = fs.readFileSync(path.join(ROOT, 'core', 'web', 'foxy-wallet.js'), 'utf8');
-  assert.ok(page.includes("var CARD_AID = '" + CardHost.APPLET + "';"), 'the page\'s applet');
+  assert.ok(page.includes("var CARD_AID = '" + CardHost.FOXY_APPLET + "';"), 'the page\'s applet: 1.x\'s until the v0.1.3 re-pin');
   const table = /var CARD_INS = \{([\s\S]*?)\};/.exec(page)[1];
   const pageIns = new Set(Array.from(table.matchAll(/\b[a-zA-Z]+: '([0-9a-f]{2})'/g), (m) => parseInt(m[1], 16)));
-  assert.deepEqual([...pageIns].sort((a, b) => a - b), [...kotlin].sort((a, b) => a - b), 'the page\'s CARD_INS');
+  assert.deepEqual([...pageIns, 0x53].sort((a, b) => a - b), [...kotlin].sort((a, b) => a - b), 'the page\'s CARD_INS, and 2.0\'s REFRESH besides');
   for (const [word, kt] of [['unavailable', 'UNAVAILABLE'], ['cancelled', 'CANCELLED'], ['timedOut', 'TIMED_OUT'], ['lost', 'LOST']]) {
     assert.ok(linkKt.includes(kt + '("' + CardHost.WORDS[word] + '")'), kt + ': ' + CardHost.WORDS[word]);
   }
   assert.ok(bridgeKt.includes('const val NOT_A_COMMAND = "' + CardHost.NOT_A_COMMAND + '"'));
   assert.ok(bridgeKt.includes('const val NOT_FOXYS = "' + CardHost.NOT_FOXYS + '"'));
   assert.ok(gateKt.includes('const val SCANNING = "' + CardHost.SCANNING + '"'));
-  // every class, instruction and P1: the choosing by name, or one of the 31 under B0, nothing else
+  // every class, instruction and P1: the choosing by name, or one of the 32 under B0, nothing else
   const h = (n) => n.toString(16).padStart(2, '0');
   const hex = (s) => Buffer.from(s, 'hex');
   for (let cla = 0; cla < 256; cla++) {
@@ -654,6 +659,10 @@ test('card-host.js: the gate is CardGate.kt\'s and the page\'s, every byte, and 
   }
   for (let p = 0; p < 256; p++) for (const ins of kotlin) assert.equal(CardHost.read(hex('b0' + h(ins) + h(p) + h(255 - p) + '02abcd00')), ins);
   assert.equal(CardHost.read(hex('00a404000af0464f5859434152440100')), 'select');
+  assert.equal(CardHost.read(hex('00a404000bf04341534855434152440100')), 'select', '2.0\'s applet');
+  for (const other of ['00a404000af043415348554341524400', '00a404000bf04341534855434152444d00', '00a4040008d27600008501020100']) {
+    assert.equal(CardHost.read(hex(other)), null, other + ': the 2.0 package, its opener, Flash 0.x');
+  }
   assert.equal(CardHost.read(hex('00a4040007d276000085010100')), null, 'the NFC tag applet is not chosen');
   assert.equal(CardHost.allows(hex('b011000004'), false), false, 'nothing of the applet\'s before it is chosen');
   assert.equal(CardHost.read(hex('b04000000531323334')), null, 'a length that says five and carries four');

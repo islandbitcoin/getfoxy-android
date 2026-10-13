@@ -88,6 +88,11 @@ jobs:
       - name: The card session against the real applet in jCardSim
         run: tools/cardsim-test.sh
 
+      # ENG-682: the same against card protocol 2.0, lnflash/cashu-javacard's applet at
+      # tools/cardsim-2.PIN (F0 CASHUCARD 01), with the same line-protocol CardServer
+      - name: The card session against the card protocol 2.0 applet in jCardSim
+        run: tools/cardsim-test.sh --pin tools/cardsim-2.PIN
+
       - name: The debug APK
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

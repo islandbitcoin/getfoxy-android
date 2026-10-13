@@ -44,7 +44,7 @@ side, since ENG-672 the onion inbox and post, and since ENG-677 Nostr),
 | `Foxy/Debug/FieldLog.swift` | in-memory log for the ERRORS/LOGS screens, redacting tokens, invoices, requests, onion addresses, keys and long hex; a subset saved for the next run | `FieldLog.kt`: same ring and redaction regexes (ported with tests), last-run file in `noBackupFilesDir`, never logcat in release | P1 |
 | `Foxy/Debug/Print.swift` | `print` reaches only FieldLog in release | a `log()` wrapper: logcat in debug, FieldLog only in release (`ReleaseBuildTest`: no Foxy release class calls `android.util.Log`); R8 is off in 0.1.0 (RELEASE.md §2) | P1 |
 | `Foxy/Debug/DebugLog.swift`, `ResumeDiagnostics.swift`, `KeychainSelfTest.swift` | debug-only diagnostics, a file log, the Tor check | `src/debug` source set only; none in release | P1 (debug) |
-| `Foxy/Flashcard/` (`CardGate`, `CardLink`, `CardTime`) | card APDU gate (31 instructions at 8df0bb1, with `0x1A` GET_DLEQ), NFC link, interim signed time | `flashcard/CardGate.kt` (the 31, byte for byte; SET_TAG `52` left out as upstream; `CardGateTests` ported, and every class, instruction and P1/P2 tried); `flashcard/CardLink.kt` + `NfcCardLink.kt` (reader mode and IsoDep, ENG-667); iOS's Simulator stand-in `SimCardLink` is `src/debug/.../flashcard/SimCardLink.kt` (getfoxy/card's jCardSim CardServer on loopback ports 47431-47434, debug builds only: the emulator, or the `FoxyCardSim` extra; `tools/cardsim-test.sh` drives the real applet through it); `CardTime` is `flashcard/CardTime.kt` (`InterimCardTime`, iOS's key pair byte for byte, `CardTimeTests` ported) | P3 (gate and link ENG-667; `CardTime` ENG-666) |
+| `Foxy/Flashcard/` (`CardGate`, `CardLink`, `CardTime`) | card APDU gate (31 instructions at 8df0bb1, with `0x1A` GET_DLEQ), NFC link, interim signed time | `flashcard/CardGate.kt` (the 31, byte for byte, and card protocol 2.0's REFRESH `53`; SET_TAG `52` left out as upstream; Foxy 1.x's applet and 2.0's CASHUCARD chosen, "Card protocol 2.0" below; `CardGateTests` ported, and every class, instruction and P1/P2 tried); `flashcard/CardLink.kt` + `NfcCardLink.kt` (reader mode and IsoDep, ENG-667); iOS's Simulator stand-in `SimCardLink` is `src/debug/.../flashcard/SimCardLink.kt` (getfoxy/card's jCardSim CardServer on loopback ports 47431-47434, debug builds only: the emulator, or the `FoxyCardSim` extra; `tools/cardsim-test.sh` drives the real applet through it); `CardTime` is `flashcard/CardTime.kt` (`InterimCardTime`, iOS's key pair byte for byte, `CardTimeTests` ported) | P3 (gate and link ENG-667; `CardTime` ENG-666) |
 | `Foxy/Flashcard/CardAddress.swift`, `CardTapDelivery.swift` (since `9832f7d`) | a card held to the phone (its NDEF address `https://getfoxy.io/card`, or `foxy://card` in Debug) opens Foxy; the page is told `_cardTapped()`, kept until it can take it (not under a cover, not before `_resumed`), asked every 0.3 s, given up after 60 s, told once | `flashcard/CardAddress.kt` + `CardTapDelivery.kt` (ports, with `CardAddressTest`/`CardTapDeliveryTest` from iOS's tests), `CardTapIntake.kt` (Android only: the two intent actions, an intent replayed from Recents, no tap while a card session is open or 3 s after reader mode goes off); `CardTapActivity` (Theme.NoDisplay, no history, a task of its own) filters `NDEF_DISCOVERED` and an https App Link (autoVerify true since 0.1.2; a debug build never verifies) for exactly `https://getfoxy.io/card` and routes the tap (`CardTapRoute.kt`: a new page, the page on top of its task via singleTop, or dropped while anything is over the page, so never a second MainActivity); the splash cover, `onPageFinished`, `onRenderProcessGone` and PutAway's `_resumed` drive the delivery; `foxy://card` (`web/DeepLink.kt`) goes to the same delivery | P3 (ENG-668) |
 | `Foxy/Keychain/SeedStore.swift` | the seed in the keychain, this device only; two protections (`device`: `.userPresence`; `none`); three-way read (found/absent/failed); seed kept in memory for the visit; the putting-away window | `SeedVault.kt`: the words encrypted with an AES-256-GCM Keystore key (`setUnlockedDeviceRequired(true)`, StrongBox when `FEATURE_STRONGBOX_KEYSTORE`, else TEE), ciphertext in `noBackupFilesDir`; protection `device` uses a second key (`foxy.seed.device.v1`, its own file) with `setUserAuthenticationRequired(true)`: on API 30+ per use, through the framework `BiometricPrompt` (`BIOMETRIC_STRONG or DEVICE_CREDENTIAL`) with a `CryptoObject`; on API 28-29 a 10 s time-bound key opened by `KeyguardManager`'s screen-lock confirmation (`keychain/DeviceAuth.kt`); not invalidated by a new fingerprint; `none` uses the key without auth. A new install, and every P1/P2 install, is `none` until `seedProtect` moves it. Read answers found/absent/failed, never "absent" on an error. A first write cut off between keygen and the file rename leaves a key, no file and `foxy-seed.creating`; that reads absent and the orphan key is removed; a key without file and without the marker stays failed (iOS has no such window: one `SecItemAdd` is atomic). Because a read can remove that orphan key, `isThere`/`read`/`write` run on the `foxy-seed` executor only. Memory copy dropped on `onStop`, on page death, on write | P1 (`none`), P3 (`device`) |
 | `Foxy/Keychain/BIP39.swift`, `bip39-english.txt` | words from 128 bits of `SecRandomCopyBytes`; wordlist pinned by SHA-256 | `SecureRandom` (128 bits); the same wordlist as an asset, refused unless its SHA-256 is the pinned one; the BIP-39 vectors as JVM tests | P1 |
@@ -67,6 +67,50 @@ side, since ENG-672 the onion inbox and post, and since ENG-677 Nostr),
 | `Vendor/IPtProxy.sha256` | IPtProxy built here, byte-identical twice | `com.netzarchitekten:IPtProxy:5.5.0` pinned the same way (iOS builds 5.5 too) | P2 (built) |
 | `Vendor/secp256k1` | libsecp256k1 v0.8.0 | secp256k1-kmp (wraps libsecp256k1), pinned and verified | P1 |
 | `FoxyTests/` | 382 XCTest cases for the native rules | JVM unit tests (`src/test`) for every ported rule, using the same vectors and fixtures; instrumented tests (`src/androidTest`) for WebView, Keystore and backup behaviour; `conformance/` for the bridge | P1 onwards |
+
+## Card protocol 2.0 (ENG-682)
+
+Flash and Foxy agreed one card protocol, **2.0** (ENG-673): Foxy's
+getfoxy/card 1.20 is its base, merged into
+[lnflash/cashu-javacard](https://github.com/lnflash/cashu-javacard) (its
+`docs/DECISIONS.md` D18 to D25, `spec/APDU.md`). Two applet names matter here:
+
+| | Applet AID (SELECT by the whole name) | SELECT answers | Labels in hashes and owner proofs |
+|---|---|---|---|
+| Foxy 1.x (getfoxy/card) | `F0 46 4F 58 59 43 41 52 44 01` (FOXYCARD) | `01 14` (1.20) | `FoxyCard/…` |
+| Protocol 2.0 (cashu-javacard) | `F0 43 41 53 48 55 43 41 52 44 01` (CASHUCARD) | `02 00` | `CashuCard/…` |
+
+A 2.0 card answers `6A82` to FOXYCARD, so the page at the pin, which chooses
+FOXYCARD, says "That is not a Foxy card." to it. The 2.0 package's name alone
+(`F0 43 41 53 48 55 43 41 52 44`) is never chosen: on a chip it reaches the
+opener (`…4D`), which answers `90 00` with no version and `6D 00` after (D25).
+On the wire 2.0 adds REFRESH (`53`, the owner's proof over a block header),
+lets SET_OWNER carry an 80-byte anchor header after the 65-byte key, and lets
+the owner's SET_LIMIT (`34`) carry a thirteenth byte, the rollover budget
+(D20). It drops `20` and `35`, which a 2.0 card answers `6D 00`.
+
+**What this build carries.** `CardGate` chooses either applet and carries the
+31 instructions and `53` to whichever was chosen. It does not keep per-version
+lists: both applets are this app's, a card answers `6D 00` to an instruction it
+does not have, and the 1.x entry is for the change-over only (the apps and the
+cards have no users yet, so nothing needs 1.x kept). The longer SET_OWNER and
+SET_LIMIT are short commands the gate already reads. `tools/cardsim-test.sh`
+runs the bridge, the gate and `SimCardLink` against both applets in jCardSim: getfoxy/card at
+`tools/cardsim.PIN` (`CardSimEndToEndTest`, the page's 1.x session) and
+cashu-javacard at `tools/cardsim-2.PIN` (`CardSim2EndToEndTest`, a 2.0 card
+set up, refreshed, limited, loaded and paid from, with its owner proofs signed
+in the test under `CashuCard/`). There is no change a person can see: the
+page is the same bytes.
+
+**The plan.** (1) A getfoxy/iOS PR moves the page and iOS's native code to 2.0
+only: `CARD_AID` CASHUCARD, the `CashuCard/` labels, the 2.0 version, REFRESH.
+(2) Android re-pins `core/web` to it as **v0.1.3**, and in the same change
+takes `FOXY_APPLET` out of `CardGate` (and `conformance/lib/card-host.js`),
+holds `CARD_AID` and `CARD_INS` to the gate both ways again, moves the
+owner's key derivation and proof prefix in `keychain/CardOwner.kt` from
+`FoxyCard/owner` and `FoxyCard/` to `CashuCard/owner` and `CashuCard/` as iOS's
+`NUT13.swift` does (those are native on both platforms), and drops the 1.x
+cardsim run. Until then a 2.0 card does not read in Foxy on Android.
 
 ## Decisions still open for the architect
 

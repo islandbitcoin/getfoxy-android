@@ -13,19 +13,24 @@ import java.io.File
  * What the phone will carry to a card for the page, and what it will not
  * (flashcard/CardGate.kt): FoxyTests/CardGateTests.swift at getfoxy/iOS 8df0bb1,
  * ported test for test, and then every instruction byte, every class byte and
- * every P1 and P2 the gate could be handed, so the 31 are the only ones it
+ * every P1 and P2 the gate could be handed, so the 32 are the only ones it
  * carries whatever the parameters, and SET_TAG (52) is not one of them, as
  * upstream. The list is also held to the page's own (`CARD_INS` in the pinned
- * core/web), both ways, as iOS's tests/flashcard-model.js holds it.
+ * core/web), as iOS's tests/flashcard-model.js holds it: every one the page
+ * sends, and REFRESH (53) of card protocol 2.0 besides, which the page at the
+ * pin does not send yet (ENG-682). Two applets are chosen: 2.0's (CASHUCARD)
+ * and, until the v0.1.3 re-pin, Foxy's 1.x (FOXYCARD).
  */
 class CardGateTest {
     private fun bytes(hex: String): ByteArray = CardGate.bytes(hex)!!
     private val select = "00a404000af0464f5859434152440100"
+    /** The 2.0 applet's whole name, F0 "CASHUCARD" 01 (cashu-javacard D25), with the length expected back. */
+    private val select2 = "00a404000bf04341534855434152440100"
     private fun hex2(n: Int) = "%02x".format(n)
 
-    /** The 31 of CardGate.swift:35-53 at 8df0bb1, as written there. */
+    /** The 31 of CardGate.swift:35-53 at 8df0bb1, as written there, and REFRESH (53) of card protocol 2.0. */
     private val carried = listOf("01", "10", "11", "13", "14", "15", "16", "17", "18", "19", "1a", "20", "22", "23", "24", "25", "26",
-        "30", "31", "32", "34", "35", "36", "37", "40", "41", "42", "43", "44", "45", "51")
+        "30", "31", "32", "34", "35", "36", "37", "40", "41", "42", "43", "44", "45", "51", "53")
 
     @Test
     fun hexIsWholeBytesAndNothingElse() {
@@ -65,10 +70,91 @@ class CardGateTest {
         }
     }
 
+    /**
+     * Card protocol 2.0 (ENG-682): the applet F0 "CASHUCARD" 01, by its whole name
+     * (cashu-javacard DECISIONS.md D19, D25), is chosen as Foxy's 1.x applet is.
+     * Its package's name alone is not: on a chip that reaches the opener (…4D),
+     * which answers 9000 and no version. Nor are the opener, the tag's class or
+     * instance, or Flash's 0.x applet.
+     */
+    @Test
+    fun theProtocol2AppletIsChosenByItsWholeNameOnly() {
+        assertEquals("f043415348554341524401", CardGate.hex(CardGate.CASHU_APPLET))
+        assertEquals(listOf("f043415348554341524401", "f0464f58594341524401"), CardGate.APPLETS.map { CardGate.hex(it) })
+        assertEquals(CardGate.Command.Select, CardGate.read(bytes(select2)))
+        assertEquals("with no length expected back", CardGate.Command.Select, CardGate.read(bytes("00a404000bf043415348554341524401")))
+        assertTrue("chosen before anything else", CardGate.allows(bytes(select2), selected = false))
+        for (other in listOf(
+            "00a404000af0434153485543415244", // the 2.0 package's name: on a chip, the opener
+            "00a404000af043415348554341524400",
+            "00a404000bf04341534855434152444d00", // the 2.0 opener
+            "00a404000bf04341534855434152445400", // the 2.0 tag's class
+            "00a404000bf04341534855434152440200", // another instance under the package
+            "00a404000cf0434153485543415244010000", // a longer name that begins with the applet's
+            "00a4040009f0434153485543415200", // a shorter one the applet's begins with
+            "00a4040009f0464f585943415244", // Foxy 1.x's package's name
+            "00a404000af0464f5859434152444d00", // Foxy 1.x's opener
+            "00a4040008d27600008501020100", // Flash's 0.x applet
+            "00a4040008d276000085010201", // and with no length expected back
+            "00a4040007d276000085010100", // the NFC tag, which a 2.0 card is instantiated under too
+            "00a404000bf04641534855434152440100", // one byte off
+            "00a404000af04341534855434152440100", // the 2.0 name with a length that cuts its last byte off
+        )) {
+            assertNull("$other chooses something else", CardGate.read(bytes(other)))
+            assertFalse("$other is never carried", CardGate.allows(bytes(other), selected = true))
+        }
+        for (p in 0..255) {
+            if (p != 0x04) assertNull("SELECT P1 ${hex2(p)}", CardGate.read(bytes("00a4" + hex2(p) + "000bf04341534855434152440100")))
+            if (p != 0x00) assertNull("SELECT P2 ${hex2(p)}", CardGate.read(bytes("00a404" + hex2(p) + "0bf04341534855434152440100")))
+            if (p != 0x00) assertNull("SELECT under class ${hex2(p)}", CardGate.read(bytes(hex2(p) + "a404000bf04341534855434152440100")))
+        }
+        // every name of every length but the two is refused: any one byte of either changed
+        for (name in CardGate.APPLETS) {
+            for (i in name.indices) {
+                for (b in listOf(0x00, 0xff, (name[i].toInt() xor 0x01) and 0xff)) {
+                    if (b == (name[i].toInt() and 0xff)) continue
+                    val changed = name.copyOf().also { it[i] = b.toByte() }
+                    assertNull("${CardGate.hex(changed)}", CardGate.read(bytes("00a40400" + hex2(changed.size) + CardGate.hex(changed) + "00")))
+                }
+            }
+        }
+    }
+
+    /**
+     * What protocol 2.0 says with the applet chosen, through the gate: REFRESH (53),
+     * the owner's proof and a block header; SET_OWNER with its anchor header after
+     * the key (65 + 80); the owner's SET_LIMIT with the thirteenth byte, the
+     * rollover budget (cashu-javacard spec/APDU.md, DECISIONS.md D20). Each is a
+     * short command, and the longest form of each is carried.
+     */
+    @Test
+    fun protocol2sCommandsAreCarried() {
+        val proof = "30" + "46" + "ab".repeat(70) // a DER signature at its longest: 72 bytes
+        val header = "cd".repeat(80)
+        val refresh = bytes("b0530000" + hex2(1 + 72 + 80) + "48" + proof + header + "04")
+        assertEquals("REFRESH: the proof's length, the proof, the header; the card's clock expected back", CardGate.Command.Applet(0x53), CardGate.read(refresh))
+        assertTrue(CardGate.allows(refresh, selected = true))
+        assertFalse("not before the applet is chosen", CardGate.allows(refresh, selected = false))
+        assertNull("REFRESH whose length byte says one more than it carries", CardGate.read(bytes("b0530000" + hex2(1 + 72 + 81) + "48" + proof + header)))
+        val owner = "04" + "11".repeat(64)
+        assertEquals("SET_OWNER on an open card: the key and the anchor, 145 bytes",
+            CardGate.Command.Applet(0x43), CardGate.read(bytes("b0430000" + hex2(145) + owner + header)))
+        val owned = bytes("b0430000" + hex2(1 + 72 + 145) + "48" + proof + owner + header)
+        assertEquals("SET_OWNER on an owned card: the old owner's proof, the key, the anchor, 218 bytes", CardGate.Command.Applet(0x43), CardGate.read(owned))
+        assertTrue(CardGate.allows(owned, selected = true))
+        val limit = "00001388" + "000003e8" + "000000fa" + "03"
+        val setLimit = bytes("b0340000" + hex2(1 + 72 + 13) + "48" + proof + limit)
+        assertEquals("the owner's SET_LIMIT with its rollover budget, 13 bytes of value", CardGate.Command.Applet(0x34), CardGate.read(setLimit))
+        assertTrue(CardGate.allows(setLimit, selected = true))
+        assertEquals("and the twelve-byte form, as before", CardGate.Command.Applet(0x34), CardGate.read(bytes("b0340000" + hex2(1 + 72 + 12) + "48" + proof + limit.dropLast(2))))
+        // what 2.0 has and the page does not send stays out: the PIN's limit, locking, SET_TAG, the count of pieces
+        for (ins in listOf("33", "50", "52", "12")) assertFalse(ins, CardGate.allows(bytes("b0" + ins + "0000"), selected = true))
+    }
+
     @Test
     fun onlyTheInstructionsThePageUsesAreCarried() {
-        // every command build/wallet/08a-flashcard.js builds: class B0, and one of these thirty-one
-        assertEquals(31, carried.size)
+        // every command build/wallet/08a-flashcard.js builds: class B0, and one of these thirty-two (the page's 31, and 2.0's 53)
+        assertEquals(32, carried.size)
         assertEquals("exactly these, and the table says so", carried.map { it.toInt(16) }.toSet(), CardGate.INSTRUCTIONS)
         for (ins in carried) {
             assertNotNull("instruction $ins", CardGate.read(bytes("b0" + ins + "0000")))
@@ -136,7 +222,7 @@ class CardGateTest {
         }
     }
 
-    /** Every instruction byte under the applet's class, and every P1 and P2 for each: the 31 are carried, whatever the parameters, and nothing else is. */
+    /** Every instruction byte under the applet's class, and every P1 and P2 for each: the 32 are carried, whatever the parameters, and nothing else is. */
     @Test
     fun everyInstructionByteAndEveryParameter() {
         var allowed = 0
@@ -154,7 +240,7 @@ class CardGateTest {
                 }
             }
         }
-        assertEquals(31, allowed)
+        assertEquals(32, allowed)
         // and under every other class, none of them
         for (cla in 0..255) {
             if (cla == 0xB0) continue
@@ -288,15 +374,23 @@ class CardGateTest {
         assertEquals("the tag was lost", CardLinkError.LOST.words)
     }
 
-    /** The page this app ships chooses the same applet and sends exactly these instructions (`CARD_AID`, `CARD_INS`). */
+    /**
+     * The page this app ships chooses one of the gate's applets and sends only the
+     * gate's instructions (`CARD_AID`, `CARD_INS`). The page at the pin is 1.x's:
+     * it chooses FOXYCARD and sends every instruction the gate carries but 2.0's
+     * REFRESH (53). The v0.1.3 re-pin to the 2.0 page changes this test with it:
+     * CARD_AID becomes CASHUCARD's, FOXYCARD leaves the gate, and the page's list
+     * and the gate's are one again.
+     */
     @Test
     fun theAppletAndTheInstructionsAreThePagesOwn() {
         val page = File(System.getProperty("foxy.core")!!, "web/foxy-wallet.js").readText()
-        assertTrue("the page chooses the applet by the same name", page.contains("var CARD_AID = '${CardGate.hex(CardGate.APPLET)}';"))
-        assertEquals("f0464f58594341524401", CardGate.hex(CardGate.APPLET))
+        assertTrue("the page chooses the 1.x applet by the same name", page.contains("var CARD_AID = '${CardGate.hex(CardGate.FOXY_APPLET)}';"))
+        assertEquals("f0464f58594341524401", CardGate.hex(CardGate.FOXY_APPLET))
         val table = Regex("""var CARD_INS = \{(.*?)\};""", RegexOption.DOT_MATCHES_ALL).find(page)!!.groupValues[1]
         val pageIns = Regex("""\b[a-zA-Z]+: '([0-9a-f]{2})'""").findAll(table).map { it.groupValues[1].toInt(16) }.toSet()
-        assertEquals("CARD_INS and the gate, both ways", pageIns, CardGate.INSTRUCTIONS)
+        assertEquals("CARD_INS and the gate: the page's every one, and 53 besides", pageIns + 0x53, CardGate.INSTRUCTIONS)
+        assertFalse("the page at the pin does not send REFRESH yet", 0x53 in pageIns)
         // the page builds every command under the applet's class
         assertTrue(page.contains("return 'b0' + ins + cardByte(p1 || 0)"))
     }

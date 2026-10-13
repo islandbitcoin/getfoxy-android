@@ -494,9 +494,22 @@ card were used for this change.** What runs without them: `CardGateTest`,
 `NfcCardLinkTest`, `CardSessionTest`, `CardSheetModelTest` and
 `SimCardLinkTest` (JVM); `tools/cardsim-test.sh`, the bridge and the debug
 build's `SimCardLink` against getfoxy/card's own applet in jCardSim (a card
-set up, loaded, read, paid from, pulled away and found again); and the
+set up, loaded, read, paid from, pulled away and found again), and against
+cashu-javacard's 2.0 applet (ENG-682); and the
 conformance flows *P3 (ENG-667) …*, the page's own card code against iOS's
 model of the card. What only a phone, a radio and a hand can show is below.
+
+**Card protocol 2.0 (ENG-682).** A card set up by Flash or on cashu-javacard
+2.0 (applet `F0 43 41 53 48 55 43 41 52 44 01`, CASHUCARD) does not read in
+this build: the page at the pin chooses Foxy 1.x's applet, which a 2.0 card
+answers `6A82`, and the page says "That is not a Foxy card." The native gate
+already carries 2.0 (`CardGateTest`, and `tools/cardsim-test.sh` against
+cashu-javacard at `tools/cardsim-2.PIN`). A 2.0 card reads only after the
+v0.1.3 re-pin to the getfoxy/iOS page that chooses CASHUCARD; these steps then
+take a 2.0 card, and the simulator in step 0 is cashu-javacard's
+(`sh tools/cardsim/run.sh` in a clone of lnflash/cashu-javacard, the same line
+protocol on the same port). ANDROID-MAPPING.md, "Card protocol 2.0", has the
+plan.
 
 Needs the debug build on the Pixel 8 Pro (`./gradlew assembleDebug`, `adb
 install -r app/build/outputs/apk/debug/app-debug.apk`), NFC on (Settings →
