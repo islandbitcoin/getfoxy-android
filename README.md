@@ -67,4 +67,4 @@ on every push and pull request.
 | **P1** shell | Kotlin app: WebView at the asset origin with no network, the bridge and shim, lifecycle, seed and counters in the Keystore, the field log; every network action refused |
 | **P2** Tor (this) | tor-android + IPtProxy, `Route` over OkHttp through Tor's SOCKS port, mint/price/chart requests, the Tor gate, host approvals, continue-without-Tor |
 | **P3** platform | scanner (CameraX + zxing-cpp), clipboard and share, notifications, haptics, biometrics, native seed screens: the first build for a phone |
-| **LATER** | onion inbox and post, Nostr, Bluetooth tap to pay, NFC card |
+| **LATER** | onion inbox and post, Nostr, Bluetooth tap to pay (the receiving side is in P3 since ENG-670), NFC card |
