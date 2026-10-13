@@ -125,7 +125,7 @@ allowlisted, plus the WebRTC removal in every frame.
   CANNOT CONNECT TO TOR with PROCEED OFFLINE; `price`, `candles` and
   `mintRequest` answer the refusal (`ROUTE.md`, *P1, before Tor exists*). P1
   pushes no `_privacy`. The flow *P1: a host serving only P1 actions and the p1
-  stubs* (`conformance/test/flows.test.js`) boots on exactly that host and is
+  stubs* (`conformance/test/flows-p1-p2.test.js`) boots on exactly that host and is
   the one to run against the Kotlin bridge in P1; an action of a later phase
   with no stub fails it.
 - **P2 answers.** The P2 host (ENG-648) serves the 18 P1 actions and the seven
@@ -139,14 +139,14 @@ allowlisted, plus the WebRTC removal in every frame.
   `orbotRefresh` and `orbotAccess`, which are LATER on Android (ANDROID-MAPPING
   decision 3, Orbot is `none`). The Kotlin table emits only those stubs (`ContractStubs`, from
   this file). The flow *P2: a host serving P1 and P2 actions …*
-  (`conformance/test/flows.test.js`) goes from connecting to up, mints and
+  (`conformance/test/flows-p1-p2.test.js`) goes from connecting to up, mints and
   melts, and fails on any later action with no stub.
 - **P3 answers.** The P3 host (ENG-649) serves the P1, P2 and P3 actions,
   each P3 action by its real handler (the four with a `p1` stub, `captured`,
   `seedProtection`, `pasteStart` and `pasteStop`, never by the stub), and
   answers the `p1` stub of every LATER action that has one (`orbotRefresh`,
   `orbotAccess`, `tapPayStart`). The flow *P3: a host serving P1, P2 and P3
-  actions …* (`conformance/test/flows.test.js`) asks every P3 action and fails
+  actions …* (`conformance/test/flows-p3.test.js`) asks every P3 action and fails
   on any LATER action with no stub.
 - **The Bluetooth screen (ENG-656, ENG-670).** `bluetoothAsk` and
   `__foxyBluetoothAnswer` are P3, not LATER: the first-install Bluetooth

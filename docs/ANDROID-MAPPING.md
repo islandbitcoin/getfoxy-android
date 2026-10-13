@@ -151,7 +151,7 @@ closed on Android by construction, not by a later fix:
    person said yes in a native dialog, and every native request goes through
    `Route` (ROUTE.md §2, §5). When Tor fails, nothing has a route; nothing
    falls back to direct. Conformance proves the page asks for nothing that
-   needs a route while Tor is connecting or failed (`flows.test.js`).
+   needs a route while Tor is connecting or failed (`flows-p1-p2.test.js`).
 4. **Background pollers and the NUT-17 socket were not gated.** At 5581c96 (and 8df0bb1) the
    page opens no socket (`Web/foxy-wallet.js:17248`) and its sweeps check
    `routeOpen()` first (`Web/foxy-wallet.js:17485`); and native refuses every

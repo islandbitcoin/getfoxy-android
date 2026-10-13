@@ -49,7 +49,7 @@ background sweeps and invoice watches ask nothing while there is no route
 friendlier. Native refuses regardless; the page is not trusted to have asked.
 Conformance proves the page's half: with Tor connecting, then failed, the page
 posts no `mintRequest`, `price` or `candles` until the person opts out
-(`conformance/test/flows.test.js`, "route closed").
+(`conformance/test/flows-p1-p2.test.js`, "route closed").
 
 ## 2. How native decides: Route
 
