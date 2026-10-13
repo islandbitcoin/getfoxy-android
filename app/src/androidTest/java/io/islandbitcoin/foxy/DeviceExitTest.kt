@@ -40,7 +40,7 @@ import org.junit.runner.RunWith
  *
  *   adb shell am instrument -w -e class io.islandbitcoin.foxy.DeviceExitTest -e foxyExit true \
  *     -e realMoney yes -e maxSats 64 -e invoice <an invoice of at most 62 sats from the person's own wallet> \
- *     io.islandbitcoin.foxy.test/androidx.test.runner.AndroidJUnitRunner
+ *     io.islandbitcoin.getfoxy.test/androidx.test.runner.AndroidJUnitRunner
  */
 @RunWith(AndroidJUnit4::class)
 class DeviceExitTest {

@@ -50,6 +50,19 @@ JVM by `RealMoneyTest`, applied by `DeviceExitTest`) and `tools/real-money.js`
 The rest of the instrumented suite moves no money: `TorRouteTest` reads the
 real mint's `GET /v1/info` (its description) over Tor, nothing else.
 
+## The package name
+
+Debug and release builds install as `io.islandbitcoin.getfoxy`, the Google Play
+app's package (ENG-680), and the test APK as `io.islandbitcoin.getfoxy.test`.
+Class names keep the Kotlin namespace, so an explicit component is
+`io.islandbitcoin.getfoxy/io.islandbitcoin.foxy.MainActivity` (the short
+`/.MainActivity` would look for `io.islandbitcoin.getfoxy.MainActivity`, which
+does not exist), and `-e class` takes `io.islandbitcoin.foxy.<Test>`. A phone
+with an older dev build installed as `io.islandbitcoin.foxy` keeps it as a
+separate app with its own wallet: restore the wallet from its words in the new
+app, then `adb uninstall io.islandbitcoin.foxy`. Rows in the results table
+below from before ENG-680 ran the old package.
+
 ## Instrumented (`app/src/androidTest`)
 
 Install both APKs and run them on an unlocked phone with nothing else of Foxy's
@@ -59,7 +72,7 @@ on it:
 ./gradlew assembleDebug assembleDebugAndroidTest
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-adb shell am instrument -w -r io.islandbitcoin.foxy.test/androidx.test.runner.AndroidJUnitRunner
+adb shell am instrument -w -r io.islandbitcoin.getfoxy.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 (`./gradlew connectedDebugAndroidTest` does the same in one step.)
@@ -138,12 +151,12 @@ On the debug build, then (when there is one) the release build:
 1. **Recents shows no wallet, and a screenshot is refused.** Open Foxy, go to
    Recents: the card is blank. Press power + volume down: Android says the app
    does not allow screenshots. (S19)
-2. **No backup.** `adb shell bmgr backupnow io.islandbitcoin.foxy` reports the
+2. **No backup.** `adb shell bmgr backupnow io.islandbitcoin.getfoxy` reports the
    package is not eligible; `adb backup` of the app is empty. (S1)
 3. **A reinstall starts empty.** With a seed made, uninstall and install again:
    the first `seedStatus` answers `{"exists":false}` and a new seed is made; the
    old one is gone with the Keystore key. (S22)
-4. **A release build says nothing.** `adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy)`
+4. **A release build says nothing.** `adb logcat --pid=$(adb shell pidof io.islandbitcoin.getfoxy)`
    while using a release build shows no line from Foxy. (S18)
 5. **The intro video plays with the network blocked.** A fresh install shows
    the launch intro (`foxy-intro.mp4`) through to the gate. (ANDROID-MAPPING
@@ -152,7 +165,7 @@ On the debug build, then (when there is one) the release build:
    from P2 it is the leak test below, on an emulator, which captures every
    packet without a third-party app on the phone. (S8, S9, S10)
 7. **The seed outlives a restart.** On an unlocked phone: let the page make a
-   seed (`seedCreate`), `adb shell am force-stop io.islandbitcoin.foxy`, launch
+   seed (`seedCreate`), `adb shell am force-stop io.islandbitcoin.getfoxy`, launch
    again: `seedStatus` answers `{"exists":true}` and the page shows the same
    wallet. (S3, S4; the ENG-647 device exit.) Wiping the seed is not checkable
    in P1: `seedWipe` is P3 (BRIDGE.md `seedWipe` — P3, S5).
@@ -161,7 +174,7 @@ On the debug build, then (when there is one) the release build:
 
 The agent cannot point the camera, touch the fingerprint sensor or read the
 screen lock; these are the person's, on the debug build, phone unlocked.
-Grant the camera when asked (or `adb shell pm grant io.islandbitcoin.foxy android.permission.CAMERA`).
+Grant the camera when asked (or `adb shell pm grant io.islandbitcoin.getfoxy android.permission.CAMERA`).
 
 **Real money.** These checks run on the page's default mint,
 mint.minibits.cash, with real sats, under the rules in "Real money" above: the
@@ -195,8 +208,8 @@ wallet. (This replaces ENG-661's advice to use testnut.cashu.space.)
    the lock screen only "Foxy".
 6. **The seed's protection.** SECURE FOXY → turn the screen lock on: Android
    asks for the fingerprint or the screen lock once; `adb shell run-as
-   io.islandbitcoin.foxy ls -l no_backup` (debug builds only; a plain
-   `adb shell ls /data/data/io.islandbitcoin.foxy/no_backup` is
+   io.islandbitcoin.getfoxy ls -l no_backup` (debug builds only; a plain
+   `adb shell ls /data/data/io.islandbitcoin.getfoxy/no_backup` is
    `Permission denied`) shows `foxy-seed.device.v1.bin` and no
    `foxy-seed.v1.bin`. Force-stop and open:
    the wallet asks for the finger before it opens. Turn it off again: asked
@@ -216,7 +229,7 @@ wallet. (This replaces ENG-661's advice to use testnut.cashu.space.)
    press TAP on the invoice screen: the TAP HERE card says HOLD A PHONE HERE,
    never UNKNOWN ACTION: TAPRECEIVESTART, and the TAP button keeps the accent
    colour (not greyed). On a debug build,
-   `adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy)` shows
+   `adb logcat --pid=$(adb shell pidof io.islandbitcoin.getfoxy)` shows
    `[tap] receive: no tap to pay on Android yet; telling the page unsupported`
    once as the receive screen arms itself (again after leaving it, but not
    after putting Foxy away and coming back, which keeps the receiver as iOS
@@ -267,7 +280,7 @@ or later, a debug build so its diary prints the `[tap] pay:` lines), funded
 with a few sats at the mint the Pixel's Foxy uses; the **Pixel 8 Pro** with the
 debug build of this branch. Both unlocked, Bluetooth on, Foxy in front on each.
 On the Pixel, follow the diary with
-`adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy) | grep '\[tap\]'`.
+`adb logcat --pid=$(adb shell pidof io.islandbitcoin.getfoxy) | grep '\[tap\]'`.
 
 1. **The question.** On a fresh install of the Pixel build, PROCEED, then
    APPROVE on the Bluetooth screen: Android's own dialog asks for "Nearby
@@ -375,7 +388,7 @@ build so its diary prints `[tap] receive:` lines), and, for Pixel to Pixel, a
 second Android phone (API 31+; one at 28-30 checks only that it does not pay)
 with the same build. Both unlocked, Bluetooth on, Foxy in front on each, each funded
 with a few sats at the mint the other uses. Follow the Pixel's diary with
-`adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy) | grep '\[tap\]'`.
+`adb logcat --pid=$(adb shell pidof io.islandbitcoin.getfoxy) | grep '\[tap\]'`.
 
 1. **The question, once (API 31+).** On a fresh install, PROCEED, then APPROVE
    on the Bluetooth screen: one Android dialog, "Nearby devices". Allow. Then in
@@ -491,14 +504,14 @@ Flashcard, and for step 7 the iPhone. **Real money:** ADD FUNDS and a payment
 move real sats on the page's default mint, so the rules of "Real money" above
 hold: the person's go for the run, 100 sats or less a leg, the mint's quote
 paid from the person's own wallet. Steps 1 and 2 move nothing. Read the field
-log or `adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy)` for the
+log or `adb logcat --pid=$(adb shell pidof io.islandbitcoin.getfoxy)` for the
 `[card] sheet:` lines; no command, answer or PIN is ever logged.
 
 0. **The simulator first, on the Pixel, with no card (optional, moves
    nothing).** On the Mac: `git clone https://github.com/getfoxy/card`,
    `sh tools/cardsim/run.sh` in it (port 47431), then
    `adb reverse tcp:47431 tcp:47431` and
-   `adb shell am start -n io.islandbitcoin.foxy/.MainActivity --ez FoxyCardSim true`.
+   `adb shell am start -n io.islandbitcoin.getfoxy/io.islandbitcoin.foxy.MainActivity --ez FoxyCardSim true`.
    The menu → FLASHCARD → TAP CARD. **Pass:** no sheet (the simulator stands in
    for the radio only, as on iOS's Simulator), the FLASHCARD screen shows a
    new card with SET UP THIS CARD; the simulator's terminal prints each
@@ -584,7 +597,7 @@ install -r app/build/outputs/apk/debug/app-debug.apk`), NFC on, the person's
 provisioned Flashcard of software 1.19 or later with its tag switched on (the
 default; FLASHCARD → the owner's settings if it was switched off), a wallet
 already set up on the Pixel, and the field log or `adb logcat
---pid=$(adb shell pidof io.islandbitcoin.foxy)` open for the `[foxy] card tap:`
+--pid=$(adb shell pidof io.islandbitcoin.getfoxy)` open for the `[foxy] card tap:`
 lines (`a card's address arrived`, `told the page`, `given up …`, `… not a
 tap`; the address itself is never logged). Hold the card flat to the back of
 the phone near the middle, for about a second, and lift it, unless a step
@@ -677,7 +690,7 @@ software and the build's commit.
 **Follow-up: the App Link (getfoxy.io, Mike Greff).** The link filter is
 `autoVerify="false"` today: Android verifies an App Link against
 `https://getfoxy.io/.well-known/assetlinks.json`, which must list the package
-`io.islandbitcoin.foxy` with the SHA-256 fingerprint of the **release** signing
+`io.islandbitcoin.getfoxy` with the SHA-256 fingerprint of the **release** signing
 certificate. The Play build is signed for the store by Play App Signing
 (`docs/RELEASE.md` §4), so that is the **app signing** certificate Play Console
 shows (Setup → App signing), not the upload key's. Once the app exists in Play
@@ -690,7 +703,7 @@ and this file:
   "relation": ["delegate_permission/common.handle_all_urls"],
   "target": {
     "namespace": "android_app",
-    "package_name": "io.islandbitcoin.foxy",
+    "package_name": "io.islandbitcoin.getfoxy",
     "sha256_cert_fingerprints": ["<RELEASE SHA-256, AA:BB:…>"]
   }
 }]
@@ -699,7 +712,7 @@ and this file:
 then set `android:autoVerify="true"` on the link filter in
 `app/src/main/AndroidManifest.xml` and change `ManifestTest`'s expectation with
 it, and check with `adb shell pm verify-app-links --re-verify
-io.islandbitcoin.foxy` and `adb shell pm get-app-links io.islandbitcoin.foxy`
+io.islandbitcoin.getfoxy` and `adb shell pm get-app-links io.islandbitcoin.getfoxy`
 (`getfoxy.io: verified`). The NDEF filter does not depend on it: the tag
 dispatch opens Foxy without any verification.
 
@@ -723,7 +736,7 @@ for this change.**
    and mouth open (drawn in the theme's background colour), not a plain blob and
    not the old two-eared placeholder.
 3. **The cold start (the splash).** Force-stop Foxy (`adb shell am force-stop
-   io.islandbitcoin.foxy`), then tap the icon. Android's splash is black with
+   io.islandbitcoin.getfoxy`), then tap the icon. Android's splash is black with
    the sleeping white fox in the middle (the intro's fox, smaller); it fades in
    about a fifth of a second into the same fox full size, filling the screen as
    the iOS launch screen does. From there to the intro there is **no jump**: the
@@ -923,9 +936,9 @@ made in their own wallet, for less than the mint and at most the leg's cap.
 
 ```sh
 export ANDROID_SERIAL=<the phone>
-adb shell pm clear io.islandbitcoin.foxy
-adb shell am start -n io.islandbitcoin.foxy/.MainActivity --es FoxyForceTransport direct   # then obfs4, then snowflake (force-stop between)
-adb forward tcp:9333 localabstract:webview_devtools_remote_$(adb shell pidof io.islandbitcoin.foxy)
+adb shell pm clear io.islandbitcoin.getfoxy
+adb shell am start -n io.islandbitcoin.getfoxy/io.islandbitcoin.foxy.MainActivity --es FoxyForceTransport direct   # then obfs4, then snowflake (force-stop between)
+adb forward tcp:9333 localabstract:webview_devtools_remote_$(adb shell pidof io.islandbitcoin.getfoxy)
 node tools/cdp-eval.js 9333 'for (var i = 0; i < 1200; i++) { if (FoxyWallet.privacy().tor === "up") return FoxyWallet.privacy(); await new Promise(function (r) { setTimeout(r, 500); }); }'
 # the leg's invoice, checked against the cap before anything moves (refused: exit 3)
 REAL_MONEY=yes MAX_SATS=64 INVOICE=<the person's invoice, at most 62 sats> node tools/real-money.js leg
@@ -936,7 +949,7 @@ node tools/cdp-eval.js 9333 'return await FoxyWallet.pay("<the invoice, as check
 # the opt-out: the dialog is pressed by instrumentation, then a mint and a melt without Tor
 adb shell am instrument -w -e class io.islandbitcoin.foxy.DeviceExitTest -e foxyExit true \
   -e realMoney yes -e maxSats 64 -e invoice <the person's invoice, at most 62 sats> \
-  io.islandbitcoin.foxy.test/androidx.test.runner.AndroidJUnitRunner
+  io.islandbitcoin.getfoxy.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 `DeviceExitTest` takes `-e mint <url>` (default minibits), `-e mintSats <n>`

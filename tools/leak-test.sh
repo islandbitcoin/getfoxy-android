@@ -57,7 +57,7 @@ avd="${AVD:-foxy_leak}"
 port=5580
 export ANDROID_SERIAL="emulator-$port"
 apk="$root/app/build/outputs/apk/debug/app-debug.apk"
-pkg=io.islandbitcoin.foxy
+pkg=io.islandbitcoin.getfoxy   # the applicationId (ENG-680); the classes stay in io.islandbitcoin.foxy
 log() { echo "leak-test $mode: $*" >&2; }
 # outlives the emulator process: written before the mint quote is printed, removed once drained
 held_marker="${ANDROID_AVD_HOME:-$HOME/.android/avd}/$avd.avd/foxy-money-held"
@@ -79,7 +79,7 @@ if [ -e "$held_marker" ]; then
   else
     echo "leak-test $mode: not starting it with -wipe-data. Recover it first (docs/DEVICE-TESTS.md \"Leftover sats\"):" >&2
     echo "  $sdk/emulator/emulator -avd $avd -port $port -no-snapshot &   # NO -wipe-data" >&2
-    echo "  adb -s $ANDROID_SERIAL wait-for-device; adb -s $ANDROID_SERIAL shell am start -n $pkg/.MainActivity" >&2
+    echo "  adb -s $ANDROID_SERIAL wait-for-device; adb -s $ANDROID_SERIAL shell am start -n $pkg/io.islandbitcoin.foxy.MainActivity" >&2
   fi
   echo "  then claim the quote if it was paid and drain the wallet into your own (the commands the held run printed), stop it (adb -s $ANDROID_SERIAL emu kill), and only then: rm '$held_marker'" >&2
   exit 4
@@ -139,8 +139,8 @@ adb shell 'while true; do for f in tcp tcp6 udp udp6; do sed "s/^/$f /" /proc/ne
 sampler=$!
 
 case "$mode" in
-  direct|obfs4|snowflake) adb shell am start -n $pkg/.MainActivity --es FoxyForceTransport "$mode" > /dev/null ;;
-  unprotected) adb shell am start -n $pkg/.MainActivity --ez FoxyNoTor true > /dev/null ;;
+  direct|obfs4|snowflake) adb shell am start -n $pkg/io.islandbitcoin.foxy.MainActivity --es FoxyForceTransport "$mode" > /dev/null ;;
+  unprotected) adb shell am start -n $pkg/io.islandbitcoin.foxy.MainActivity --ez FoxyNoTor true > /dev/null ;;
   *) echo "mode: direct, obfs4, snowflake or unprotected" >&2; exit 2 ;;
 esac
 until pid="$(adb shell pidof $pkg | tr -d '\r')" && [ -n "$pid" ]; do sleep 1; done

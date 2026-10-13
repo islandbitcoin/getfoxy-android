@@ -3,7 +3,7 @@
 /* cdp-eval.js — evaluate a script in Foxy's page on a phone or an emulator,
  * through the debug build's WebView remote debugging (docs/DEVICE-TESTS.md).
  *
- *   adb forward tcp:9333 localabstract:webview_devtools_remote_$(adb shell pidof io.islandbitcoin.foxy)
+ *   adb forward tcp:9333 localabstract:webview_devtools_remote_$(adb shell pidof io.islandbitcoin.getfoxy)
  *   node tools/cdp-eval.js 9333 'await FoxyWallet.connect("https://mint.minibits.cash/Bitcoin"); return FoxyWallet.privacy()'
  *
  * The mints are real: a connect moves nothing, but a mint or a melt moves real
