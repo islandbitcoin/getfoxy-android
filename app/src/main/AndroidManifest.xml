@@ -15,8 +15,25 @@
      ENG-667: NFC for a card session (cardBegin): reader mode on the activity in
      front, only while the page has a session open (flashcard/ReaderModeRadio.kt).
      NFC is not required: a phone without it installs Foxy and the page is told
-     "NFC is not available on this phone". No activity filters for the system's
-     tag dispatch (ManifestTest). -->
+     "NFC is not available on this phone".
+
+     ENG-668: a Flashcard held to the phone opens Foxy. The card's tag carries one
+     NDEF URI record, https://getfoxy.io/card (getfoxy/card FOXY-CARD-SPEC.md, the
+     NDEF file), and CardTapActivity filters Android's tag dispatch for exactly that
+     address (NDEF_DISCOVERED; never TECH_ or TAG_DISCOVERED, ManifestTest), and
+     the same address as a link (VIEW, BROWSABLE). The link filter is not verified
+     (autoVerify false): an App Link needs getfoxy.io/.well-known/assetlinks.json
+     with the release key's fingerprint, and there is no release key yet
+     (docs/DEVICE-TESTS.md). Either way only CardAddress.isCard's exact address is
+     acted on, and the page hears only that a card was tapped.
+
+     The filters are not on MainActivity: singleTop reuses it only while it is the
+     top of its task, and the scanner and the seed screens are started in that task
+     over it, so a card held then would make a second MainActivity (a second page,
+     PutAway and Tor install, its splash over the seed words). CardTapActivity draws
+     nothing, keeps no history or Recents entry, has a task of its own, and decides
+     (CardTapRoute): a new page, the page on top of its task handed the tap
+     (singleTop, onNewIntent), or nothing while anything is over the page. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
@@ -52,6 +69,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|uiMode|smallestScreenSize|density|fontScale"
@@ -60,6 +78,29 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- ENG-668: the door a Flashcard's address comes in by; draws nothing, finishes in onCreate (CardTapActivity) -->
+        <activity
+            android:name=".CardTapActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:noHistory="true">
+            <!-- a Flashcard held to the phone: its tag's one address, and nothing else (CardAddress) -->
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="https" android:host="getfoxy.io" android:path="/card" />
+            </intent-filter>
+            <!-- the same address as a link; not verified until getfoxy.io publishes assetlinks.json for the release key -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="getfoxy.io" android:path="/card" />
             </intent-filter>
         </activity>
 

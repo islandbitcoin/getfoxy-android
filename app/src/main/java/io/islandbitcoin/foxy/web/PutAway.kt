@@ -58,6 +58,17 @@ class PutAway(
      * and is a return like any other, so the page PIN-locks (`_resumed`).
      */
     private val ownPrompt: () -> Boolean = { false },
+    /**
+     * ENG-668: Foxy is put away (CardTapDelivery.wentToBackground): a card's address
+     * that comes with the return waits until the page has been told Foxy is back.
+     */
+    private val wentAway: () -> Unit = {},
+    /**
+     * ENG-668: the page has just been told of a return (`_resumed`), and in that
+     * order (CardTapDelivery.cameBack, FoxyWebView.swift:1173-1178): it raises its
+     * lock on hearing it, and a card tapped on the way back must find the lock up.
+     */
+    private val resumedTold: () -> Unit = {},
 ) : DefaultLifecycleObserver {
     /** What putting away needs of the page (WebHost). */
     interface Page {
@@ -204,10 +215,12 @@ class PutAway(
         val h = host() ?: return
         h.pushUptime()
         h.evaluate("window.FoxyWallet && window.FoxyWallet._resumed($away)")
+        resumedTold()
     }
 
     private fun awayNow(since: Long = sched.now()) {
         backgroundedAt = since
+        wentAway()
         vault.putAway()
         FieldLog.saveForNextRun()
         host()?.keepAwake(false)
@@ -305,6 +318,7 @@ class PutAway(
         val h = host() ?: return
         h.pushUptime()
         h.evaluate("window.FoxyWallet && window.FoxyWallet._resumed($away)")
+        resumedTold()
     }
 
     /** The activity is going: no timer outlives it. */

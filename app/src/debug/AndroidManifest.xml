@@ -4,14 +4,15 @@
      one command. A URL that drives a wallet to a send screen is an attack
      surface any app on the phone could reach, so the release manifest registers
      no scheme at all (ManifestTest) and MainActivity reads no link in a release
-     build. singleTop: a link while Foxy is up reaches the activity that is
-     there (onNewIntent), not a second page. -->
+     build. singleTop (set in the main manifest): a link while the page is the
+     top of its task reaches the activity that is there (onNewIntent). The card's
+     address comes in by CardTapActivity instead (ENG-668), which never makes a
+     second page under a seed screen or the scanner. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:launchMode="singleTop">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
