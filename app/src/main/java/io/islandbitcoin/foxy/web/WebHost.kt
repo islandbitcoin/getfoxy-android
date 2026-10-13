@@ -349,6 +349,11 @@ class WebHost(
         bridge?.letGo()
     }
 
+    /** PutAway: Foxy is back, so an onion address may be made again (FoxyBridge.swift `torResumed` → `warmSpare`). */
+    override fun cameBack() {
+        bridge?.cameBack()
+    }
+
     /** The activity stopped: the camera is let go now, whatever PutAway does later. */
     fun stopCamera() {
         live?.stop()
@@ -400,10 +405,11 @@ class WebHost(
         paste = PasteButton(activity, container, view, services.clipboard)
 
         val b = FoxyBridge(this, services::environment, services.seedExecutor, BuildConfig.DEBUG,
-            services.net { ms, r -> main.postDelayed(r, ms) })
+            services.net { ms, r -> main.postDelayed(r, ms) },
+            deliveryEnvironment = services.delivery({ r -> main.post(r) }) { ms, r -> main.postDelayed(r, ms) })
         bridge = b
-        // every change of Tor's or of the network is pushed to the page (_privacy)
-        Tor.onChange = { bridge?.pushPrivacy() }
+        // every change of Tor's or of the network is pushed to the page (_privacy), and Tor up warms an onion address
+        Tor.onChange = { bridge?.torChanged() }
         // a seed written or deleted closes every seed screen, so none shows words from before (L4)
         services.vault.onChanged = { main.post { bridge?.seedChanged() } }
         WebViewCompat.addWebMessageListener(view, Scripts.NATIVE_OBJECT, ALLOWED_ORIGINS) { _, message, sourceOrigin, isMainFrame, _ ->

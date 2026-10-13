@@ -15,9 +15,10 @@ import java.util.concurrent.Executor
 
 /**
  * S15: the bridge serves exactly the P3 contract. Every name in the table is in
- * conformance/contract.json; the 18 P1 actions, the 7 P2 actions, the 26 P3
+ * conformance/contract.json; the 18 P1 actions, the 7 P2 actions, the 30 P3
  * actions (`bluetoothAsk`, `tapReceiveStart` and `tapReceiveStop` P3 since
- * ENG-656; `cardOwnerKey`, `cardOwnerSign` and `cardTime` since ENG-666) and the `p1` stubs of the LATER
+ * ENG-656; `cardOwnerKey`, `cardOwnerSign` and `cardTime` since ENG-666; `inboxOpen`,
+ * `inboxClose`, `inboxAnswer` and `onionPost` since ENG-672) and the `p1` stubs of the LATER
  * actions are all there, and no P3 action is answered by its stub (four have
  * one: the real handler wins); each LATER stub answers the contract's text or
  * error byte for byte; every P3 answer is one the contract lists; with no Tor,
@@ -74,10 +75,12 @@ class BridgeContractTest {
         val laterStubs = entries.filter { it["kind"] == "action" && it["p1"] != null && it["phase"] !in served }.map { it["name"] as String }.toSet()
         assertEquals(18, p1.size)
         assertEquals(setOf("privacy", "torRetry", "unprotected", "mintRequest", "price", "candles", "hostsKnown"), p2)
-        assertEquals(26, p3.size)
+        assertEquals(30, p3.size)
         assertTrue("bluetoothAsk is P3 (ENG-656)", "bluetoothAsk" in p3)
         assertTrue("a card's owner key and its signed time are P3 (ENG-666)", p3.containsAll(setOf("cardOwnerKey", "cardOwnerSign", "cardTime")))
         assertTrue("the receive screen's TAP is P3 (ENG-656)", p3.containsAll(setOf("tapReceiveStart", "tapReceiveStop")))
+        assertTrue("the onion inbox and post are P3 (ENG-672)", p3.containsAll(setOf("inboxOpen", "inboxClose", "inboxAnswer", "onionPost")))
+        assertFalse("nostrSend is not (the ENG-672 follow-up)", "nostrSend" in p3)
         assertEquals(setOf("captured", "orbotRefresh", "orbotAccess", "seedProtection", "tapPayStart", "pasteStart", "pasteStop"), stubs)
         assertEquals(setOf("orbotRefresh", "orbotAccess", "tapPayStart"), laterStubs)
         assertEquals(p1, FoxyBridge.P1_ACTIONS)
@@ -129,6 +132,8 @@ class BridgeContractTest {
             "cardOwnerKey" to ""","key":"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"""",
             "cardOwnerSign" to ""","key":"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","label":"load","nonce":"000102030405060708090a0b0c0d0e0f","value":""""",
             "cardTime" to "",
+            "inboxOpen" to "", "inboxClose" to ""","hold":30""", "inboxAnswer" to ""","answer":"00112233445566778899aabbccddeeff","status":200,"text":""""",
+            "onionPost" to ""","url":"http://abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwd.onion/0123456789abcdef0123456789abcdef","body":"{}","timeout":30000""",
         )
         assertEquals(FoxyBridge.P3_ACTIONS, bodies.keys)
         // and each again with what the page should not send, which must still be a listed answer
@@ -137,7 +142,8 @@ class BridgeContractTest {
             "copy" to ""","text":""""", "share" to ""","text":""""", "notify" to ""","kind":"lure"""",
             "openCompany" to ""","which":"evil"""", "seedProtect" to ""","mode":"faceid"""", "seedAdopt" to "",
             "seedCandidateForget" to "", "tapReceiveStart" to ""","payload":"not an offer"""",
-            "cardOwnerKey" to ""","key":"04"""", "cardOwnerSign" to ""","key":"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","label":"lock","nonce":"000102030405060708090a0b0c0d0e0f","value":""""",
+            "cardOwnerKey" to ""","key":"04"""", "inboxClose" to ""","hold":"forever"""", "inboxAnswer" to ""","status":"200"""",
+            "onionPost" to ""","url":"https://mint.example.com/v1/swap","body":""""", "cardOwnerSign" to ""","key":"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","label":"lock","nonce":"000102030405060708090a0b0c0d0e0f","value":""""",
         )
         for (round in listOf(bodies, wrong)) {
             for ((name, extra) in round) {
@@ -211,20 +217,22 @@ class BridgeContractTest {
         // narrowed in P3: the later actions are now the LATER phase's only (seedShow, which this asked before, is served);
         // narrowed again in ENG-656: bluetoothAsk is P3, answered "unsupported" with its push (BluetoothAskTest),
         // and tapReceiveStart and tapReceiveStop are P3, answered as an iPhone without Bluetooth answers (TapReceiveTest);
-        // and in ENG-666: cardOwnerKey, cardOwnerSign and cardTime are P3, answered as iOS answers them (CardBridgeTest).
+        // and in ENG-666: cardOwnerKey, cardOwnerSign and cardTime are P3, answered as iOS answers them (CardBridgeTest);
+        // and in ENG-672: inboxOpen, inboxClose, inboxAnswer and onionPost are P3 (DeliveryBridgeTest), nostrSend stays.
         // Named one by one, so a later action that stops being unknown has to be taken off here by hand.
         val later = entries.filter { it["kind"] == "action" && it["phase"] !in served && it["p1"] == null }.map { it["name"] as String }
         assertEquals(
             setOf(
-                "inboxOpen", "inboxClose", "inboxAnswer", "onionPost", "nostrSend",
+                "nostrSend",
                 "tapSend", "tapChange", "tapChangeKept", "tapAsking", "tapChangeDue",
                 "tapQuote", "tapTerms", "tapPayStop", "shakeStart", "shakeStop",
                 "cardBegin", "cardSend", "cardSay", "cardAgain", "cardEnd",
             ),
             later.toSet(),
         )
-        assertEquals(20, later.size)
-        assertTrue(later.contains("inboxOpen"))
+        assertEquals(16, later.size)
+        assertTrue(later.contains("nostrSend"))
+        for (name in listOf("inboxOpen", "inboxClose", "inboxAnswer", "onionPost")) assertFalse("$name is no longer unknown", later.contains(name))
         assertFalse("bluetoothAsk is no longer unknown", later.contains("bluetoothAsk"))
         assertFalse("tapReceiveStart is no longer unknown", later.contains("tapReceiveStart"))
         assertFalse("tapReceiveStop is no longer unknown", later.contains("tapReceiveStop"))

@@ -3,6 +3,7 @@ package io.islandbitcoin.foxy
 import android.app.Activity
 import android.app.KeyguardManager
 import android.content.Context
+import io.islandbitcoin.foxy.bridge.DeliveryEnvironment
 import io.islandbitcoin.foxy.bridge.NetEnvironment
 import io.islandbitcoin.foxy.bridge.PromptQueue
 import io.islandbitcoin.foxy.debug.Log
@@ -18,6 +19,8 @@ import io.islandbitcoin.foxy.keychain.SeedEnvironment
 import io.islandbitcoin.foxy.keychain.SeedMigrationWindow
 import io.islandbitcoin.foxy.keychain.SeedVault
 import io.islandbitcoin.foxy.network.HostApprovals
+import io.islandbitcoin.foxy.network.OnionInbox
+import io.islandbitcoin.foxy.network.OnionPost
 import io.islandbitcoin.foxy.network.Route
 import io.islandbitcoin.foxy.tor.Tor
 import io.islandbitcoin.foxy.tor.TorTransport
@@ -117,6 +120,14 @@ class FoxyServices(context: Context) {
         approvals = approvals,
         prompts = prompts,
         send = { request, circuit, done -> Route.start(request, circuit, done)?.let { call -> { call.cancel() } } },
+        after = after,
+    )
+
+    /** What the onion inbox and post use (ENG-672): Tor's onion services, a loopback listener per address, OnionPost. */
+    fun delivery(main: (Runnable) -> Unit, after: (Long, () -> Unit) -> Unit): DeliveryEnvironment = DeliveryEnvironment(
+        torRunning = { Tor.isRunning },
+        newInbox = { note, onPayment -> OnionInbox(note, Tor, main, onPayment = onPayment) },
+        post = { url, body, circuit, timeoutMs, done -> OnionPost.send(url, body, circuit, timeoutMs, done = done) },
         after = after,
     )
 

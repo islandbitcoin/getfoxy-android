@@ -99,11 +99,11 @@ interface PageHost {
  *
  * One table: the 18 P1 actions, the 7 P2 actions ([NetBridge]: Tor's snapshot,
  * RETRY, CONTINUE WITHOUT TOR, and the three requests that leave through
- * Route), the 26 P3 actions ([SeedBridge]'s screens, adopting, wiping and
+ * Route), the 30 P3 actions ([SeedBridge]'s screens, adopting, wiping and
  * protection, and a card's owner key; the card's signed time;
  * [PlatformBridge]'s camera, clipboard, share, notifications,
  * biometric, the Bluetooth screen's and the receive screen's TAP's fixed
- * "unsupported" and the rest), and the `p1` stubs of conformance/contract.json
+ * "unsupported" and the rest; [DeliveryBridge]'s onion inbox and post), and the `p1` stubs of conformance/contract.json
  * for the LATER phase ([ContractStubs], generated from it), which answer the
  * actions the page asks before anything else. A P3 action's stub is never put in the table: every P3
  * action is answered by its real handler. Every other action is answered
@@ -121,6 +121,8 @@ class FoxyBridge(
     clock: () -> Long = { System.nanoTime() / 1_000_000 },
     /** The phone's own clock, ms since 1970: the time `cardTime` signs. */
     private val wallClock: () -> Long = { System.currentTimeMillis() },
+    /** The onion inbox and post (ENG-672): Tor's onion services, the inboxes, the post. */
+    deliveryEnvironment: DeliveryEnvironment = DeliveryEnvironment.none(),
 ) {
     companion object {
         /** The asset loader's origin, the only one the bridge answers. */
@@ -141,8 +143,10 @@ class FoxyBridge(
          * The P3 actions: docs/BRIDGE.md, phase P3, kind action. ENG-666 adds the
          * card's owner key ([SeedBridge.CARD_ACTIONS]) and the card's signed time
          * (`cardTime`), which need no NFC and are answered before the card link is.
+         * ENG-672 adds the onion inbox and post ([DeliveryBridge.ACTIONS]).
          */
-        val P3_ACTIONS: Set<String> = SeedBridge.P3_ACTIONS + PlatformBridge.ACTIONS + SeedBridge.CARD_ACTIONS + "cardTime"
+        val P3_ACTIONS: Set<String> = SeedBridge.P3_ACTIONS + PlatformBridge.ACTIONS + SeedBridge.CARD_ACTIONS + "cardTime" +
+            DeliveryBridge.ACTIONS
 
         /** Main frame, asset origin, nothing else (FoxyBridge.swift `answers`). */
         fun answers(isMainFrame: Boolean, origin: String?): Boolean = isMainFrame && origin == ORIGIN
@@ -165,12 +169,26 @@ class FoxyBridge(
     private val seeds = SeedBridge(seedEnvironment, seedExecutor, ::resolve, host, clock)
     private val net = NetBridge(netEnvironment, host, ::resolve)
     private val platform = PlatformBridge(host, ::resolve, seedEnvironment, seedExecutor, clock)
+    private val delivery = DeliveryBridge(deliveryEnvironment, host, ::resolve)
 
     /** Swaps, melts, mints and restores not yet answered: putting Foxy away waits for them. */
     val moneyInFlight: Int get() = net.moneyInFlight.size
 
     /** The route changed: the page hears it (`_privacy`), through the one evaluate path. */
     fun pushPrivacy() = net.pushPrivacy()
+
+    /**
+     * Tor or the network changed (Tor.onChange): the page hears it, and with
+     * Tor up an onion address starts warming for the next request
+     * (FoxyBridge.swift `startTor`'s onChange → `warmSpare`). Main thread.
+     */
+    fun torChanged() {
+        pushPrivacy()
+        delivery.torChanged()
+    }
+
+    /** Foxy is back from being put away: an onion address may be made again (`torResumed` → `warmSpare`). Main thread. */
+    fun cameBack() = delivery.cameBack()
 
     /** A screenshot was taken (API 34+): `_screenshot`. */
     fun pushScreenshot() = platform.pushScreenshot()
@@ -183,6 +201,8 @@ class FoxyBridge(
     fun letGo() {
         platform.letGo()
         seeds.closeScreens()
+        // and no onion address of this phone's outlives the foreground (FoxyWebView.swift `closeInboxForBackground`)
+        delivery.closeForBackground()
     }
 
     /**
@@ -193,6 +213,8 @@ class FoxyBridge(
     fun pageGone() {
         platform.pageGone()
         seeds.closeScreens()
+        // the bridge goes with the page on Android, and nothing of its stays published
+        delivery.pageGone()
     }
 
     /** The saved seed was written or deleted: no seed screen shows words from before (L4). Main thread. */
@@ -244,6 +266,10 @@ class FoxyBridge(
          * the INTERIM time key (FoxyBridge+Flashcard.swift `handleCardTime`). Arguments are
          * ignored. It needs no card in hand and no seed, and says nothing secret.
          */
+        // the onion inbox and post (ENG-672): FoxyBridge+Delivery.swift's onion half
+        for (action in DeliveryBridge.ACTIONS) {
+            put(action) { id, body -> delivery.handle(action, id, body) }
+        }
         put("cardTime") { id, _ ->
             val text = InterimCardTime.reply(InterimCardTime.seconds(wallClock()))
             if (text == null) resolve(id, null, InterimCardTime.UNTELLABLE) else resolve(id, text, null)
