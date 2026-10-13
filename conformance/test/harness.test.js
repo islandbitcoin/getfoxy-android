@@ -17,7 +17,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { boot, wait } = require('../lib/session');
 const { check, validateSchema } = require('../lib/schema');
-const { replyProblems, CONTRACT } = require('../lib/host');
+const { replyProblems, CONTRACT, makeHost, answerBody } = require('../lib/host');
 const TapRules = require('../lib/tap-rules');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -652,4 +652,39 @@ test('card-host.js: the gate is CardGate.kt\'s and the page\'s, every byte, and 
   assert.equal(CardHost.line('one\ntwo\u0007\tthree four'), 'onetwothreefour');
   assert.equal(CardHost.line('a'.repeat(500)).length, 120);
   assert.equal(CardHost.bytes('0g'), null);
+});
+
+test('the onion doors (ENG-672): the fake host answers as DeliveryBridge does, and refuses what it refuses', async () => {
+  // the payer's answer, byte for byte the strings DeliveryBridgeTest holds Kotlin to
+  assert.equal(answerBody(200, 'ignored'), '{"ok":true}');
+  assert.equal(answerBody(422, 'Token already spent / "twice"'), '{"error":"Token already spent \\/ \\"twice\\""}');
+  assert.equal(answerBody(409, ''), '{"error":""}');
+  const by = (n) => CONTRACT.find((e) => e.name === n);
+  const h = makeHost({ phase: 'P3', tor: 'up' });
+  const open = h.answerers.inboxOpen();
+  assert.deepEqual(replyProblems(by('inboxOpen'), open[0], open[1]), []);
+  const onion = JSON.parse(open[0]).onion;
+  assert.match(onion, /^http:\/\/[a-z2-7]{55}d\.onion\/[0-9a-f]{32}$/);
+  assert.deepEqual(JSON.parse(h.answerers.inboxOpen()[0]).onion, onion, 'the same address until it closes');
+  // a post to an address this phone is not answering is 404, and so is one to an address it closed
+  assert.equal(await h.deliver('http://' + 'a'.repeat(55) + 'd.onion/00', '{}'), '404\n');
+  h.answerers.inboxClose();
+  assert.equal(await h.deliver(onion, '{}'), '404\n', 'closed: not answered');
+  // an answer key nobody is waiting on
+  assert.deepEqual(h.answerers.inboxAnswer({ answer: 'nope', status: 200, text: '' }), [null, 'No payment is waiting on that answer.']);
+  // a post: Tor only, a v3 onion only, a body
+  assert.deepEqual(h.answerers.onionPost({ url: 'http://mint.example.com/', body: '{}' }), [null, 'That is not an onion address.']);
+  assert.deepEqual(h.answerers.onionPost({ url: onion, body: '' }), [null, 'That payment is too large to send.']);
+  assert.deepEqual(h.answerers.onionPost({ url: onion, body: '{}' }), [null, 'Their phone could not be reached over Tor.'], 'no peer');
+  const off = makeHost({ phase: 'P3', tor: 'connecting' });
+  assert.deepEqual(off.answerers.inboxOpen(), [null, 'No onion address: Tor is not ready.']);
+  assert.deepEqual(off.answerers.onionPost({ url: onion, body: '{}' }), [null, 'Foxy is not connected to Tor.']);
+  for (const e of [h.answerers.onionPost({ url: onion, body: '' }), off.answerers.inboxOpen(), off.answerers.onionPost({ url: onion, body: '{}' })]) {
+    assert.ok(by('onionPost').reply.errors.includes(e[1]) || by('inboxOpen').reply.errors.includes(e[1]), e[1] + ' is an error the contract lists');
+  }
+  // a P2 host may not push _requestPaid (P3)
+  const p2 = makeHost({ phase: 'P2', tor: 'up' });
+  p2.state.inbox = onion;
+  assert.equal(await p2.deliver(onion, '{}'), '404\n');
+  assert.deepEqual(kinds(p2.violations), ['unserved']);
 });

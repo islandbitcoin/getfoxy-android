@@ -9,7 +9,6 @@ import io.islandbitcoin.foxy.tap.TapClock
 import io.islandbitcoin.foxy.tap.TapReceiver
 import io.islandbitcoin.foxy.tap.TapReceiverLink
 import io.islandbitcoin.foxy.tap.TapStage
-import java.text.BreakIterator
 
 /**
  * Tap to pay's receiving side and the doors around it (Foxy/Bridge/FoxyBridge+Tap.swift
@@ -27,8 +26,8 @@ import java.text.BreakIterator
  *   A phone without Bluetooth Foxy can use says `unsupported` (ENG-656).
  * - `tapChange`, `tapAsking`, `tapChangeDue`, `tapTerms`: M7, M9, holding the
  *   link for change, M11; `_tapChangeKeptLate`.
- * - `inboxAnswer`: the page's word on a payment it was handed. The onion inbox
- *   (ENG-672) answers through the same registry.
+ * - `inboxAnswer`: the page's word on a payment it was handed, read from the one
+ *   registry the onion inbox (ENG-672) answers through too ([InboxAnswers]).
  * - `shakeStart` / `shakeStop`: a shake presses TAP while armed (`_tap` `shake`);
  *   and `_turned`, the phone the other way up, from [turned].
  *
@@ -39,6 +38,8 @@ import java.text.BreakIterator
 class TapBridge(
     private val host: PageHost,
     private val resolve: (id: String, text: String?, error: String?) -> Unit,
+    /** The answers the page owes, the onion's and the tap's in one table (FoxyBridge.swift `inboxAnswers`). */
+    private val answers: InboxAnswers,
 ) {
     companion object {
         val ACTIONS = setOf(
@@ -51,10 +52,6 @@ class TapBridge(
         const val NO_LINK = "That phone is no longer connected."
         const val NO_CHANGE = "There is no change to send."
         const val CHANGE_NOT_KEPT = "The payer's phone did not say it kept the change."
-        const val NO_PAYMENT_WAITING = "No payment is waiting on that answer."
-
-        /** `inboxAnswer`'s text is cut to this many characters (FoxyBridge+Delivery.swift `handleInboxAnswer`). */
-        const val MOST_ANSWER_TEXT = 300
 
         /** The tap's answer key is dropped this long after the receiver gave up on it (FoxyBridge+Tap.swift:111-117). */
         const val ANSWER_KEPT = TapReceiverLink.RESULT_WAIT + 5
@@ -81,23 +78,7 @@ class TapBridge(
 
         fun turnedPush(upsideDown: Boolean): String =
             "window.FoxyWallet && window.FoxyWallet._turned && window.FoxyWallet._turned(${if (upsideDown) "true" else "false"})"
-
-        /** The first [n] characters as a person reads them (Swift's `prefix`). */
-        fun prefix(s: String, n: Int): String {
-            val chars = BreakIterator.getCharacterInstance()
-            chars.setText(s)
-            var end = 0
-            repeat(n) {
-                val next = chars.next()
-                if (next == BreakIterator.DONE) return s
-                end = next
-            }
-            return s.substring(0, end)
-        }
     }
-
-    /** The answers the page owes for payments it was handed, by key (FoxyBridge.swift `inboxAnswers`). */
-    private val answers = HashMap<String, (Int, String) -> Unit>()
 
     private var receiver: TapReceiver? = null
     private var shakeArmed = false
@@ -163,7 +144,7 @@ class TapBridge(
                 shakeArmed = false
                 resolve(id, "ok", null)
             }
-            "inboxAnswer" -> inboxAnswer(id, body)
+            InboxAnswers.ACTION -> answers.handle(id, body)
             else -> resolve(id, null, "Unknown action: $action")
         }
     }
@@ -261,14 +242,15 @@ class TapBridge(
     /**
      * The same door a payment over Tor comes through (FoxyBridge+Tap.swift
      * 77-122): an answer key, `_requestPaid(body, key, "tap")`, and the page's
-     * `inboxAnswer` read back into M6's status and reason. The key is dropped a
-     * little after the receiver gave up on it, so a very late answer finds
-     * nothing rather than a second M6.
+     * `inboxAnswer` read back into M6's status and reason, from the onion's own
+     * registry ([InboxAnswers.tap]: kept when Foxy is put away). The key is
+     * dropped a little after the receiver gave up on it, so a very late answer
+     * finds nothing rather than a second M6.
      */
     private fun paid(body: String, tell: (Int, String) -> Unit) {
         val key = MintCircuit.label(null)
-        answers[key] = { status, why -> tell(status, why) }
-        bluetooth.clock.after(ANSWER_KEPT) { answers.remove(key) }
+        answers.tap(key, tell)
+        bluetooth.clock.after(ANSWER_KEPT) { answers.drop(key) }
         host.evaluate(requestPaid(body, key))
     }
 
@@ -301,22 +283,6 @@ class TapBridge(
         if (!sent) resolve(id, null, NO_LINK)
     }
 
-    // MARK: inboxAnswer
-
-    /** The page's word on a payment it was handed: {answer, status, text}, statuses 200, 409 and 422 only. */
-    private fun inboxAnswer(id: String, body: Map<String, Any?>) {
-        val key = body["answer"] as? String
-        val asked = (body["status"] as? Number)?.toInt() ?: 422
-        val text = prefix(body["text"] as? String ?: "", MOST_ANSWER_TEXT)
-        host.post {
-            val answer = key?.let { answers.remove(it) } ?: return@post resolve(id, null, NO_PAYMENT_WAITING)
-            val status = if (asked == 200 || asked == 409 || asked == 422) asked else 422
-            // the onion's JSON, {"ok":true} or {"error":text}, read back for the tap's M6: the reason alone
-            answer(status, if (status == 200) "" else text)
-            resolve(id, "ok", null)
-        }
-    }
-
     // MARK: shake and turned
 
     /** The phone was shaken. Told to the page only while armed. */
@@ -344,7 +310,7 @@ class TapBridge(
      * answered, and a payer holding the offer (the code on both screens) until they pay or leave. iOS
      * keeps `tapReceiver` across the background: it is let go only by TAP again, by stop and by the page
      * going (FoxyBridge+Tap.swift 73, 159-161, 320-328; FoxyBridge.swift 1096). Letting it go here would
-     * close the GATT server under a payer about to send, and with no other road yet (ENG-672) the sale
+     * close the GATT server under a payer about to send, and the sale
      * would be lost, the case [tapReceiveStart] already guards for a payer deciding.
      */
     fun away() {
@@ -380,7 +346,6 @@ class TapBridge(
         // not waited for: with the page gone nothing is left to write a payment down
         receiver?.stopNow()
         receiver = null
-        answers.clear()
     }
 
     /** A [TapClock] over the page host's own looper, for a phone with no Bluetooth (the tests' FakeHost). */

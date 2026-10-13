@@ -690,4 +690,88 @@ class TorMachineTest {
         circuit(m)
         assertTrue(m.isRunning)
     }
+
+    // MARK: Onion services (ENG-672)
+
+    private fun added(m: TorMachine, port: Int): List<String?> {
+        val got = mutableListOf<String?>()
+        m.addOnion(port) { got.add(it) }
+        sched.drain()
+        return got
+    }
+
+    @Test
+    fun anOnionAddressIsMadeOnlyWhileTorIsUpAndOnlyAV3IdIsTaken() {
+        val m = connected()
+        // connecting: no address, and Tor is not asked
+        assertEquals(listOf<String?>(null), added(m, 40001))
+        assertTrue(control.onionsAdded.isEmpty())
+        circuit(m)
+        assertTrue(m.isRunning)
+        assertEquals(listOf<String?>("abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwd"), added(m, 40001))
+        assertEquals(listOf(40001), control.onionsAdded)
+        // a port that is no port is never asked for
+        assertEquals(listOf<String?>(null), added(m, 0))
+        assertEquals(listOf<String?>(null), added(m, 70000))
+        // Tor's error, or an answer that is not a v3 service id, is no address
+        control.onionAnswer = null
+        assertEquals(listOf<String?>(null), added(m, 40002))
+        control.onionAnswer = "not-an-onion"
+        assertEquals(listOf<String?>(null), added(m, 40003))
+        control.onionAnswer = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVWD"
+        assertEquals(listOf<String?>(null), added(m, 40004))
+        assertEquals(listOf(40001, 40002, 40003, 40004), control.onionsAdded)
+    }
+
+    @Test
+    fun putAwayNoAddressIsMadeAndRemovingOneIsOnlyEverAV3Id() {
+        val m = connected()
+        circuit(m)
+        m.backgrounded {}
+        sched.drain()
+        assertFalse(m.isRunning)
+        assertEquals(listOf<String?>(null), added(m, 40001))
+        assertTrue("Tor is not asked while Foxy is put away", control.onionsAdded.isEmpty())
+        m.removeOnion("abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwd")
+        m.removeOnion("abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwd 0\r\nSETCONF DisableNetwork=0")
+        m.removeOnion("")
+        assertEquals(listOf("abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwd"), control.onionsDeleted)
+    }
+
+    /** Every relaunch, and every end of Tor's thread, is a new daemon generation: the old one's addresses are gone. */
+    @Test
+    fun aDaemonThatEndedOrWasLaunchedAgainIsANewGeneration() {
+        val m = connected()
+        val first = m.daemonGeneration
+        daemon.ended = true
+        m.daemonFinished("tor-android said STOPPING")
+        val stopped = m.daemonGeneration
+        assertTrue("its thread ended", stopped > first)
+        m.restart("the person asked")
+        assertEquals("launched again", 2, daemon.torrcs.size)
+        assertTrue("relaunched", m.daemonGeneration > stopped)
+    }
+
+    /** An address Tor answers after its daemon ended is no address: it went with that daemon. */
+    @Test
+    fun anOnionAnsweredAfterTheDaemonEndedIsNone() {
+        val m = connected()
+        circuit(m)
+        val got = mutableListOf<String?>()
+        m.addOnion(40001) { got.add(it) }
+        // the answer is posted; the daemon ends before it is run
+        daemon.ended = true
+        m.daemonFinished("tor-android said STOPPING")
+        sched.drain()
+        assertEquals(listOf<String?>(null), got)
+    }
+
+    @Test
+    fun theAddOnionLineIsIos() {
+        // TorService.swift `addOnion`: ["NEW:ED25519-V3", "Flags=DiscardPK,Detach", "Port=80,127.0.0.1:<port>"]
+        assertEquals("ADD_ONION NEW:ED25519-V3 Flags=DiscardPK,Detach Port=80,127.0.0.1:40123", TorOnion.command(40123))
+        assertEquals("NEW:ED25519-V3", TorOnion.KEY)
+        assertEquals(listOf("DiscardPK", "Detach"), TorOnion.FLAGS)
+        assertEquals("127.0.0.1:40123", TorOnion.target(40123))
+    }
 }

@@ -7,6 +7,9 @@ import io.islandbitcoin.foxy.keychain.Flags
 import io.islandbitcoin.foxy.keychain.SeedCandidates
 import io.islandbitcoin.foxy.keychain.SeedEnvironment
 import io.islandbitcoin.foxy.keychain.SeedVault
+import io.islandbitcoin.foxy.network.Inbox
+import io.islandbitcoin.foxy.network.InboxAnswer
+import io.islandbitcoin.foxy.network.OnionPost
 import io.islandbitcoin.foxy.tap.FakeBluetooth
 import io.islandbitcoin.foxy.tap.FakeCentral
 import io.islandbitcoin.foxy.tap.TapAir
@@ -42,7 +45,28 @@ class TapBridgeTest {
     )
     private val bt = FakeBluetooth()
     private val host = FakeHost().apply { tapBluetooth = bt }
-    private val bridge = FoxyBridge(host, { env }, Executor { it.run() }, isDebug = false)
+
+    /** The onion inbox's payments as Tor would hand them over, one per inbox made (ENG-672: the one answer table). */
+    private val inboxPayments = ArrayList<(String, InboxAnswer) -> Unit>()
+
+    /** An inbox Tor publishes at once. */
+    private class OpenInbox(override var note: String) : Inbox {
+        private var closed = false
+        override val url: String? get() = if (closed) null else "http://" + "a".repeat(55) + "d.onion/" + "0".repeat(32)
+        override val isOpen: Boolean get() = url != null
+        override fun open(done: (String?) -> Unit) = done(url)
+        override fun close() {
+            closed = true
+        }
+    }
+
+    private val delivery = DeliveryEnvironment(
+        torRunning = { true },
+        newInbox = { note, onPayment -> OpenInbox(note).also { inboxPayments.add(onPayment) } },
+        post = { _, _, _, _, done -> done(OnionPost.Result.Failed(OnionPost.Failure.NoTor)) },
+        after = { _, _ -> },
+    )
+    private val bridge = FoxyBridge(host, { env }, Executor { it.run() }, isDebug = false, deliveryEnvironment = delivery)
 
     private fun send(json: String) = bridge.onMessage(json, true, FoxyBridge.ORIGIN)
 
@@ -213,7 +237,7 @@ class TapBridgeTest {
         // the key is answered once
         host.evaluated.clear()
         send("""{"action":"inboxAnswer","id":"a2","answer":"$key","status":200,"text":""}""")
-        assertEquals(listOf(reply("a2", null, TapBridge.NO_PAYMENT_WAITING)), host.evaluated.toList())
+        assertEquals(listOf(reply("a2", null, InboxAnswers.NO_PAYMENT_WAITING)), host.evaluated.toList())
     }
 
     @Test
@@ -264,8 +288,8 @@ class TapBridgeTest {
             assertEquals(TapReceiverLink.MOST_WHY, (m6["why"] as String).length)
         }
         // characters as a person reads them, not UTF-16 units or bytes
-        assertEquals("é".repeat(300), TapBridge.prefix("é".repeat(400), TapBridge.MOST_ANSWER_TEXT))
-        assertEquals("😀".repeat(300), TapBridge.prefix("😀".repeat(301), TapBridge.MOST_ANSWER_TEXT))
+        assertEquals("é".repeat(300), InboxAnswers.prefixCharacters("é".repeat(400), InboxAnswers.MOST_TEXT))
+        assertEquals("😀".repeat(300), InboxAnswers.prefixCharacters("😀".repeat(301), InboxAnswers.MOST_TEXT))
     }
 
     @Test
@@ -281,7 +305,7 @@ class TapBridgeTest {
         advance(5.0)
         host.evaluated.clear()
         send("""{"action":"inboxAnswer","id":"late","answer":"$key","status":200,"text":""}""")
-        assertEquals(listOf(reply("late", null, TapBridge.NO_PAYMENT_WAITING)), host.evaluated.toList())
+        assertEquals(listOf(reply("late", null, InboxAnswers.NO_PAYMENT_WAITING)), host.evaluated.toList())
     }
 
     // MARK: change, M9, M11
@@ -482,6 +506,86 @@ class TapBridgeTest {
         assertEquals("{\"v\":2,\"ok\":true,\"code\":200}", (how[0] as TapPayerLink.Handover.Answered).text)
     }
 
+    /** The key of the latest onion payment the page was handed: `_requestPaid(body, key)`, no "tap". */
+    private fun onionKey(): String {
+        val js = host.evaluated.last { it.contains("._requestPaid(") }
+        val args = Json.parse("[" + js.substringAfter("._requestPaid(").removeSuffix(")") + "]") as List<*>
+        assertEquals("an onion payment's push has no third argument", 2, args.size)
+        return args[1] as String
+    }
+
+    private fun m6(how: Array<TapPayerLink.Handover?>): Map<*, *> = Json.parse((how[0] as TapPayerLink.Handover.Answered).text) as Map<*, *>
+
+    @Test
+    fun anOnionPaymentAndATapPaymentAreAnsweredFromOneTable() {
+        // FoxyBridge.swift at 8df0bb1 has one `inboxAnswers`: the tap's keys are put in the onion's table
+        send("""{"action":"inboxOpen","id":"o"}""")
+        onTheAir()
+        val payer = Payer()
+        payer.linkUp()
+        val how = payer.pay("{}")
+        val tapKey = paidKey()
+        var onionHeard: Pair<Int, String>? = null
+        inboxPayments.single()("{\"proofs\":[]}") { status, body -> onionHeard = status to body }
+        val onionKey = onionKey()
+        assertNotEquals(tapKey, onionKey)
+        // the same words, each read back as its payer reads them: the onion's JSON as Apple writes it, the tap's reason alone
+        send("""{"action":"inboxAnswer","id":"a1","answer":"$onionKey","status":422,"text":"Token already spent / \"twice\""}""")
+        send("""{"action":"inboxAnswer","id":"a2","answer":"$tapKey","status":422,"text":"Token already spent / \"twice\""}""")
+        settle()
+        assertEquals(422 to "{\"error\":\"Token already spent \\/ \\\"twice\\\"\"}", onionHeard)
+        assertEquals(422.0, m6(how)["code"])
+        assertEquals("Token already spent / \"twice\"", m6(how)["why"])
+        assertEquals(listOf(reply("a1", "ok"), reply("a2", "ok")), host.evaluated.filter { it.contains("._scanResult(\"a") })
+        // each once
+        host.evaluated.clear()
+        send("""{"action":"inboxAnswer","id":"a3","answer":"$tapKey","status":200,"text":""}""")
+        send("""{"action":"inboxAnswer","id":"a4","answer":"$onionKey","status":200,"text":""}""")
+        assertEquals(listOf(reply("a3", null, InboxAnswers.NO_PAYMENT_WAITING), reply("a4", null, InboxAnswers.NO_PAYMENT_WAITING)), host.evaluated.toList())
+    }
+
+    @Test
+    fun aTapAnswerOutlivesFoxyBeingPutAwayAndAnOnionAnswerDoesNot() {
+        // FoxyBridge+Delivery.swift `closeInboxForBackground`: `inboxAnswers.filter { tapAnswerKeys.contains($0.key) }`
+        send("""{"action":"inboxOpen","id":"o"}""")
+        onTheAir()
+        val payer = Payer()
+        payer.linkUp()
+        val how = payer.pay("{\"proofs\":[{\"amount\":21}]}")
+        val tapKey = paidKey()
+        var onionHeard: Pair<Int, String>? = null
+        inboxPayments.single()("{\"proofs\":[]}") { status, body -> onionHeard = status to body }
+        val onionKey = onionKey()
+        // put away as WebHost does it: the activity stops (the radio), then PutAway lets go (the onion)
+        bridge.tapAway()
+        bridge.letGo()
+        settle()
+        host.evaluated.clear()
+        send("""{"action":"inboxAnswer","id":"a1","answer":"$onionKey","status":200,"text":""}""")
+        assertEquals("the onion's answer went with its address", listOf(reply("a1", null, InboxAnswers.NO_PAYMENT_WAITING)), host.evaluated.toList())
+        assertEquals(null, onionHeard)
+        send("""{"action":"inboxAnswer","id":"a2","answer":"$tapKey","status":200,"text":""}""")
+        settle()
+        assertEquals("the tap's is still the page's to give", reply("a2", "ok"), host.evaluated.last())
+        assertEquals("{\"v\":2,\"ok\":true,\"code\":200}", (how[0] as TapPayerLink.Handover.Answered).text)
+    }
+
+    @Test
+    fun aTapAnswerIsStillDroppedWhenItsReceiverGaveUpAfterAPutAway() {
+        send("""{"action":"inboxOpen","id":"o"}""")
+        onTheAir()
+        val payer = Payer()
+        payer.linkUp()
+        payer.pay("{}")
+        val tapKey = paidKey()
+        bridge.tapAway()
+        bridge.letGo()
+        advance(TapBridge.ANSWER_KEPT + 0.1)
+        host.evaluated.clear()
+        send("""{"action":"inboxAnswer","id":"late","answer":"$tapKey","status":200,"text":""}""")
+        assertEquals(listOf(reply("late", null, InboxAnswers.NO_PAYMENT_WAITING)), host.evaluated.toList())
+    }
+
     @Test
     fun thePageGoingStopsEverythingAtOnce() {
         onTheAir()
@@ -495,7 +599,7 @@ class TapBridgeTest {
         assertEquals(listOf(true, false), host.shakeSenses.toList())
         host.evaluated.clear()
         send("""{"action":"inboxAnswer","id":"a","answer":"$key","status":200,"text":""}""")
-        assertEquals(listOf(reply("a", null, TapBridge.NO_PAYMENT_WAITING)), host.evaluated.toList())
+        assertEquals(listOf(reply("a", null, InboxAnswers.NO_PAYMENT_WAITING)), host.evaluated.toList())
     }
 
     // MARK: shake and turned

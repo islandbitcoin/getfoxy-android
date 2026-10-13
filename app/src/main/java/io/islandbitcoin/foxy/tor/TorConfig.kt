@@ -56,3 +56,18 @@ object TorConfig {
         if (offline) appendLine("DisableNetwork 1")
     }
 }
+
+/**
+ * The words of an onion service's `ADD_ONION`, as iOS sends them (TorService.swift
+ * `addOnion`): a fresh v3 key Tor never hands over, kept past the control link,
+ * forwarding port 80 to a loopback port of the inbox's.
+ */
+object TorOnion {
+    const val KEY = "NEW:ED25519-V3"
+    val FLAGS: List<String> = listOf("DiscardPK", "Detach")
+
+    fun target(localPort: Int): String = "127.0.0.1:$localPort"
+
+    /** The command line, as jtorctl writes it from [KEY], [FLAGS] and [target]. */
+    fun command(localPort: Int): String = "ADD_ONION $KEY Flags=${FLAGS.joinToString(",")} Port=80,${target(localPort)}"
+}

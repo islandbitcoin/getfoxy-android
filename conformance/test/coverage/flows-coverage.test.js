@@ -27,7 +27,6 @@ const NOT_EXERCISED = {
   p2pkPubkeys: 'scanning for the index a token in hand is locked to; checked statically',
   p2pkKey: 'opening ecash locked to this phone; checked statically',
   counterAdvance: 'a restore lifting a counter; checked statically',
-  onionPost: 'paying a request that names an onion; checked statically',
   nostrSend: 'paying a request that names a Nostr key; checked statically',
   cardTime: 'a card of software 1.14 or before, mid-tap (the ENG-667 flows tap a card of 1.20, which takes block headers)',
 };

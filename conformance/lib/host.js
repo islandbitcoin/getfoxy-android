@@ -30,6 +30,30 @@ const CardHost = require('./card-host');
 const CONTRACT = require('../contract.json');
 
 const BY_NAME = new Map(CONTRACT.map((e) => [e.name, e]));
+
+/* The fake phone's onion service id: 56 characters of base32, the last a "d". */
+const ONION_ID = 'abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwd';
+
+/* What the payer hears for the page's word, as InboxAnswers.answerBody writes it:
+ * {"ok":true}, or {"error":…} escaped as Apple's JSONSerialization escapes (the slash too). */
+function appleJson(text) {
+  let out = '"';
+  for (const ch of String(text)) {
+    const c = ch.codePointAt(0);
+    if (ch === '"') out += '\\"';
+    else if (ch === '\\') out += '\\\\';
+    else if (ch === '/') out += '\\/';
+    else if (ch === '\b') out += '\\b';
+    else if (ch === '\f') out += '\\f';
+    else if (ch === '\n') out += '\\n';
+    else if (ch === '\r') out += '\\r';
+    else if (ch === '\t') out += '\\t';
+    else if (c < 0x20) out += '\\u' + c.toString(16).padStart(4, '0');
+    else out += ch;
+  }
+  return out + '"';
+}
+function answerBody(status, text) { return status === 200 ? '{"ok":true}' : '{"error":' + appleJson(text) + '}'; }
 const ACTIONS = new Map(CONTRACT.filter((e) => e.kind === 'action').map((e) => [e.name, e]));
 const MESSAGES = CONTRACT.filter((e) => e.kind === 'message');
 
@@ -107,6 +131,14 @@ function replyProblems(entry, text, error) {
  *               (`makeCard`), or 'away' for a sheet nobody holds a card to; unset, a phone
  *               that cannot read one. Also `host.state.card`, set by a flow once the page
  *               has loaded (the model needs the page's CashuTS).
+ *   o.seedLabel what this phone's made-up seed is derived from (default
+ *               'conformance seed'): a second phone in the same flow gets its
+ *               own, so the two never make the same secrets at a shared mint
+ *   o.onionPeer another session's host (makeHost) that `onionPost` delivers to,
+ *               as Tor carries a post to the receiving phone's onion inbox: its
+ *               `deliver(url, body)` pushes `_requestPaid` into that page and
+ *               answers with what the page told `inboxAnswer`. Without one, a
+ *               post is answered as an address nobody publishes.
  *   o.bluetooth the phone's Bluetooth, as Android's TapBridge reads it (ENG-670):
  *               'unsupported' (default: no Bluetooth LE peripheral, the ENG-656
  *               answers), or a phone with one whose state is 'allowed', 'off' or
@@ -128,9 +160,10 @@ function makeHost(o) {
     bluetooth: opts.bluetooth || 'unsupported', linked: false, offered: '', early: false,
     shakeArmed: false, answers: new Map(), m6: [],
     card: opts.card || null, cardPull: null,
+    inbox: null,
   };
   if (!['unsupported', 'allowed', 'off', 'denied'].includes(state.bluetooth)) throw new Error('unknown o.bluetooth: ' + state.bluetooth);
-  const SEED = crypto.createHash('sha256').update('conformance seed').digest();
+  const SEED = crypto.createHash('sha256').update(opts.seedLabel || 'conformance seed').digest();
   const derive = (keysetId, counter, what) =>
     crypto.createHmac('sha256', SEED).update(keysetId + '|' + counter + '|' + what).digest('hex');
   const OWNER_SEED = CardOwner.seedOf(opts.ownerWords || 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about');
@@ -146,6 +179,7 @@ function makeHost(o) {
     answered: [],        // [name, text, error]
     replyProblems: [],
     pushes: [],
+    inboxAnswers: [],    // [status, body] each payer was answered, as Android writes it
   };
   const violate = (kind, detail) => host.violations.push({ kind, detail: String(detail).slice(0, 400) });
   for (const name of (opts.unknown || [])) {
@@ -254,20 +288,36 @@ function makeHost(o) {
     biometric: () => ['yes', null],
     openSettings: () => ['ok', null],
     openCompany: (m) => (['cashapp', 'strike', 'river', 'flash'].includes(m.which) ? ['ok', null] : NO('Not one of the listed sites.')),
-    inboxOpen: () => NO('No address: Tor is not ready.'),
-    inboxClose: () => ['ok', null],
-    /* The page's word on a payment it was handed (FoxyBridge+Delivery.swift
-     * `handleInboxAnswer`, TapBridge.kt): taken out by its key, so it is answered
-     * once; the status clamped to 200, 409 or 422 and the text to 300 characters. */
+    /* As Android answers them since ENG-672 (bridge/DeliveryBridge.kt): an address
+     * with Tor up, the same one until it is closed, {"onion"} alone (the Nostr half
+     * is LATER); a post only through Tor, only to a v3 onion, delivered to `o.onionPeer`. */
+    inboxOpen: () => {
+      if (state.tor !== 'up') return NO('No onion address: Tor is not ready.');
+      if (!state.inbox) state.inbox = 'http://' + ONION_ID + '.onion/' + crypto.randomBytes(16).toString('hex');
+      return J({ onion: state.inbox });
+    },
+    inboxClose: () => { state.inbox = null; return ['ok', null]; },
+    /* The page's word on a payment it was handed, from the one table the onion's and the
+     * tap's payments wait in (FoxyBridge+Delivery.swift `handleInboxAnswer`, InboxAnswers.kt):
+     * taken out by its key, so it is answered once; the status clamped to 200, 409 or 422,
+     * the text to 300 characters as a person counts them, and the payer's JSON written as
+     * InboxAnswers.answerBody writes it. A tap's answer reads the reason back out of it. */
     inboxAnswer: (m) => {
       const tell = state.answers.get(m.answer);
       if (!tell) return NO('No payment is waiting on that answer.');
       state.answers.delete(m.answer);
       const status = [200, 409, 422].includes(m.status) ? m.status : 422;
-      tell(status, status === 200 ? '' : Array.from(String(m.text || '')).slice(0, 300).join(''));
+      const text = [...new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(String(m.text || ''))].slice(0, 300).map((x) => x.segment).join('');
+      tell(status, answerBody(status, text));
       return ['ok', null];
     },
-    onionPost: () => NO('That is not an onion address Foxy will post to.'),
+    onionPost: (m) => {
+      if (state.tor !== 'up') return NO('Foxy is not connected to Tor.');
+      if (!/^http:\/\/[a-z2-7]{55}d\.onion(\/[!-~]*)?$/.test(String(m.url))) return NO('That is not an onion address.');
+      if (!m.body) return NO('That payment is too large to send.');
+      if (!opts.onionPeer) return NO('Their phone could not be reached over Tor.');
+      return opts.onionPeer.deliver(m.url, m.body).then((text) => [text, null]);
+    },
     nostrSend: () => NO('The payment could not be sent over Nostr.'),
     /* As Android's TapBridge answers (ENG-670; FoxyBridge+Tap.swift `handleTapReceiveStart`,
      * TapLink.swift `cbState`): a non-empty payload TapRules.kt (TapProtocol.isPayload)
@@ -379,12 +429,43 @@ function makeHost(o) {
     pay: (body) => new Promise((resolve) => {
       if (!state.linked) { violate('tap', 'a payment over no link'); resolve(null); return; }
       const key = crypto.randomBytes(16).toString('hex');
-      state.answers.set(key, (status, why) => { state.m6.push([status, why]); resolve([status, why]); });
+      state.answers.set(key, (status, said) => {
+        // the reason alone, read back out of the payer's JSON (FoxyBridge+Tap.swift 107-110)
+        const why = status === 200 ? '' : (JSON.parse(said).error || '');
+        state.m6.push([status, why]);
+        resolve([status, why]);
+      });
       host.pushAs('_requestPaid', body, key, 'tap');
     }),
     shake: () => { if (state.shakeArmed) host.pushAs('_tap', { side: 'receive', stage: 'shake' }); },
     gone: () => { state.linked = false; host.pushAs('_tap', { side: 'receive', stage: 'gone' }); },
   };
+
+  /* A payment posted to this phone's onion inbox (OnionInbox → DeliveryBridge.paymentArrived):
+   * `_requestPaid(body, key)` pushed into the page with a fresh 32-hex key, and the
+   * payer answered "status\nbody" once the page says how it went (`inboxAnswer`), or
+   * 404 for an address this phone is not answering. Refused, as a push, on a host
+   * whose phase is earlier than the push's. */
+  host.deliver = (url, body) => new Promise((resolve) => {
+    if (!state.inbox || url !== state.inbox) { resolve('404\n'); return; }
+    const entry = BY_NAME.get('_requestPaid');
+    if (opts.phase && laterThan(entry.phase, opts.phase)) {
+      violate('unserved', opts.phase + ' pushes ' + entry.phase + ' push "_requestPaid"');
+      resolve('404\n');
+      return;
+    }
+    const key = crypto.randomBytes(16).toString('hex');
+    // the same table a tap's payment waits in (InboxAnswers.onion)
+    state.answers.set(key, (status, said) => {
+      host.inboxAnswers.push([status, said]);
+      resolve(status + '\n' + said);
+    });
+    host.pushes.push('_requestPaid');
+    setTimeout(() => {
+      const W = host.window && host.window.FoxyWallet;
+      if (W && typeof W._requestPaid === 'function') W._requestPaid(body, key);
+    }, 0);
+  });
 
   /* Call a window global native defines no member for (`__foxyBluetoothAnswer`), as
    * native evaluates `window.X && window.X(arg)`: on a later turn, never inside the
@@ -466,7 +547,7 @@ function makeHost(o) {
     const over = opts.answers && opts.answers[m.action];
     afterReplies = [];
     const got = (over && over(m, host)) || answer[m.action](m, host);
-    // an answer that takes a while (a card's, ENG-667): replied when it comes, as native's
+    // an answer that takes a while (a card's, ENG-667; a post to another phone, ENG-672): replied when it comes, as native's
     if (got && typeof got.then === 'function') {
       const after = afterReplies.splice(0);
       got.then((g) => {
@@ -483,4 +564,4 @@ function makeHost(o) {
   return host;
 }
 
-module.exports = { makeHost, snapshot, replyProblems, laterThan, PHASE_ORDER, CONTRACT };
+module.exports = { makeHost, snapshot, replyProblems, laterThan, answerBody, appleJson, ONION_ID, PHASE_ORDER, CONTRACT };
