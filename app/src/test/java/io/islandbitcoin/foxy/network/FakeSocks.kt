@@ -33,12 +33,20 @@ class FakeSocks(var forwardTo: Int = 0) : AutoCloseable {
     @Volatile var refuseWith = 4
     /** The next this many connections are closed before any reply, as a listener torn down mid-handshake. */
     @Volatile var dropNext = 0
+    /** How long a dropped connection is held, unanswered, before it is closed: a listener that went away after a while. */
+    @Volatile var dropAfterMs = 0L
     /**
      * CONNECT requests are read and never answered, as Tor holds a stream
      * "waiting for circuit" while it will not use the circuits it has (every
      * primary guard marked unreachable, ENG-652): the client's handshake times out.
      */
     @Volatile var holdConnects = false
+    /**
+     * CONNECT requests are granted only after this long, as Tor answers a stream
+     * on a label it is still building a circuit for (ENG-655): right after
+     * "circuit established", a new label's first stream took longer than 30 s.
+     */
+    @Volatile var grantAfterMs = 0L
 
     init {
         thread(isDaemon = true, name = "fake-socks") {
@@ -60,6 +68,7 @@ class FakeSocks(var forwardTo: Int = 0) : AutoCloseable {
             val out = s.getOutputStream()
             if (dropNext > 0) {
                 dropNext--
+                if (dropAfterMs > 0) Thread.sleep(dropAfterMs)
                 s.close()
                 return
             }
@@ -98,6 +107,7 @@ class FakeSocks(var forwardTo: Int = 0) : AutoCloseable {
                 out.write(byteArrayOf(5, refuseWith.toByte(), 0, 1, 0, 0, 0, 0, 0, 0))
                 return s.close()
             }
+            if (grantAfterMs > 0) Thread.sleep(grantAfterMs)
             val target = Socket()
             target.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), forwardTo), 5_000)
             out.write(byteArrayOf(5, 0, 0, 1, 127, 0, 0, 1, 0, 0))
