@@ -75,6 +75,14 @@ jobs:
       - name: Unit tests, lint, the debug APK and the instrumented-test APK
         run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest
 
+      # ENG-680: the Play build keeps compiling. No upload key here, so the bundle is unsigned
+      # (the build says so); docs/RELEASE.md has the signed build.
+      - name: The release bundle, unsigned, and its lint
+        run: ./gradlew --no-daemon lintRelease bundleRelease
+
+      - name: The release signing, with a throwaway key (tools/release-signing.test.sh)
+        run: tools/release-signing.test.sh
+
       # ENG-667: the bridge, CardGate and the debug build's SimCardLink against getfoxy/card's own
       # applet at tools/cardsim.PIN, built with that repository's tooling (Maven) and run in jCardSim
       - name: The card session against the real applet in jCardSim
