@@ -688,3 +688,66 @@ test('the onion doors (ENG-672): the fake host answers as DeliveryBridge does, a
   assert.equal(await p2.deliver(onion, '{}'), '404\n');
   assert.deepEqual(kinds(p2.violations), ['unserved']);
 });
+
+test('the Nostr doors (ENG-677): the fake host answers as DeliveryBridge and NostrDelivery do, and its nprofile is NIP-19\'s', async () => {
+  const { encode, decode, nprofile, readNprofile } = require('../lib/nprofile');
+  const { INBOX_RELAYS, FALLBACK_RELAYS } = require('../lib/host');
+  // NIP-19's own worked example, written and read; and BIP-173's strings, re-encoded
+  const example = 'nprofile1qqsrhuxx8l9ex335q7he0f09aej04zpazpl0ne2cgukyawd24mayt8gpp4mhxue69uhhytnc9e3k7mgpz4mhxue69uhkg6nzv9ejuumpv34kytnrdaksjlyr9p';
+  assert.equal(nprofile('3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d', ['wss://r.x.com', 'wss://djbas.sadkb.com']), example);
+  assert.deepEqual(readNprofile(example), { pubkey: '3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d', relays: ['wss://r.x.com', 'wss://djbas.sadkb.com'] });
+  assert.equal(readNprofile(example.slice(0, -1) + 'q'), null, 'a wrong checksum');
+  for (const v of ['abcdef1qpzry9x8gf2tvdw0s3jn54khce6mua7lmqqqxw', 'split1checkupstagehandshakeupstreamerranterredcaperred2y9e3w']) {
+    const d = decode(v);
+    assert.equal(encode(d.prefix, d.bytes), v);
+  }
+  assert.deepEqual(INBOX_RELAYS, FALLBACK_RELAYS.slice(0, 4));
+
+  const by = (n) => CONTRACT.find((e) => e.name === n);
+  const h = makeHost({ phase: 'P3', tor: 'up' });
+  const open = h.answerers.inboxOpen();
+  assert.deepEqual(replyProblems(by('inboxOpen'), open[0], open[1]), []);
+  const got = JSON.parse(open[0]);
+  assert.deepEqual(Object.keys(got), ['onion', 'nostr'], 'the onion first, then the key, as iOS joins them');
+  assert.equal(readNprofile(got.nostr).pubkey, h.state.nostr.key);
+  assert.deepEqual(readNprofile(got.nostr).relays, INBOX_RELAYS);
+  assert.equal(JSON.parse(h.answerers.inboxOpen()[0]).nostr, got.nostr, 'the same key until it closes');
+  // a payment for this key reaches the page; one for another key, or after the close, does not
+  assert.equal(h.deliverNostr('00'.repeat(32), '{}'), false);
+  assert.equal(h.deliverNostr(h.state.nostr.key, '{}'), true);
+  assert.deepEqual(h.pushes, ['_requestPaid']);
+  const key = h.state.nostr.key;
+  h.answerers.inboxClose();
+  assert.equal(h.state.nostr, null);
+  assert.equal(h.deliverNostr(key, '{}'), false, 'closed: not heard');
+  assert.notEqual(JSON.parse(h.answerers.inboxOpen()[0]).nostr, got.nostr, 'a fresh key for the next request');
+  // nobody waits on a Nostr payment's answer
+  assert.deepEqual(h.answerers.inboxAnswer({ answer: '', status: 200, text: '' }), [null, 'No payment is waiting on that answer.']);
+  // no relay listening: the onion alone
+  const deaf = makeHost({ phase: 'P3', tor: 'up', nostrDeaf: true });
+  assert.deepEqual(Object.keys(JSON.parse(deaf.answerers.inboxOpen()[0])), ['onion']);
+
+  // nostrSend: DeliveryBridge's refusals, then how many relays took it
+  const target = nprofile('11'.repeat(32), ['wss://one.example', 'ws://plain.example', 'wss://one.example', 'wss://two.example']);
+  assert.deepEqual(h.answerers.nostrSend({ body: '{}' }), [null, 'That request names no Nostr address.']);
+  assert.deepEqual(h.answerers.nostrSend({ target: '', body: '{}' }), [null, 'That request names no Nostr address.']);
+  assert.deepEqual(h.answerers.nostrSend({ target, body: '' }), [null, 'That payment is too large to send over Nostr.']);
+  assert.deepEqual(h.answerers.nostrSend({ target, body: 'a'.repeat(32768) }), [null, 'That payment is too large to send over Nostr.']);
+  assert.deepEqual(h.answerers.nostrSend({ target, body: 'é'.repeat(16384) }), [null, 'That payment is too large to send over Nostr.']);
+  assert.deepEqual(h.answerers.nostrSend({ target: 'nprofile1bent', body: '{}' }), [null, 'The payment could not be sent over Nostr.']);
+  assert.deepEqual(h.answerers.nostrSend({ target, body: 'a'.repeat(32767) }), ['2', null], 'two wss relays, each once');
+  assert.deepEqual(h.answerers.nostrSend({ target: nprofile('11'.repeat(32), []), body: '{}' }), ['4', null], 'none named: the fallbacks');
+  const off = makeHost({ phase: 'P3', tor: 'connecting' });
+  assert.deepEqual(off.answerers.nostrSend({ target, body: '{}' }), [null, 'No relay took the payment: Foxy is not connected to Tor.']);
+  const errors = by('nostrSend').reply.errors;
+  for (const e of ['That request names no Nostr address.', 'That payment is too large to send over Nostr.', 'The payment could not be sent over Nostr.']) {
+    assert.ok(errors.includes(e), e + ' is an error the contract lists');
+  }
+  assert.ok(errors.some((e) => e.startsWith('No relay took the payment: ')));
+  assert.equal(by('nostrSend').phase, 'P3');
+  // a P2 host may not push _requestPaid (P3)
+  const p2 = makeHost({ phase: 'P2', tor: 'up' });
+  p2.state.nostr = { key: '22'.repeat(32), nprofile: '' };
+  assert.equal(p2.deliverNostr('22'.repeat(32), '{}'), false);
+  assert.deepEqual(kinds(p2.violations), ['unserved']);
+});

@@ -27,12 +27,18 @@ const { check } = require('./schema');
 const TapRules = require('./tap-rules');
 const CardOwner = require('./card-owner');
 const CardHost = require('./card-host');
+const { nprofile, readNprofile } = require('./nprofile');
 const CONTRACT = require('../contract.json');
 
 const BY_NAME = new Map(CONTRACT.map((e) => [e.name, e]));
 
 /* The fake phone's onion service id: 56 characters of base32, the last a "d". */
 const ONION_ID = 'abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwd';
+
+/* The relays a Nostr inbox listens on and its nprofile names (NostrInbox.RELAYS, the first four
+ * of NostrDelivery.FALLBACK_RELAYS), and the fallbacks a payment goes to when a request names none. */
+const FALLBACK_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net', 'wss://relay.minibits.cash'];
+const INBOX_RELAYS = FALLBACK_RELAYS.slice(0, 4);
 
 /* What the payer hears for the page's word, as InboxAnswers.answerBody writes it:
  * {"ok":true}, or {"error":…} escaped as Apple's JSONSerialization escapes (the slash too). */
@@ -139,6 +145,13 @@ function replyProblems(entry, text, error) {
  *               `deliver(url, body)` pushes `_requestPaid` into that page and
  *               answers with what the page told `inboxAnswer`. Without one, a
  *               post is answered as an address nobody publishes.
+ *   o.nostrPeer another session's host whose Nostr inbox the relays carry this
+ *               phone's `nostrSend` to (ENG-677): a gift wrap for the key its
+ *               request named reaches its page as `_requestPaid(body, "")`. The
+ *               relays take any event, so without one (or for a key nobody
+ *               listens on) a send is still taken by every relay it names.
+ *   o.nostrDeaf true: no relay will listen, so `inboxOpen` answers the onion
+ *               alone, as Android and iOS do then
  *   o.bluetooth the phone's Bluetooth, as Android's TapBridge reads it (ENG-670):
  *               'unsupported' (default: no Bluetooth LE peripheral, the ENG-656
  *               answers), or a phone with one whose state is 'allowed', 'off' or
@@ -160,7 +173,7 @@ function makeHost(o) {
     bluetooth: opts.bluetooth || 'unsupported', linked: false, offered: '', early: false,
     shakeArmed: false, answers: new Map(), m6: [],
     card: opts.card || null, cardPull: null,
-    inbox: null,
+    inbox: null, nostr: null,
   };
   if (!['unsupported', 'allowed', 'off', 'denied'].includes(state.bluetooth)) throw new Error('unknown o.bluetooth: ' + state.bluetooth);
   const SEED = crypto.createHash('sha256').update(opts.seedLabel || 'conformance seed').digest();
@@ -180,6 +193,7 @@ function makeHost(o) {
     replyProblems: [],
     pushes: [],
     inboxAnswers: [],    // [status, body] each payer was answered, as Android writes it
+    answersAsked: [],    // [answer, status] of every inboxAnswer the page asked, a Nostr payment's "" included
   };
   const violate = (kind, detail) => host.violations.push({ kind, detail: String(detail).slice(0, 400) });
   for (const name of (opts.unknown || [])) {
@@ -288,21 +302,29 @@ function makeHost(o) {
     biometric: () => ['yes', null],
     openSettings: () => ['ok', null],
     openCompany: (m) => (['cashapp', 'strike', 'river', 'flash'].includes(m.which) ? ['ok', null] : NO('Not one of the listed sites.')),
-    /* As Android answers them since ENG-672 (bridge/DeliveryBridge.kt): an address
-     * with Tor up, the same one until it is closed, {"onion"} alone (the Nostr half
-     * is LATER); a post only through Tor, only to a v3 onion, delivered to `o.onionPeer`. */
+    /* As Android answers them since ENG-672 and ENG-677 (bridge/DeliveryBridge.kt): with Tor
+     * up, an onion address and a Nostr key made for the request (an nprofile naming it and
+     * the four relays it listens on), the same ones until they are closed, {"onion","nostr"}
+     * in that order, or {"onion"} alone when no relay would listen (o.nostrDeaf); a post only
+     * through Tor, only to a v3 onion, delivered to `o.onionPeer`. */
     inboxOpen: () => {
       if (state.tor !== 'up') return NO('No onion address: Tor is not ready.');
       if (!state.inbox) state.inbox = 'http://' + ONION_ID + '.onion/' + crypto.randomBytes(16).toString('hex');
-      return J({ onion: state.inbox });
+      if (!state.nostr && !opts.nostrDeaf) {
+        const key = crypto.randomBytes(32).toString('hex');
+        state.nostr = { key, nprofile: nprofile(key, INBOX_RELAYS) };
+      }
+      return state.nostr ? J({ onion: state.inbox, nostr: state.nostr.nprofile }) : J({ onion: state.inbox });
     },
-    inboxClose: () => { state.inbox = null; return ['ok', null]; },
+    // the onion address and the Nostr key alike end with the request (handleInboxClose)
+    inboxClose: () => { state.inbox = null; state.nostr = null; return ['ok', null]; },
     /* The page's word on a payment it was handed, from the one table the onion's and the
      * tap's payments wait in (FoxyBridge+Delivery.swift `handleInboxAnswer`, InboxAnswers.kt):
      * taken out by its key, so it is answered once; the status clamped to 200, 409 or 422,
      * the text to 300 characters as a person counts them, and the payer's JSON written as
      * InboxAnswers.answerBody writes it. A tap's answer reads the reason back out of it. */
     inboxAnswer: (m) => {
+      host.answersAsked.push([m.answer, m.status]);
       const tell = state.answers.get(m.answer);
       if (!tell) return NO('No payment is waiting on that answer.');
       state.answers.delete(m.answer);
@@ -318,7 +340,24 @@ function makeHost(o) {
       if (!opts.onionPeer) return NO('Their phone could not be reached over Tor.');
       return opts.onionPeer.deliver(m.url, m.body).then((text) => [text, null]);
     },
-    nostrSend: () => NO('The payment could not be sent over Nostr.'),
+    /* As DeliveryBridge.nostrSend and NostrDelivery answer (ENG-677): a target, a body of at
+     * most 32767 UTF-8 bytes, an nprofile that reads, and relays that are wss (each once, at
+     * most five, the fallbacks when it names none); Tor only. Every relay takes the wrap, as
+     * relays do, so the answer is how many there were; the receiver named by `o.nostrPeer`
+     * gets it if its key is the one the request named and is still listening. */
+    nostrSend: (m) => {
+      if (typeof m.target !== 'string' || !m.target) return NO('That request names no Nostr address.');
+      const body = typeof m.body === 'string' ? m.body : '';
+      if (!body || Buffer.byteLength(body, 'utf8') > 32767) return NO('That payment is too large to send over Nostr.');
+      const profile = readNprofile(m.target);
+      if (!profile) return NO('The payment could not be sent over Nostr.');
+      const named = profile.relays.length ? profile.relays : FALLBACK_RELAYS;
+      const relays = [...new Set(named.map((r) => r.trim()).filter((r) => /^wss:\/\/[!-~]+$/.test(r)))].slice(0, 5);
+      if (!relays.length) return NO('The payment could not be sent over Nostr.');
+      if (state.tor !== 'up') return NO('No relay took the payment: Foxy is not connected to Tor.');
+      if (opts.nostrPeer) opts.nostrPeer.deliverNostr(profile.pubkey, body);
+      return [String(relays.length), null];
+    },
     /* As Android's TapBridge answers (ENG-670; FoxyBridge+Tap.swift `handleTapReceiveStart`,
      * TapLink.swift `cbState`): a non-empty payload TapRules.kt (TapProtocol.isPayload)
      * would refuse is refused with its words, making no receiver; otherwise "ok", and
@@ -446,6 +485,27 @@ function makeHost(o) {
    * payer answered "status\nbody" once the page says how it went (`inboxAnswer`), or
    * 404 for an address this phone is not answering. Refused, as a push, on a host
    * whose phase is earlier than the push's. */
+  /* A gift wrap for `key` that a relay hands this phone's Nostr inbox (NostrInbox → DeliveryBridge.
+   * nostrPaymentArrived): `_requestPaid(body, "")` pushed into the page when the key is the one
+   * its request named and is still open, once per wrap. Nobody waits on the answer: the payer
+   * published and walked away, so no key goes in the answers table. A key that was closed (or
+   * never this phone's) hears nothing: the relay keeps the wrap, unread. Refused, as a push, on
+   * a host whose phase is earlier than the push's. */
+  host.deliverNostr = (key, body) => {
+    if (!state.nostr || state.nostr.key !== key) return false;
+    const entry = BY_NAME.get('_requestPaid');
+    if (opts.phase && laterThan(entry.phase, opts.phase)) {
+      violate('unserved', opts.phase + ' pushes ' + entry.phase + ' push "_requestPaid"');
+      return false;
+    }
+    host.pushes.push('_requestPaid');
+    setTimeout(() => {
+      const W = host.window && host.window.FoxyWallet;
+      if (W && typeof W._requestPaid === 'function') W._requestPaid(body, '');
+    }, 0);
+    return true;
+  };
+
   host.deliver = (url, body) => new Promise((resolve) => {
     if (!state.inbox || url !== state.inbox) { resolve('404\n'); return; }
     const entry = BY_NAME.get('_requestPaid');
@@ -564,4 +624,4 @@ function makeHost(o) {
   return host;
 }
 
-module.exports = { makeHost, snapshot, replyProblems, laterThan, answerBody, appleJson, ONION_ID, PHASE_ORDER, CONTRACT };
+module.exports = { makeHost, snapshot, replyProblems, laterThan, answerBody, appleJson, ONION_ID, FALLBACK_RELAYS, INBOX_RELAYS, PHASE_ORDER, CONTRACT };
