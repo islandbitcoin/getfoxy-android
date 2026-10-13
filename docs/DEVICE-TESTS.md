@@ -678,10 +678,12 @@ software and the build's commit.
 `autoVerify="false"` today: Android verifies an App Link against
 `https://getfoxy.io/.well-known/assetlinks.json`, which must list the package
 `io.islandbitcoin.foxy` with the SHA-256 fingerprint of the **release** signing
-certificate, and there is no release key yet (debug builds only). Once a
-release key is decided: send Mike Greff (getfoxy/iOS developer, who controls
-getfoxy.io and already serves its apple-app-site-association) the fingerprint
-(`keytool -list -v -keystore <release keystore>`) and this file:
+certificate. The Play build is signed for the store by Play App Signing
+(`docs/RELEASE.md` §4), so that is the **app signing** certificate Play Console
+shows (Setup → App signing), not the upload key's. Once the app exists in Play
+Console: send Mike Greff (getfoxy/iOS developer, who controls
+getfoxy.io and already serves its apple-app-site-association) that fingerprint
+and this file:
 
 ```json
 [{

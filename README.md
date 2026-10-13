@@ -31,6 +31,8 @@ dialog, to continue without Tor for the session.
 | `tools/cdp-eval.js`, `tools/real-money.js`, `tools/fake-invoice.js` | drive the page of a debug build over WebView debugging; the money rules of a leg on a real mint (the person's go, 100 sats or less, the person's own invoice: docs/DEVICE-TESTS.md "Real money"); an invoice that pays no one, for the scanner check only, never paid |
 | `tools/cardsim-test.sh`, `tools/cardsim.PIN` | the card session end to end: getfoxy/card's applet at the pinned commit, built with that repository's own tooling and run in jCardSim, driven through the bridge and the debug build's simulator link (`CardSimEndToEndTest`) |
 | `docs/DEVICE-TESTS.md` | what is checked on a phone: the instrumented tests and the checks by hand |
+| `docs/RELEASE.md` | the Play internal-testing release: the upload key (read from outside the repository), R8 off, what a release leaves out, the Play Console steps, the Data safety answers and the checklist |
+| `tools/release-signing.test.sh` | the release signing, with a throwaway keystore and a stub for the Keychain: the key read only when a release is signed, a missing or wrong one failing clearly, a signed and an unsigned bundle |
 | `app/art/NOTICE.md`, `tools/make-art.py` | the app's icons and splash, cut from the iOS art at `core/PIN`'s commit: each source, its sha256 and the upstream licence; the script that cuts them (Pillow, by hand) |
 
 ## Checks
@@ -46,7 +48,9 @@ node --test tools/leak-check.test.js tools/fake-invoice.test.js tools/real-money
 
 # the app (JDK 17, Android SDK platform 37.1: tor-android's AAR asks for it)
 tools/check-no-network.sh && tools/check-no-network.test.sh
-./gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest
+./gradlew testDebugUnitTest lintDebug lintRelease assembleDebug assembleDebugAndroidTest bundleRelease
+# the release signing, with a throwaway key (docs/RELEASE.md)
+tools/release-signing.test.sh
 # the card session against getfoxy/card's applet in jCardSim (JDK 17 and Maven; tools/cardsim.PIN)
 tools/cardsim-test.sh [path/to/getfoxy-card-clone]
 # on a phone (docs/DEVICE-TESTS.md)
