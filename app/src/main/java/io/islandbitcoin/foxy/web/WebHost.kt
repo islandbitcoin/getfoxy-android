@@ -92,7 +92,9 @@ class WebHost(
         fun notifications(done: (Boolean) -> Unit)
 
         /**
-         * BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT (API 31+), asked together; `done(true)` granted,
+         * Tap to pay's permissions ([io.islandbitcoin.foxy.tap.BluetoothAnswer]: the receiver's
+         * BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT, the payer's BLUETOOTH_SCAN, or ACCESS_FINE_LOCATION
+         * on API 28-30), asked together; `done(true)` granted,
          * `done(false)` refused, `done(null)` when nobody answered (the request was cancelled or interrupted).
          */
         fun bluetooth(permissions: List<String>, done: (Boolean?) -> Unit)
@@ -397,6 +399,8 @@ class WebHost(
         return tapBluetooth ?: AndroidTapBluetooth(activity) { needed, done -> permissions.bluetooth(needed, done) }
             .also { tapBluetooth = it }
     }
+
+    override fun deviceModel(): String = android.os.Build.MODEL ?: ""
 
     override fun shakeSense(on: Boolean, onShake: () -> Unit) {
         shakeOn = if (on) onShake else null

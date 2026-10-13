@@ -77,18 +77,23 @@ class BridgeContractTest {
         val laterStubs = entries.filter { it["kind"] == "action" && it["p1"] != null && it["phase"] !in served }.map { it["name"] as String }.toSet()
         assertEquals(18, p1.size)
         assertEquals(setOf("privacy", "torRetry", "unprotected", "mintRequest", "price", "candles", "hostsKnown"), p2)
-        assertEquals(38, p3.size)
+        assertEquals(43, p3.size)
         assertTrue("bluetoothAsk is P3 (ENG-656)", "bluetoothAsk" in p3)
         assertTrue(
             "tap to pay's receiving side is P3 (ENG-670)",
             p3.containsAll(setOf("tapChange", "tapAsking", "tapChangeDue", "tapTerms", "shakeStart", "shakeStop", "inboxAnswer")),
+        )
+        assertTrue(
+            "tap to pay's paying side is P3 (ENG-671)",
+            p3.containsAll(setOf("tapPayStart", "tapPayStop", "tapSend", "tapChangeKept", "tapQuote")),
         )
         assertEquals("exactly those are the tap bridge's", TapBridge.ACTIONS, p3.intersect(TapBridge.ACTIONS))
         assertTrue("a card's owner key and its signed time are P3 (ENG-666)", p3.containsAll(setOf("cardOwnerKey", "cardOwnerSign", "cardTime")))
         assertTrue("the receive screen's TAP is P3 (ENG-656)", p3.containsAll(setOf("tapReceiveStart", "tapReceiveStop")))
         assertTrue("the card session is P3 (ENG-667)", p3.containsAll(setOf("cardBegin", "cardSend", "cardSay", "cardAgain", "cardEnd")))
         assertEquals(setOf("captured", "orbotRefresh", "orbotAccess", "seedProtection", "tapPayStart", "pasteStart", "pasteStop"), stubs)
-        assertEquals(setOf("orbotRefresh", "orbotAccess", "tapPayStart"), laterStubs)
+        // tapPayStart keeps its stub for P1 and P2 hosts; a P3 host serves it (ENG-671, ENG-658)
+        assertEquals(setOf("orbotRefresh", "orbotAccess"), laterStubs)
         assertEquals(p1, FoxyBridge.P1_ACTIONS)
         assertEquals(p2, FoxyBridge.P2_ACTIONS)
         assertEquals(p3, FoxyBridge.P3_ACTIONS)
@@ -144,6 +149,9 @@ class BridgeContractTest {
             "cardEnd" to ""","text":"Done."""",
             "tapChange" to ""","body":"cashuBx"""", "tapAsking" to "", "tapChangeDue" to "", "tapTerms" to ""","body":"{}"""",
             "shakeStart" to "", "shakeStop" to "", "inboxAnswer" to ""","answer":"00112233445566778899aabbccddeeff","status":200,"text":""""",
+            // the payer's (ENG-671): a listen is answered only by an offer, so TAP TO PAY, which is answered at once
+            "tapPayStart" to ""","now":true""", "tapPayStop" to "", "tapSend" to ""","body":"cashuBx"""",
+            "tapChangeKept" to ""","kept":true""", "tapQuote" to ""","body":"{}"""",
         )
         assertEquals(FoxyBridge.P3_ACTIONS, bodies.keys)
         // and each again with what the page should not send, which must still be a listed answer
@@ -154,6 +162,7 @@ class BridgeContractTest {
             "seedCandidateForget" to "", "tapReceiveStart" to ""","payload":"not an offer"""",
             "cardSend" to ""","apdu":"zz"""", "cardBegin" to ""","text":5""", "cardEnd" to ""","error":"x\u0000y"""",
             "tapChange" to ""","body":""""", "inboxAnswer" to ""","answer":5,"status":"x"""",
+            "tapSend" to ""","body":""""", "tapChangeKept" to ""","kept":"yes"""", "tapQuote" to ""","body":5""",
             "cardOwnerKey" to ""","key":"04"""", "cardOwnerSign" to ""","key":"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","label":"lock","nonce":"000102030405060708090a0b0c0d0e0f","value":""""",
         )
         for (round in listOf(bodies, wrong)) {
@@ -212,7 +221,7 @@ class BridgeContractTest {
     @Test
     fun eachLaterStubAnswersTheContractsTextOrErrorExactly() {
         val stubs = entries.filter { it["kind"] == "action" && it["p1"] != null && it["phase"] !in served }
-        assertEquals(3, stubs.size)
+        assertEquals(2, stubs.size)
         for ((n, e) in stubs.withIndex()) {
             val name = e["name"] as String
             @Suppress("UNCHECKED_CAST")
@@ -230,17 +239,15 @@ class BridgeContractTest {
         // and tapReceiveStart and tapReceiveStop are P3, answered as an iPhone without Bluetooth answers (TapReceiveTest);
         // and in ENG-666: cardOwnerKey, cardOwnerSign and cardTime are P3, answered as iOS answers them (CardBridgeTest);
         // and in ENG-667: the card session (cardBegin, cardSend, cardSay, cardAgain, cardEnd) is P3 (CardSessionTest);
-        // and in ENG-670: tap to pay's receiving side is P3 (TapBridgeTest), the payer's (ENG-671) is still unknown.
+        // and in ENG-670: tap to pay's receiving side is P3 (TapBridgeTest);
+        // and in ENG-671: the payer's side is P3 too (TapPayBridgeTest): what is left is the onion and Nostr (ENG-672).
         // Named one by one, so a later action that stops being unknown has to be taken off here by hand.
         val later = entries.filter { it["kind"] == "action" && it["phase"] !in served && it["p1"] == null }.map { it["name"] as String }
         assertEquals(
-            setOf(
-                "inboxOpen", "inboxClose", "onionPost", "nostrSend",
-                "tapSend", "tapChangeKept", "tapQuote", "tapPayStop",
-            ),
+            setOf("inboxOpen", "inboxClose", "onionPost", "nostrSend"),
             later.toSet(),
         )
-        assertEquals(8, later.size)
+        assertEquals(4, later.size)
         assertTrue(later.contains("inboxOpen"))
         assertFalse("bluetoothAsk is no longer unknown", later.contains("bluetoothAsk"))
         assertFalse("tapReceiveStart is no longer unknown", later.contains("tapReceiveStart"))
@@ -248,6 +255,9 @@ class BridgeContractTest {
         for (name in listOf("cardOwnerKey", "cardOwnerSign", "cardTime")) assertFalse("$name is no longer unknown", later.contains(name))
         for (name in CardBridge.ACTIONS) assertFalse("$name is no longer unknown (ENG-667)", later.contains(name))
         for (name in TapBridge.ACTIONS) assertFalse("$name is no longer unknown", later.contains(name))
+        for (name in listOf("tapPayStart", "tapPayStop", "tapSend", "tapChangeKept", "tapQuote")) {
+            assertFalse("$name is no longer unknown (ENG-671)", later.contains(name))
+        }
         assertTrue(later.none { it in FoxyBridge.P3_ACTIONS })
         for (name in later) {
             host.evaluated.clear()

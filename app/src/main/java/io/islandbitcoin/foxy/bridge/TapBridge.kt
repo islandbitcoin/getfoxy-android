@@ -6,14 +6,16 @@ import io.islandbitcoin.foxy.tap.BluetoothAnswer
 import io.islandbitcoin.foxy.tap.ChangeHandover
 import io.islandbitcoin.foxy.tap.TapBluetooth
 import io.islandbitcoin.foxy.tap.TapClock
+import io.islandbitcoin.foxy.tap.TapPayer
+import io.islandbitcoin.foxy.tap.TapPayerLink
 import io.islandbitcoin.foxy.tap.TapReceiver
 import io.islandbitcoin.foxy.tap.TapReceiverLink
 import io.islandbitcoin.foxy.tap.TapStage
 import java.text.BreakIterator
 
 /**
- * Tap to pay's receiving side and the doors around it (Foxy/Bridge/FoxyBridge+Tap.swift
- * at 8df0bb1), ENG-670:
+ * Tap to pay, both sides, and the doors around it (Foxy/Bridge/FoxyBridge+Tap.swift
+ * at 8df0bb1), ENG-670 (receiving) and ENG-671 (paying):
  *
  * - `bluetoothAsk`: the first-install Bluetooth screen's APPROVE. The system's
  *   question for BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT (API 31+), and the
@@ -31,10 +33,23 @@ import java.text.BreakIterator
  *   (ENG-672) answers through the same registry.
  * - `shakeStart` / `shakeStop`: a shake presses TAP while armed (`_tap` `shake`);
  *   and `_turned`, the phone the other way up, from [turned].
+ * - `tapPayStart` / `tapPayStop` (ENG-671): the payer listens ([TapPayer]) from
+ *   home and the send screen, and `tapPayStart` is answered `{payload, code}`
+ *   once the nearest receiver's offer is in. It is never answered for a radio
+ *   that is off, not allowed or missing: the stage says so
+ *   (`_tap({side:"pay",…})`) and the listen waits for the radio, as iOS's does,
+ *   so the page has no reason to ask again (ENG-658). `now` is TAP TO PAY pressed
+ *   on the toast. Another `tapPayStart` answers the waiting one "Started again.",
+ *   `tapPayStop` and the page going answer it "Stopped.".
+ * - `tapSend`, `tapQuote`, `tapChangeKept` (ENG-671): the payment over the held
+ *   link (the receiver's M6 as the answer, or why it never got there), M10, and
+ *   M8 once the page has the change written down; `_tapChange` and `_tapTerms`.
  *
- * Nothing advertises while Foxy is put away ([away], [back]): the receiver is
- * let go and, if the page still wants it, a new one goes on the air when Foxy is
- * in front again. Main thread for everything but [handle]'s first checks.
+ * Nothing advertises or scans while Foxy is put away ([away], [back]): the
+ * receiver is let go and, if the page still wants it, a new one goes on the air
+ * when Foxy is in front again; the payer stops listening and listens again, and
+ * a payer with a payment handed over asks the receiver what it missed. Main
+ * thread for everything but [handle]'s first checks.
  */
 class TapBridge(
     private val host: PageHost,
@@ -45,6 +60,7 @@ class TapBridge(
             "bluetoothAsk", "tapReceiveStart", "tapReceiveStop",
             "tapChange", "tapAsking", "tapChangeDue", "tapTerms",
             "shakeStart", "shakeStop", "inboxAnswer",
+            "tapPayStart", "tapPayStop", "tapSend", "tapChangeKept", "tapQuote",
         )
 
         const val STILL_GOING = "That payment is still going through. A moment."
@@ -52,6 +68,23 @@ class TapBridge(
         const val NO_CHANGE = "There is no change to send."
         const val CHANGE_NOT_KEPT = "The payer's phone did not say it kept the change."
         const val NO_PAYMENT_WAITING = "No payment is waiting on that answer."
+
+        /** A listen ended by another `tapPayStart`, and by `tapPayStop` or the page going (FoxyBridge+Tap.swift `endTapPay`). */
+        const val STARTED_AGAIN = "Started again."
+        const val STOPPED = "Stopped."
+
+        /** `tapSend` with no body (`handleTapSend`). */
+        const val NOTHING_TO_HAND_OVER = "There is nothing to hand over."
+
+        /** `tapChangeKept` with no change waiting (`handleTapChangeKept`). */
+        const val NO_CHANGE_WAITING = "No change is waiting to be kept."
+
+        /** After Foxy is back in front, how long before a payer with a payment handed over asks again (FoxyWebView.swift `cameToFront`). */
+        const val WOKE_AFTER = 0.4
+
+        /** `{"payload":…,"code":…}`, as `handleTapPayStart` builds it. */
+        fun offerReply(payload: String, code: String): String =
+            "{\"payload\":" + FoxyBridge.literal(payload) + ",\"code\":" + FoxyBridge.literal(code) + "}"
 
         /** `inboxAnswer`'s text is cut to this many characters (FoxyBridge+Delivery.swift `handleInboxAnswer`). */
         const val MOST_ANSWER_TEXT = 300
@@ -111,6 +144,13 @@ class TapBridge(
     /** What the page has on the air, for a receiver made again after Foxy comes back; null once it said stop. */
     private var wanted: Pair<String, Boolean>? = null
 
+    /** The payer listening, and the `tapPayStart` its offer answers (FoxyBridge.swift `tapPayer`, `tapPayId`). */
+    private var payer: TapPayer? = null
+    private var payId: String? = null
+
+    /** How the page says it kept the change that arrived (`tapChangeKeep`). */
+    private var changeKeep: ((Boolean) -> Unit)? = null
+
     private val bluetooth: TapBluetooth by lazy { host.bluetooth() ?: TapBluetooth.None(HostClock(host)) }
 
     private fun evaluate(js: String) = host.post { host.evaluate(js) }
@@ -164,6 +204,39 @@ class TapBridge(
                 resolve(id, "ok", null)
             }
             "inboxAnswer" -> inboxAnswer(id, body)
+            "tapPayStart" -> {
+                if (body["now"] as? Boolean == true) {
+                    // TAP TO PAY on the toast: the listen already running takes the receiver it hears; answered at once
+                    host.post {
+                        payer?.connectNearby()
+                        resolve(id, "ok", null)
+                    }
+                    return
+                }
+                host.post { tapPayStart(id) }
+            }
+            "tapPayStop" -> host.post {
+                endTapPay(STOPPED)
+                resolve(id, "ok", null)
+            }
+            "tapSend" -> {
+                val text = body["body"] as? String ?: ""
+                if (text.isEmpty()) return resolve(id, null, NOTHING_TO_HAND_OVER)
+                host.post { tapSend(id, text) }
+            }
+            "tapChangeKept" -> {
+                val kept = body["kept"] as? Boolean ?: false
+                host.post {
+                    val answer = changeKeep ?: return@post resolve(id, null, NO_CHANGE_WAITING)
+                    changeKeep = null
+                    answer(kept)
+                    resolve(id, "ok", null)
+                }
+            }
+            "tapQuote" -> {
+                val text = body["body"] as? String ?: ""
+                host.post { if (payer?.sendQuote(text) == true) resolve(id, "ok", null) else resolve(id, null, NO_LINK) }
+            }
             else -> resolve(id, null, "Unknown action: $action")
         }
     }
@@ -201,8 +274,11 @@ class TapBridge(
         }
         timer = b.clock.after(BluetoothAnswer.WAIT) { finish(BluetoothAnswer.UNKNOWN) }
         // no question on a phone that could not use the answer, nor when it is already given, nor again once
-        // refused (a refusal then reads `denied` with no dialog, as iOS's `.unauthorized`)
-        if (!BluetoothAnswer.worthAsking(b.adapter, b.power(), b.advertises) || b.permitted() || b.refused()) return follow()
+        // refused (a refusal then reads `denied` with no dialog, as iOS's `.unauthorized`). iOS's one
+        // authorization covers both roles, so the payer's permissions are asked in the same question (ENG-671)
+        val receiverOwed = !b.permitted() && !b.refused()
+        val payerOwed = !b.scanPermitted() && !b.scanRefused()
+        if (!BluetoothAnswer.worthAsking(b.adapter, b.power(), b.advertises) || (!receiverOwed && !payerOwed)) return follow()
         b.ask { follow() }
     }
 
@@ -301,6 +377,75 @@ class TapBridge(
         if (!sent) resolve(id, null, NO_LINK)
     }
 
+    // MARK: the payer (ENG-671)
+
+    /**
+     * A new listen (FoxyBridge+Tap.swift `handleTapPayStart`): the one before is
+     * ended and its call answered "Started again.", and this call is answered
+     * with the offer once it is in. Not before: a radio that is off, refused or
+     * missing is said as a stage, and the listen goes on waiting for it.
+     */
+    private fun tapPayStart(id: String) {
+        endTapPay(STARTED_AGAIN)
+        payId = id
+        var made: TapPayer? = null
+        val p = TapPayer(
+            bluetooth,
+            onStage = { stage ->
+                // `nearby` carries which edge of this screen the mark goes on; `sending`, how far the payment has got
+                val detail = when (stage) {
+                    TapStage.NEARBY -> made?.edge
+                    TapStage.SENDING -> made?.progress?.toString()
+                    else -> null
+                }
+                pushTap("pay", stage, detail)
+            },
+            done = { payload, code ->
+                if (payId == id) {
+                    payId = null
+                    // the payer is kept: its link is still open and the payment goes back over it (tapSend)
+                    resolve(id, offerReply(payload, code), null)
+                }
+            },
+            onChange = { token, kept ->
+                // change is money: the page is asked, and its answer is what goes back as M8
+                if (payId != null && payId != id) {
+                    kept(false)
+                } else {
+                    changeKeep = kept
+                    host.evaluate(PlatformBridge.push("_tapChange", token))
+                }
+            },
+            onTerms = { text -> host.evaluate(PlatformBridge.push("_tapTerms", text)) },
+            thisModel = host.deviceModel(),
+        )
+        made = p
+        payer = p
+        p.foreground(front)
+        p.start()
+    }
+
+    /** The payment over the link this tap holds: the receiver's M6 as it sealed it, or why it never got there. */
+    private fun tapSend(id: String, text: String) {
+        val p = payer ?: return resolve(id, null, NO_LINK)
+        p.send(text) { how ->
+            when (how) {
+                is TapPayerLink.Handover.Answered -> resolve(id, how.text, null)
+                // only a link that went falls back to the request's own transport
+                is TapPayerLink.Handover.Lost -> resolve(id, null, how.why)
+            }
+        }
+    }
+
+    /** The payer let go, and a `tapPayStart` still waiting answered with [why] (`endTapPay`). */
+    private fun endTapPay(why: String) {
+        payer?.stop()
+        payer = null
+        val waiting = payId ?: return
+        payId = null
+        resolve(waiting, null, why)
+    }
+
     // MARK: inboxAnswer
 
     /** The page's word on a payment it was handed: {answer, status, text}, statuses 200, 409 and 422 only. */
@@ -350,6 +495,8 @@ class TapBridge(
     fun away() {
         if (!front) return
         front = false
+        // nothing scans while Foxy is put away; a link holding an offer stays up (TapPayer.foreground)
+        payer?.foreground(false)
         val r = receiver ?: return
         r.foreground(false)
         if (r.busy || r.withPayer) return
@@ -362,6 +509,11 @@ class TapBridge(
     fun back() {
         if (front) return
         front = true
+        payer?.let { p ->
+            p.foreground(true)
+            // a tap that was mid-payment asks the receiver what it missed, a moment after Foxy is running again
+            bluetooth.clock.after(WOKE_AFTER) { if (payer === p) p.askAgain() }
+        }
         val r = receiver
         if (r != null) {
             r.foreground(true)
@@ -376,6 +528,7 @@ class TapBridge(
     fun pageGone() {
         if (shakeArmed) host.shakeSense(false) {}
         shakeArmed = false
+        endTapPay(STOPPED)
         wanted = null
         // not waited for: with the page gone nothing is left to write a payment down
         receiver?.stopNow()

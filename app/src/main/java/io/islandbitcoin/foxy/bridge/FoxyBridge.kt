@@ -110,6 +110,9 @@ interface PageHost {
 
     /** The accelerometer's shake while [on] (shake to TAP), [onShake] on the main thread; off lets the sensor go. */
     fun shakeSense(on: Boolean, onShake: () -> Unit) {}
+
+    /** This phone's model (`Build.MODEL`), for which edges a payer holds to a receiver (TapEdges, ENG-671); "" when unknown. */
+    fun deviceModel(): String = ""
 }
 
 /**
@@ -118,11 +121,12 @@ interface PageHost {
  *
  * One table: the 18 P1 actions, the 7 P2 actions ([NetBridge]: Tor's snapshot,
  * RETRY, CONTINUE WITHOUT TOR, and the three requests that leave through
- * Route), the 38 P3 actions ([SeedBridge]'s screens, adopting, wiping and
+ * Route), the 43 P3 actions ([SeedBridge]'s screens, adopting, wiping and
  * protection, and a card's owner key; the card's signed time; [CardBridge]'s
  * card session (ENG-667); [PlatformBridge]'s camera, clipboard, share, notifications,
  * biometric and the rest; [TapBridge]'s Bluetooth question, the receive
- * screen's TAP and tap to pay's receiving side, ENG-670), and the `p1` stubs of conformance/contract.json
+ * screen's TAP and tap to pay's receiving side, ENG-670, and its paying side,
+ * ENG-671), and the `p1` stubs of conformance/contract.json
  * for the LATER phase ([ContractStubs], generated from it), which answer the
  * actions the page asks before anything else. A P3 action's stub is never put in the table: every P3
  * action is answered by its real handler. Every other action is answered
@@ -160,7 +164,8 @@ class FoxyBridge(
          * The P3 actions: docs/BRIDGE.md, phase P3, kind action. ENG-666 adds the
          * card's owner key ([SeedBridge.CARD_ACTIONS]) and the card's signed time
          * (`cardTime`), which need no NFC; ENG-667 the card session ([CardBridge.ACTIONS]:
-         * `cardBegin`, `cardSend`, `cardSay`, `cardAgain`, `cardEnd`) over the NFC link; ENG-670 tap to pay's receiving side ([TapBridge.ACTIONS]).
+         * `cardBegin`, `cardSend`, `cardSay`, `cardAgain`, `cardEnd`) over the NFC link; ENG-670 tap to pay's receiving side and
+         * ENG-671 its paying side ([TapBridge.ACTIONS]).
          */
         val P3_ACTIONS: Set<String> =
             SeedBridge.P3_ACTIONS + PlatformBridge.ACTIONS + SeedBridge.CARD_ACTIONS + "cardTime" + CardBridge.ACTIONS + TapBridge.ACTIONS
