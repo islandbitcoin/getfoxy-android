@@ -13,6 +13,14 @@ package io.islandbitcoin.foxy.tap
  * never comes in [stall] seconds is answered [Op.failed] too, and the queue goes
  * on: a link the stack has lost track of must not hold every later word.
  * Everything runs on the [clock]'s thread.
+ *
+ * Each operation says which callback answers it ([Op.answer], e.g. "mtu"),
+ * and [done] names the callback that came: an answer for something no longer
+ * in flight is dropped, never taken for the operation that is (ENG-679). On
+ * the Pixel 8 Pro (Android 17) the stack runs its own service discovery first
+ * on every connect and holds the app's MTU question behind it: the MTU was
+ * given up on after 2 s and its `onMtuChanged` came 0.3 s later, in the middle
+ * of the app's discovery, and ended it.
  */
 class TapGattQueue(
     private val clock: TapClock,
@@ -24,7 +32,7 @@ class TapGattQueue(
         const val STALL = 10.0
     }
 
-    class Op(val name: String, val start: () -> Boolean, val failed: (String) -> Unit, val stall: Double)
+    class Op(val name: String, val start: () -> Boolean, val failed: (String) -> Unit, val stall: Double, val answer: String?)
 
     private val waiting = ArrayDeque<Op>()
     private var current: Op? = null
@@ -35,21 +43,32 @@ class TapGattQueue(
     val inFlight: String? get() = current?.name
     val queued: Int get() = waiting.size
 
-    fun add(name: String, start: () -> Boolean, failed: (String) -> Unit, stall: Double = this.stall) {
+    fun add(name: String, start: () -> Boolean, failed: (String) -> Unit, stall: Double = this.stall, answer: String? = null) {
         if (closed) {
             clock.after(0.0) { failed("the link is closed") }
             return
         }
-        waiting.addLast(Op(name, start, failed, stall))
+        waiting.addLast(Op(name, start, failed, stall, answer))
         next()
     }
 
-    /** The operation in flight was answered (with whatever its callback said). */
-    fun done() {
+    /**
+     * The operation in flight was answered (with whatever its callback said). With [answer], the
+     * callback that came: when the operation in flight is answered by another, this is a late
+     * answer to one already given up on (or one Android sent unasked), and nothing moves.
+     * True when it ended the operation in flight.
+     */
+    fun done(answer: String? = null): Boolean {
+        val op = current
+        if (answer != null && (op == null || (op.answer != null && op.answer != answer))) {
+            say("a late $answer answer, for nothing in flight now${op?.let { " (${it.name} is)" } ?: ""}; ignored")
+            return false
+        }
         timer?.cancel()
         timer = null
         current = null
         next()
+        return true
     }
 
     /** The link is gone: everything still queued is answered as failed, and nothing more starts. */

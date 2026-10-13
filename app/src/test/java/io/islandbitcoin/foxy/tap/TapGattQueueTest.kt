@@ -1,6 +1,7 @@
 package io.islandbitcoin.foxy.tap
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -60,6 +61,32 @@ class TapGattQueueTest {
         assertEquals(listOf("mtu was never answered", "write was never answered"), failed)
         // an answer that comes late is for nobody
         q.done()
+        assertNull(q.inFlight)
+    }
+
+    @Test
+    fun aLateMtuAnswerDoesNotEndTheDiscoveryInFlight() {
+        // ENG-679, the Pixel 8 Pro's log: the MTU given up on after 2 s, discovery started, and
+        // onMtuChanged 0.3 s later, in the middle of it; it ended the discovery, so the next
+        // operation would have gone to Android while discovery was still outstanding
+        val clock = FakeClock()
+        val said = ArrayList<String>()
+        val q = TapGattQueue(clock, say = { said.add(it) })
+        val started = ArrayList<String>()
+        q.add("an MTU of 517", start = { started.add("mtu"); true }, failed = {}, stall = 2.0, answer = "MTU")
+        q.add("service discovery", start = { started.add("discover"); true }, failed = { error("discovery failed") }, answer = "service discovery")
+        q.add("notifications on", start = { started.add("cccd"); true }, failed = { error("cccd failed") }, answer = "CCCD write")
+        clock.advance(2.1)
+        assertEquals(listOf("mtu", "discover"), started)
+        assertFalse("the late MTU answer is not the discovery's", q.done("MTU"))
+        assertEquals("service discovery", q.inFlight)
+        assertEquals("the CCCD write waits for the discovery", listOf("mtu", "discover"), started)
+        assertTrue(said.any { it.contains("a late MTU answer") })
+        assertTrue(q.done("service discovery"))
+        assertEquals(listOf("mtu", "discover", "cccd"), started)
+        // and an answer with nothing in flight at all is for nobody
+        assertTrue(q.done("CCCD write"))
+        assertFalse(q.done("CCCD write"))
         assertNull(q.inFlight)
     }
 

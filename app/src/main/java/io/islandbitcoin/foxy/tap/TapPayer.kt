@@ -59,7 +59,16 @@ class TapPayer(
         /** A quiet link that has not opened in this long is asked for afresh (`warmOpenWait`). */
         const val WARM_OPEN_WAIT = 10.0
 
-        /** An open quiet link silent about its strength this long turns warming off for the listen. */
+        /**
+         * An open quiet link silent about its strength this long turns warming off for the listen.
+         * Counted from when its services are found, not from the connect as on iOS: Android's GATT
+         * client does one thing at a time ([TapGattQueue]), so the strength question waits behind
+         * the MTU and the discovery, and on the Pixel 8 Pro (Android 17) the stack's own discovery
+         * holds those for about 2.4 s after every connect (ENG-679). Counted from the connect, every
+         * quiet link there was "silent", warming went off, and the payer stopped hearing the near
+         * door's word that the receiver is still on its amount screen: it spoke anyway, and the
+         * iPhone refused the first word (ATT error 8), as it refuses every payer on that screen.
+         */
         const val WARM_SILENT = 2.0
 
         /** A quiet link that came to nothing in this long, with no receiver told, is let go. */
@@ -153,6 +162,7 @@ class TapPayer(
     private var warmSince = 0.0
     private var warmReadings = 0
     private var warmOpen = 0.0
+    private var warmReadyAt = 0.0
     private var slowSaid = false
     private var slowTold = 0
     private var warmOff = false
@@ -333,6 +343,7 @@ class TapPayer(
         heardDoor = false
         nearSince = 0.0
         warmReady = false
+        warmReadyAt = 0.0
         nearNow = false
         asking = false
         warmSince = 0.0
@@ -451,8 +462,8 @@ class TapPayer(
                 asking = true
                 c.readRssi(warm)
             }
-            // open, and silent about its strength for two seconds: deciding on advertisements instead
-            if (warmOpen > 0 && warmReadings == 0 && now - warmOpen > WARM_SILENT) {
+            // open, its services found, and silent about its strength for two seconds: deciding on advertisements instead
+            if (warmOpen > 0 && warmReadyAt > 0 && warmReadings == 0 && now - warmReadyAt > WARM_SILENT) {
                 warmOff = true
                 say("the open link will not say how strong it is; deciding on advertisements instead")
                 return retry("the link would not answer")
@@ -574,6 +585,7 @@ class TapPayer(
         // somebody else's link was warm: dropped, and this one opened the long way
         target?.let { c.disconnect(it) }
         warmReady = false
+        warmReadyAt = 0.0
         warmOpen = 0.0
         target = id
         service = found
@@ -592,6 +604,7 @@ class TapPayer(
         target = id
         service = found
         warmReady = false
+        warmReadyAt = 0.0
         warmSince = now
         warmReadings = 0
         warmOpen = 0.0
@@ -702,6 +715,7 @@ class TapPayer(
         }
         doors = services
         warmReady = true
+        if (warmReadyAt == 0.0) warmReadyAt = clock.now()
         if (services[DEVICE_INFORMATION]?.contains(MODEL_NUMBER) == true) central?.read(device, DEVICE_INFORMATION, MODEL_NUMBER)
         // subscribing is what makes the receiver notice, and it waits for the verdict
         if (nearNow) link?.speak()

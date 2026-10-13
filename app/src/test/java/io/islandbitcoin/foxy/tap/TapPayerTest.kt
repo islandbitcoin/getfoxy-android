@@ -321,6 +321,50 @@ class TapPayerTest {
     }
 
     @Test
+    fun aSlowDiscoveryStillHearsTheReceiverIsOnItsAmountScreenAndSaysNothingUntilNext() {
+        // ENG-679 on the Pixel 8 Pro: every connect's discovery took about 2.4 s, the link's strength
+        // came only after it, the quiet link was taken for silent and warming went off; the payer
+        // then never heard the near door, spoke to an iPhone still on its amount screen, and every
+        // first word was refused (ATT error 8)
+        val (air, r) = listening()
+        air.c.discoveryTakes = 2.4
+        r.receiver.early = true
+        air.hear(6.0)
+        assertFalse(air.diary.joinToString("\n"), air.diary.any { it.contains("will not say how strong it is") })
+        assertTrue("the near door said so: ${air.diary.joinToString("\n")}", air.diary.any { it.contains("is still on its amount screen") })
+        assertFalse("no word to a receiver on its amount screen", air.diary.any { it.contains("ATT error") })
+        assertTrue("nothing written while it was on its amount screen", air.c.requests.none { it.startsWith("write") || it.startsWith("prepare") })
+        assertNull(air.offer)
+        r.receiver.early = false
+        air.hear(6.0)
+        assertNotNull("NEXT, and the tap goes through: ${air.diary.joinToString("\n")}", air.offer)
+        assertFalse(air.diary.any { it.contains("ATT error") })
+    }
+
+    @Test
+    fun aPayerThatHasNotSubscribedIsRefusedItsFirstWordWithInsufficientAuthorization() {
+        // iOS's rule (TapLink.swift 667-684, TapPlace): the place is taken by a first word from a
+        // phone already subscribed to the out door; any other write is refused, ATT error 8. The
+        // Android receiver applies it too, so a payer that wrote before its subscribe landed fails here.
+        val air = PayerAir()
+        val r = air.receiver("AA:01")
+        r.onAir()
+        val service = r.receiver.link.service
+        val layout = TapGatt.Layout(service)
+        val statuses = ArrayList<Int>()
+        val stranger = object : AttCentral {
+            override fun answered(requestId: Int, status: Int, offset: Int, value: ByteArray?) { statuses.add(status) }
+            override fun notified(door: UUID, value: ByteArray) {}
+        }
+        r.peripheral.centrals["eager"] = stranger
+        r.receiver.server.connected("eager")
+        r.receiver.server.characteristicWrite("eager", 1, layout.into.uuid, false, true, 0, byteArrayOf(1, 2, 3))
+        air.settle()
+        assertEquals(listOf(TapGatt.INSUFFICIENT_AUTHORIZATION), statuses)
+        assertEquals(8, TapGatt.INSUFFICIENT_AUTHORIZATION)
+    }
+
+    @Test
     fun anIphone17ProReceiverIsHeldOnItsLeftEdgeAndThePayersMarkGoesRight() {
         val (air, r) = listening(rssi = -45)
         r.model = "iPhone18,1"

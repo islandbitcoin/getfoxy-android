@@ -353,6 +353,21 @@ filter and settings as Android builds them; compiled, not yet run). ENG-679:
 the ENG-671 build's scan heard nothing on the Pixel 8 Pro (its all-zero
 service filter matched no advertisement); since then the scan has no hardware
 filter, and the JVM's fake controller matches nothing with an all-zero mask.
+The same build then heard the iPhone Max and had its first word refused
+(ATT error 8, iOS's answer to a write from a phone that does not hold the
+place). Bluetooth's own log on the Pixel showed why: on every connect Android
+17's stack runs its own service discovery (about 2.4 s) and holds the app's
+MTU question, discovery and signal reading behind it, so the quiet link looked
+silent about its strength, warming went off, the payer never subscribed to a
+near door, never heard that the iPhone was still on its amount screen, and
+spoke to it anyway. Since then the silence is counted from when the services
+are found, and a late GATT answer (the MTU's `onMtuChanged`, 0.3 s after it
+was given up on) is never taken for the operation in flight. The JVM air
+models the slow discovery (`TapPayerTest.aSlowDiscovery…`, which reproduced
+the Pixel's diary line for line before the change). Step 4 below is still the
+person's: a touch with the Max on its amount screen shows `that phone is still
+on its amount screen; no card yet` and no `ATT error`, and after NEXT the tap
+goes through.
 
 The phones: the **Pixel 8 Pro** with the debug build of this branch, the
 iPhone **Max** with Foxy (getfoxy/iOS at `core/PIN`'s commit or later, a debug
@@ -962,6 +977,7 @@ is not a pass; the device exit needs a run with nothing skipped but
 | 2026-10-11 | ENG-649 rebased on main `43dc3e5` (ENG-652), app at `39938f6` | Pixel 8 Pro (42201FDJG00048), **unlocked**, Android 17, APKs uninstalled and installed fresh, CAMERA and POST_NOTIFICATIONS granted | first full run on the fresh install: 31 run, 1 failed, `TorRouteTest.torLeavingTheNetworkMidRequest…` ("answered over Tor: Foxy is not connected to Tor."): the retry and the test's restart joined the running set-up (one SOCKS listener, `circuit established`), the page's first requests went through, then every SOCKS handshake timed out (7 `SocketTimeoutException`s) until the test's own deadline; logcat kept. The full suite again: `OK (31 tests)`, no SOCKS timeout. Skipped as designed both times: `DeviceExitTest` (no `-e foxyExit true`), `KeystoreTest.onALockedPhone…` (phone unlocked), the three `OwnPromptTest`s (API 28-29 only). Then `pm clear` and a launch: Tor up (`transport: "direct"`) 11 s after `SOCKS on`, and a mint of 8 on testnut.cashu.space over Tor claimed (`8`, after one `Quote not paid` retry) | not run |
 | 2026-10-12 | main `d856d3b78456fe69a891135363bab3d25f70787c` (ENG-669's `TapCrypto` and `TapCryptoOnDeviceTest`, unchanged on ENG-670), run by the architect | Pixel 8 Pro (42201FDJG00048), Android 17 | `am instrument -e class io.islandbitcoin.foxy.TapCryptoOnDeviceTest`: `OK (3 tests)`. Tink's X25519 and Conscrypt's ChaCha20-Poly1305 give iOS's bytes from `fixtures/tap-vectors.json`: the tap to pay hard gate (ENG-670, ENG-671) is met. `TapGattOnDeviceTest`, `BluetoothApproveTest`'s ENG-670 form and the two-phone steps: pending, the person's | not run |
 | 2026-10-12 | ENG-679 (`jabariennis/eng-679-scan-filter` on main `916411d`; the scan with no hardware filter) | Pixel 8 Pro (42201FDJG00048), **unlocked** (no keyguard), Android 17, debug build installed over the person's (`install -r`, wallet kept) | not run (no instrumentation). The payer's scan, `dumpsys bluetooth_manager`, Foxy's scanner: **before** (main `916411d`, Foxy on its home screen 595 s): LowLatency, filter `[ ServiceUuid=00000000-… ServiceUuidMask=00000000-… ]`, **Number of results 0 / 0 / 0**. **After** (this build, `force-stop`, launched, home screen 37 s): LowLatency, ALL_MATCHES, **no filter line**, **Number of results 0 / 924 / 924** (1273 a minute later). The iPhone Max that was on the air beside it was heard at once: `[tap] pay: a receiver at -26 dBm (needs -33, advertised), connecting`, `that phone is a iPhone14,3`, `handshake: promising a key`, then **`a piece would not go — ATT error 8`** (the first write to the iPhone's in door refused, Insufficient Authorization) and the link let go, twice. Nothing was paid; that write is the next thing the two-phone test (`Tap to pay: the Pixel pays`, step 4) has to get past | not run |
+| 2026-10-12 | ENG-679 second change (the quiet link's silence counted from its services; late GATT answers dropped), `jabariennis/eng-679-scan-filter` | Pixel 8 Pro (42201FDJG00048), **unlocked** (no keyguard), Android 17, debug build installed over the person's (`install -r`, wallet kept) | not run (no instrumentation). Foxy on its home screen for 1 min 45 s after `force-stop` and launch: the scan unfiltered (no filter line), Number of results 0 / 2413 / 2413 in its first two minutes; **no `[tap]` line at all**: no Foxy receiver was on the air near the Pixel (the iPhone Max was not receiving), so whether the payer now gets past `handshake: promising a key` is the person's two-phone test (step 4 of "Tap to pay: the Pixel pays"). Nothing paid | not run |
 
 ### P2 device exit, 2026-10-11 (Pixel 8 Pro 42201FDJG00048, debug builds of ENG-648)
 

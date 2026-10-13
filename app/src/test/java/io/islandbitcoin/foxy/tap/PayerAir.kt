@@ -80,6 +80,14 @@ class FakeTapCentral(private val air: PayerAir, val payer: TapPayer, val me: Str
     /** Notifications from these are not delivered (a receiver that never answers M1). */
     val deaf = HashSet<String>()
 
+    /**
+     * Seconds a link's service discovery takes, and with it everything queued behind it: Android's
+     * GATT client does one thing at a time, so a signal reading asked for before the services are
+     * found is answered only after them. The Pixel 8 Pro (Android 17) runs its own discovery first
+     * on every connect and the app's MTU and discovery wait for it: about 2.4 s (ENG-679).
+     */
+    var discoveryTakes = 0.0
+
     /** Service discovery to these fails this many more times (Android's GATT status 129 or 133). */
     val discoveryFails = HashMap<String, Int>()
 
@@ -102,6 +110,8 @@ class FakeTapCentral(private val air: PayerAir, val payer: TapPayer, val me: Str
 
     inner class Conn(val r: AirReceiver) : AttCentral {
         var up = false
+        var discovered = false
+        var rssiWaiting = false
         private var nextRequest = 1
         private val waiting = HashMap<Int, (Int, Int, ByteArray?) -> Unit>()
 
@@ -160,20 +170,32 @@ class FakeTapCentral(private val air: PayerAir, val payer: TapPayer, val me: Str
 
     override fun discover(device: String) {
         val c = links[device] ?: return later { payer.servicesFound(device, null) }
-        later {
-            if (!c.up) return@later
-            val fails = discoveryFails[device] ?: 0
-            if (fails > 0) {
-                discoveryFails[device] = fails - 1
-                return@later payer.servicesFound(device, null)
-            }
-            c.r.receiver.server.mtuChanged(me, air.mtu)
-            val found = HashMap<UUID, Set<UUID>>()
-            val layout = c.r.peripheral.layout
-            if (layout != null && !c.r.peripheral.closed) found[layout.service] = layout.doors.map { it.uuid }.toSet()
-            if (c.r.model != null) found[TapPayer.DEVICE_INFORMATION] = setOf(TapPayer.MODEL_NUMBER)
-            payer.servicesFound(device, found)
+        if (discoveryTakes > 0) {
+            air.clock.after(discoveryTakes) { later { answerDiscovery(device, c) } }
+            return
         }
+        later { answerDiscovery(device, c) }
+    }
+
+    private fun answerDiscovery(device: String, c: Conn) {
+        if (!c.up) return
+        c.discovered = true
+        // a signal reading asked for meanwhile is answered next, after the services
+        if (c.rssiWaiting) {
+            c.rssiWaiting = false
+            readRssi(device)
+        }
+        val fails = discoveryFails[device] ?: 0
+        if (fails > 0) {
+            discoveryFails[device] = fails - 1
+            return payer.servicesFound(device, null)
+        }
+        c.r.receiver.server.mtuChanged(me, air.mtu)
+        val found = HashMap<UUID, Set<UUID>>()
+        val layout = c.r.peripheral.layout
+        if (layout != null && !c.r.peripheral.closed) found[layout.service] = layout.doors.map { it.uuid }.toSet()
+        if (c.r.model != null) found[TapPayer.DEVICE_INFORMATION] = setOf(TapPayer.MODEL_NUMBER)
+        payer.servicesFound(device, found)
     }
 
     override fun setNotify(device: String, service: UUID, door: UUID, on: Boolean) {
@@ -229,6 +251,10 @@ class FakeTapCentral(private val air: PayerAir, val payer: TapPayer, val me: Str
 
     override fun readRssi(device: String) {
         val c = links[device]
+        if (c != null && c.up && !c.discovered && discoveryTakes > 0) {
+            c.rssiWaiting = true
+            return
+        }
         val dbm = c?.r?.linkRssi
         later {
             if (c == null || !c.up) return@later payer.rssi(device, 0, false)

@@ -71,6 +71,14 @@ class AndroidTapCentral(
         /** A phone that never answers the MTU question is not waited on longer than this before the services are found. */
         const val MTU_WAIT = 2.0
 
+        /** Which callback answers each queued operation ([TapGattQueue.done]): a late one is not taken for another's. */
+        private const val MTU_ANSWER = "MTU"
+        private const val DISCOVERY_ANSWER = "service discovery"
+        private const val DESCRIPTOR_ANSWER = "CCCD write"
+        private const val WRITE_ANSWER = "write"
+        private const val READ_ANSWER = "read"
+        private const val RSSI_ANSWER = "signal reading"
+
         /**
          * The scan's hardware filters, as Android's objects: [TapScanRules.hardwareFilters], which is
          * empty (an unfiltered foreground scan; iOS's rules then decide in software, ENG-679).
@@ -225,7 +233,7 @@ class AndroidTapCentral(
             }
 
             override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
-                main.post { if (live()) queue.done() }
+                main.post { if (live()) queue.done(MTU_ANSWER) }
             }
 
             override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
@@ -238,7 +246,7 @@ class AndroidTapCentral(
                 }
                 main.post {
                     if (!live()) return@post
-                    queue.done()
+                    if (!queue.done(DISCOVERY_ANSWER)) return@post
                     payer.servicesFound(address, found)
                 }
             }
@@ -252,7 +260,7 @@ class AndroidTapCentral(
                 val door = d.characteristic.uuid
                 main.post {
                     if (!live()) return@post
-                    queue.done()
+                    if (!queue.done(DESCRIPTOR_ANSWER)) return@post
                     payer.notifyState(address, door, if (status == BluetoothGatt.GATT_SUCCESS) null else "the CCCD write failed (status $status)")
                 }
             }
@@ -261,7 +269,7 @@ class AndroidTapCentral(
                 val door = ch.uuid
                 main.post {
                     if (!live()) return@post
-                    queue.done()
+                    if (!queue.done(WRITE_ANSWER)) return@post
                     payer.wrote(address, door, if (status == BluetoothGatt.GATT_SUCCESS) null else "ATT error $status")
                 }
             }
@@ -279,7 +287,7 @@ class AndroidTapCentral(
             private fun read(door: UUID, value: ByteArray?, status: Int) {
                 main.post {
                     if (!live()) return@post
-                    queue.done()
+                    if (!queue.done(READ_ANSWER)) return@post
                     payer.valueRead(address, door, if (status == BluetoothGatt.GATT_SUCCESS) value else null)
                 }
             }
@@ -301,7 +309,7 @@ class AndroidTapCentral(
             override fun onReadRemoteRssi(g: BluetoothGatt, rssi: Int, status: Int) {
                 main.post {
                     if (!live()) return@post
-                    queue.done()
+                    if (!queue.done(RSSI_ANSWER)) return@post
                     payer.rssi(address, rssi, status == BluetoothGatt.GATT_SUCCESS)
                 }
             }
@@ -350,7 +358,14 @@ class AndroidTapCentral(
         link.gatt = g
     }
 
-    private fun queued(device: String, name: String, start: (Link, BluetoothGatt) -> Boolean, failed: (String) -> Unit, stall: Double = TapGattQueue.STALL) {
+    private fun queued(
+        device: String,
+        name: String,
+        answer: String,
+        start: (Link, BluetoothGatt) -> Boolean,
+        failed: (String) -> Unit,
+        stall: Double = TapGattQueue.STALL,
+    ) {
         val link = links[device]
         if (link == null) {
             clock.after(0.0) { failed("no link to that phone") }
@@ -365,17 +380,18 @@ class AndroidTapCentral(
             // a link let go says nothing more ([TapCentral.disconnect])
             failed = { why -> if (link.live()) failed(why) },
             stall = stall,
+            answer = answer,
         )
     }
 
     override fun discover(device: String) {
         // the MTU first; a phone that will not take the question is not waited for
-        queued(device, "an MTU of $MTU", start = { _, g -> g.requestMtu(MTU) }, failed = {}, stall = MTU_WAIT)
-        queued(device, "service discovery", start = { _, g -> g.discoverServices() }, failed = { payer.servicesFound(device, null) })
+        queued(device, "an MTU of $MTU", MTU_ANSWER, start = { _, g -> g.requestMtu(MTU) }, failed = {}, stall = MTU_WAIT)
+        queued(device, "service discovery", DISCOVERY_ANSWER, start = { _, g -> g.discoverServices() }, failed = { payer.servicesFound(device, null) })
     }
 
     override fun setNotify(device: String, service: UUID, door: UUID, on: Boolean) {
-        queued(device, "notifications ${if (on) "on" else "off"}", start = { link, g ->
+        queued(device, "notifications ${if (on) "on" else "off"}", DESCRIPTOR_ANSWER, start = { link, g ->
             val ch = link.characteristic(service, door) ?: return@queued false
             val cccd = ch.getDescriptor(TapGatt.CCCD) ?: return@queued false
             if (!g.setCharacteristicNotification(ch, on)) return@queued false
@@ -393,7 +409,7 @@ class AndroidTapCentral(
 
     override fun write(device: String, service: UUID, door: UUID, value: ByteArray) {
         val bytes = value.copyOf()
-        queued(device, "a write of ${bytes.size} bytes", start = { link, g ->
+        queued(device, "a write of ${bytes.size} bytes", WRITE_ANSWER, start = { link, g ->
             val ch = link.characteristic(service, door) ?: return@queued false
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 g.writeCharacteristic(ch, bytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothStatusCodes.SUCCESS
@@ -408,14 +424,14 @@ class AndroidTapCentral(
     }
 
     override fun read(device: String, service: UUID, door: UUID) {
-        queued(device, "a read", start = { link, g ->
+        queued(device, "a read", READ_ANSWER, start = { link, g ->
             val ch = link.characteristic(service, door) ?: return@queued false
             g.readCharacteristic(ch)
         }, failed = { payer.valueRead(device, door, null) })
     }
 
     override fun readRssi(device: String) {
-        queued(device, "a signal reading", start = { _, g -> g.readRemoteRssi() }, failed = { payer.rssi(device, 0, false) })
+        queued(device, "a signal reading", RSSI_ANSWER, start = { _, g -> g.readRemoteRssi() }, failed = { payer.rssi(device, 0, false) })
     }
 
     override fun isConnected(device: String): Boolean = links[device]?.let { it.up && it.live() } == true
