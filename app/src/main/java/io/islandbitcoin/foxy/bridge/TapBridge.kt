@@ -275,9 +275,10 @@ class TapBridge(
         timer = b.clock.after(BluetoothAnswer.WAIT) { finish(BluetoothAnswer.UNKNOWN) }
         // no question on a phone that could not use the answer, nor when it is already given, nor again once
         // refused (a refusal then reads `denied` with no dialog, as iOS's `.unauthorized`). iOS's one
-        // authorization covers both roles, so the payer's permissions are asked in the same question (ENG-671)
+        // authorization covers both roles, so the payer's permissions are asked in the same question (ENG-671);
+        // none on a phone where the payer does not run (API 28-30, BluetoothAnswer.pays): never a location dialog
         val receiverOwed = !b.permitted() && !b.refused()
-        val payerOwed = !b.scanPermitted() && !b.scanRefused()
+        val payerOwed = b.pays && !b.scanPermitted() && !b.scanRefused()
         if (!BluetoothAnswer.worthAsking(b.adapter, b.power(), b.advertises) || (!receiverOwed && !payerOwed)) return follow()
         b.ask { follow() }
     }

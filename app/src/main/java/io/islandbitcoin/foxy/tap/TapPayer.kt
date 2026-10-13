@@ -18,9 +18,13 @@ import kotlin.math.abs
  *
  * The phone's Bluetooth is followed as iOS's central manager is: the system's
  * question asked when it never was, `denied` with no dialog once refused, `off`
- * while the radio is off, `unsupported` with no adapter or no scanner, and the
- * scan back on when the radio is. The listen is never ended by any of these:
- * the page's `tapPayStart` stays open (FoxyBridge+Tap.swift `handleTapPayStart`).
+ * while the radio is off, `unsupported` with no adapter or no scanner (or below
+ * API 31, [TapBluetooth.pays]), and the scan back on when the radio is, or when
+ * the permissions were granted in Settings while Foxy was away (iOS hears an
+ * authorization change in `centralManagerDidUpdateState`, TapLink.swift
+ * 1127-1130). A scan Android fails to start is started again ([scanFailed]).
+ * The listen is never ended by any of these: the page's `tapPayStart` stays
+ * open (FoxyBridge+Tap.swift `handleTapPayStart`).
  *
  * Nothing scans while Foxy is put away ([foreground]); a link that has the offer
  * stays up, because the payment goes over it.
@@ -86,6 +90,13 @@ class TapPayer(
         const val NEARBY_EVERY = 1.0
         const val FAR_AFTER = 2.5
 
+        /** A scan Android failed to start is started again after this long, doubled each time to [SCAN_RETRY_MOST]. */
+        const val SCAN_RETRY_FIRST = 1.0
+        const val SCAN_RETRY_MOST = 4.0
+
+        /** `ScanCallback.SCAN_FAILED_FEATURE_UNSUPPORTED`: this phone cannot do the scan at all. */
+        const val SCAN_FAILED_FEATURE_UNSUPPORTED = 4
+
         /** iOS's Device Information service and its model number, which every iPhone serves to any connection. */
         val DEVICE_INFORMATION: UUID = UUID.fromString("0000180a-0000-1000-8000-00805f9b34fb")
         val MODEL_NUMBER: UUID = UUID.fromString("00002a24-0000-1000-8000-00805f9b34fb")
@@ -114,6 +125,13 @@ class TapPayer(
     private var front = true
     private var scanning = false
     private var radioUp = false
+
+    // the last word on the radio was `denied`: Foxy coming back looks again ([foreground])
+    private var denied = false
+
+    // a scan Android failed to start, started again after [scanWait]
+    private var scanRetry: TapClock.Timer? = null
+    private var scanWait = 0.0
 
     private fun say(what: String) = diary("[tap] pay: $what")
 
@@ -178,24 +196,35 @@ class TapPayer(
         if (started || finished) return
         started = true
         val b = bluetooth
+        if (!b.pays) {
+            // API 28-30: a scan there needs location, which Foxy never asks for (BluetoothAnswer.pays)
+            say("this Android cannot pay by tap (API ${BluetoothAnswer.PAYER_SDK}+)")
+            return onStage(TapStage.UNSUPPORTED)
+        }
         if (!BluetoothAnswer.worthAsking(b.adapter, b.power(), b.scans) || b.scanPermitted()) return follow()
         if (b.scanRefused()) {
             say("the Bluetooth permissions were refused before; not asking again")
-            return onStage(TapStage.DENIED)
+            return deny()
         }
         say("asking for the Bluetooth permissions")
         b.askScan { granted ->
             if (finished) return@askScan
             if (!granted) {
                 say("the Bluetooth permissions were refused")
-                return@askScan onStage(TapStage.DENIED)
+                return@askScan deny()
             }
             follow()
         }
     }
 
+    private fun deny() {
+        denied = true
+        onStage(TapStage.DENIED)
+    }
+
     private fun follow() {
         if (finished) return
+        unwatch?.invoke()
         unwatch = bluetooth.watch { state(it) }
         state(bluetooth.power())
     }
@@ -206,8 +235,11 @@ class TapPayer(
         val bad = BluetoothAnswer.stage(b.adapter, b.scanPermitted(), power, power == TapBluetooth.Power.ON && b.scans)
         if (bad != null) {
             if (radioUp) radioDown()
+            if (bad == TapStage.DENIED) return deny()
+            denied = false
             return onStage(bad)
         }
+        denied = false
         if (!radioUp) {
             val c = b.central(this)
             if (c == null) {
@@ -224,6 +256,8 @@ class TapPayer(
     private fun radioDown() {
         radioUp = false
         scanning = false
+        scanRetry?.cancel()
+        scanRetry = null
         tick?.cancel()
         tick = null
         val l = link
@@ -253,6 +287,33 @@ class TapPayer(
         }
         tick?.cancel()
         tick = everyTick()
+    }
+
+    /**
+     * Android could not start the scan (`ScanCallback.onScanFailed`): after a Bluetooth stack
+     * restart, too many scanners in the process, an internal error or no hardware left. iOS has no
+     * such answer (CoreBluetooth's scan cannot fail to start), so the spec is silent; a listen
+     * that hears nothing and says nothing is ENG-658, so it is started again, after one second, then
+     * two, then four, through [TapCentral.startScan] and so Android's five-in-thirty
+     * ([TapScanBudget]). A phone that cannot scan at all is `unsupported`.
+     */
+    fun scanFailed(code: Int) {
+        scanning = false
+        if (finished || !radioUp) return
+        if (code == SCAN_FAILED_FEATURE_UNSUPPORTED) {
+            say("Android says this phone cannot scan (error $code)")
+            return onStage(TapStage.UNSUPPORTED)
+        }
+        scanWait = if (scanWait == 0.0) SCAN_RETRY_FIRST else minOf(scanWait * 2, SCAN_RETRY_MOST)
+        say("Android could not start the scan (error $code); trying again in ${scanWait.toInt()} s")
+        scanRetry?.cancel()
+        scanRetry = clock.after(scanWait) {
+            scanRetry = null
+            val c = central ?: return@after
+            if (finished || linked || !front || scanning || !radioUp) return@after
+            scanning = c.startScan()
+            if (!scanning) say("Android would not start a scan")
+        }
     }
 
     private fun everyTick(): TapClock.Timer = clock.after(TICK) {
@@ -286,6 +347,8 @@ class TapPayer(
         finished = true
         tick?.cancel()
         tick = null
+        scanRetry?.cancel()
+        scanRetry = null
         unwatch?.invoke()
         unwatch = null
         if (passedBy > 0 || notFoxy > 0) say("the filter passed by $passedBy advertisement(s) and dropped $notFoxy that were not Foxy")
@@ -316,6 +379,8 @@ class TapPayer(
         if (!on) {
             tick?.cancel()
             tick = null
+            scanRetry?.cancel()
+            scanRetry = null
             if (scanning) {
                 central?.stopScan()
                 scanning = false
@@ -333,6 +398,10 @@ class TapPayer(
         if (radioUp) {
             say("Foxy is back; listening again")
             scan()
+        } else if (started && denied && bluetooth.scanPermitted()) {
+            // granted in Settings while Foxy was away: Android says nothing, so it is looked at on the way back
+            say("Foxy is back and the Bluetooth permissions are granted now")
+            follow()
         }
     }
 
@@ -342,6 +411,8 @@ class TapPayer(
     fun discovered(ad: TapAdvert) {
         if (finished || !front) return
         val now = clock.now()
+        // the scan works: a failure after this starts its wait afresh
+        scanWait = 0.0
         if (quietUntil > now) return
         skip[ad.device]?.let { if (it > now) return }
         val svc = TapScanRules.service(ad)
@@ -609,10 +680,15 @@ class TapPayer(
      * The services the receiver serves (didDiscoverServices and didDiscoverCharacteristicsFor
      * together, as Android finds them at once): not a Foxy without the service; not one
      * without its in and out doors; its model read when it serves one.
+     *
+     * Null is discovery that failed (GATT status 129 or 133, common and passing on Android),
+     * which says nothing about what the phone is: it is let go and looked for again, never
+     * counted or left alone as not a Foxy ([letGo]'s skip is for "not a Foxy" only).
      */
-    fun servicesFound(device: String, services: Map<UUID, Set<UUID>>) {
+    fun servicesFound(device: String, services: Map<UUID, Set<UUID>>?) {
         if (finished || device != target) return
         val s = service ?: return
+        if (services == null) return retry("service discovery failed")
         val svc = services[s]
         if (svc == null) {
             notFoxy++

@@ -341,4 +341,24 @@ class TapPayBridgeTest {
         assertEquals(1, bt.asks)
         assertEquals(0, bt.scanAsks)
     }
+
+    /**
+     * API 28-30 (BluetoothAnswer.pays): the payer does not run, so APPROVE never asks for it,
+     * and there is no location dialog, which neither the page nor iOS's flow explains. The
+     * listen says `unsupported` once and is not answered (ENG-658).
+     */
+    @Test
+    fun belowApi31ApproveAsksNothingForThePayerAndTheListenIsUnsupported() {
+        bt.pays = false
+        bt.scanGranted = false
+        send("""{"id":"bt-1","action":"bluetoothAsk"}""")
+        air.settle()
+        assertEquals("the receiver's permissions are granted; the payer's are not asked", 0, bt.asks)
+        assertEquals(reply("bt-1", "allowed"), host.evaluated.last())
+        send("""{"action":"tapPayStart","id":"p1"}""")
+        air.settle()
+        assertEquals(0, bt.scanAsks)
+        assertEquals(payTap("unsupported"), host.evaluated.last())
+        assertTrue("no scanner was made", air.centrals.isEmpty())
+    }
 }

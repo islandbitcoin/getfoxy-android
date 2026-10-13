@@ -354,8 +354,8 @@ filter and settings as Android builds them; compiled, not yet run).
 The phones: the **Pixel 8 Pro** with the debug build of this branch, the
 iPhone **Max** with Foxy (getfoxy/iOS at `core/PIN`'s commit or later, a debug
 build so its diary prints `[tap] receive:` lines), and, for Pixel to Pixel, a
-second Android phone (API 31+, or 28-30 to check the location path) with the
-same build. Both unlocked, Bluetooth on, Foxy in front on each, each funded
+second Android phone (API 31+; one at 28-30 checks only that it does not pay)
+with the same build. Both unlocked, Bluetooth on, Foxy in front on each, each funded
 with a few sats at the mint the other uses. Follow the Pixel's diary with
 `adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy) | grep '\[tap\]'`.
 
@@ -364,10 +364,15 @@ with a few sats at the mint the other uses. Follow the Pixel's diary with
    Settings › Apps › Foxy › Permissions, "Nearby devices" is allowed and
    **Location is not listed at all** (BLUETOOTH_SCAN is `neverForLocation`).
    Fund the wallet and go home: no second dialog. On a phone at API 28-30 (if
-   one is at hand) APPROVE asks for location as well, which is what Android 9
-   to 11 need for any BLE scan result; refuse it there and the home screen's
-   tap card says Bluetooth is not allowed (`_tap` `denied` on the pay side)
-   and asks nothing more.
+   one is at hand) APPROVE puts up **no** dialog at all (the receiver's
+   permissions are install-time there, and the payer does not run below 31,
+   `BluetoothAnswer.pays`, because a scan there needs location), Settings lists
+   no Location permission for Foxy, and the home screen's listen says
+   `this Android cannot pay by tap (API 31+)` and is `_tap` `unsupported` on
+   the pay side, once. Refused at APPROVE on API 31+ and then allowed in
+   Settings › Apps › Foxy › Permissions: back in Foxy the diary says `Foxy is
+   back and the Bluetooth permissions are granted now` and the listen scans,
+   with no second `tapPayStart`.
 2. **ENG-658: one listen, not a re-ask loop.** Home screen of a funded wallet,
    Bluetooth **off**: the diary says `[tap] pay:` nothing, the page shows
    Bluetooth off, and over two minutes `adb logcat | grep -c tapPayStart` (with
@@ -402,7 +407,16 @@ with a few sats at the mint the other uses. Follow the Pixel's diary with
    each diary shows the other's service UUID. With no Device Information
    service on an Android receiver the edges are the default (payer left,
    receiver right) until A12 gives Pixels their own.
-7. **A link that goes.** Mid-tap, before the four digits, pull the phones
+7. **The receiver backs out while the Pixel's card is up.** The Max on its
+   invoice screen, the Pixel a hand apart until TAP TO PAY is up on it and
+   CONNECT TO PAY on the Max. Back out on the Max (BACK to its amount
+   screen): within a second the Pixel's diary says `the receiver went off the
+   air; the card comes down`, its TAP TO PAY goes (`far`), and it does not come
+   back while the Max stays off its invoice screen (Android's
+   `onServiceChanged`, API 31+, which is every API the payer runs on). A card
+   that stays up is a failure: say so with the diary from both phones, since
+   it means Android never told the payer the Max's service went.
+8. **A link that goes.** Mid-tap, before the four digits, pull the phones
    apart and put the receiver away: the payer's screen goes back (`gone`, then
    `searching`) and the next touch links afresh. With a payment handed over,
    put the payer away for ten seconds and bring it back: `back in front with a

@@ -30,6 +30,9 @@ class FakeBluetooth(
 
     // the payer's side (ENG-671)
     override var scans = true
+
+    /** False: an API 28-30 phone, where the payer does not run (BluetoothAnswer.pays). */
+    override var pays = true
     var scanGranted = true
 
     /** What the payer's own question answers: true, false, or null for one still on screen. */

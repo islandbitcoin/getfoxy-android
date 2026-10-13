@@ -245,8 +245,7 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
 
     /**
      * Tap to pay's permissions, asked together in the system's one question: the receiver's two
-     * (ENG-670) and the payer's (ENG-671; BLUETOOTH_SCAN and BLUETOOTH_CONNECT from API 31,
-     * ACCESS_FINE_LOCATION on API 28-30).
+     * (ENG-670) and the payer's (ENG-671; BLUETOOTH_SCAN and BLUETOOTH_CONNECT, from API 31 only).
      */
     override fun bluetooth(permissions: List<String>, done: (Boolean?) -> Unit) {
         if (permissions.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) return done(true)

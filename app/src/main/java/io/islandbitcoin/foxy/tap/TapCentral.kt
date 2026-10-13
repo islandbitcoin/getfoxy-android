@@ -15,7 +15,10 @@ import java.util.UUID
  * connection, so the radio queues them.
  */
 interface TapCentral {
-    /** Listens for receivers; each advertisement goes to [TapPayer.discovered]. False when Android would not start a scan. */
+    /**
+     * Listens for receivers; each advertisement goes to [TapPayer.discovered]. False when Android would not start a scan;
+     * a scan Android fails to start after this answered true is [TapPayer.scanFailed].
+     */
     fun startScan(): Boolean
 
     fun stopScan()
@@ -25,7 +28,8 @@ interface TapCentral {
 
     /**
      * Asks for a bigger MTU and then finds the services: [TapPayer.servicesFound]
-     * with every service's characteristics, or an empty map when discovery failed.
+     * with every service's characteristics, or null when discovery failed (an
+     * empty map is a phone that serves nothing, which is not the same thing).
      */
     fun discover(device: String)
 

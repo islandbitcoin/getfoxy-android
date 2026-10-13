@@ -22,12 +22,12 @@
      neverForLocation (Foxy never derives a place from what it hears; it looks
      for one per-invoice service UUID and nothing else), with BLUETOOTH_CONNECT,
      asked in the same question as the receiver's two (one "Nearby devices"
-     group). ACCESS_FINE_LOCATION only up to API 30, because there it is truly
-     required: Android 9 returns no BLE scan results without a location
-     permission, and Android 10 and 11 none without ACCESS_FINE_LOCATION (and
-     location services on). It is never declared, and so never asked, from API
-     31. No coarse or background location on any API. Nothing scans while Foxy
-     is put away.
+     group). The payer runs from API 31 only (BluetoothAnswer.pays): before it,
+     Android 9 returns no BLE scan results without a location permission, and
+     Android 10 and 11 none without ACCESS_FINE_LOCATION and location services
+     on, so on API 28-30 tap to pay's paying side answers "unsupported" and no
+     location permission is declared or asked on any API. Nothing scans while
+     Foxy is put away.
 
      ENG-667: NFC for a card session (cardBegin): reader mode on the activity in
      front, only while the page has a session open (flashcard/ReaderModeRadio.kt).
@@ -63,7 +63,6 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="31" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.NFC" />

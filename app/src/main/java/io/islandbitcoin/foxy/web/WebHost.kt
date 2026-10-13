@@ -93,8 +93,8 @@ class WebHost(
 
         /**
          * Tap to pay's permissions ([io.islandbitcoin.foxy.tap.BluetoothAnswer]: the receiver's
-         * BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT, the payer's BLUETOOTH_SCAN, or ACCESS_FINE_LOCATION
-         * on API 28-30), asked together; `done(true)` granted,
+         * BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT and the payer's BLUETOOTH_SCAN, API 31+; nothing
+         * for the payer on API 28-30, where it does not run), asked together; `done(true)` granted,
          * `done(false)` refused, `done(null)` when nobody answered (the request was cancelled or interrupted).
          */
         fun bluetooth(permissions: List<String>, done: (Boolean?) -> Unit)

@@ -406,7 +406,168 @@ class TapPayerTest {
         assertTrue(air.stages.none { it == TapStage.GONE || it == TapStage.CONNECTING })
     }
 
+    /**
+     * The receiver leaves its screen (TapLink.swift 1547-1558, `didModifyServices`): its link stays
+     * up and goes on answering how strong it is, so without this the card here stayed up, for
+     * good once "near" had been said (WARM_TOO_LONG never lets an announced link go).
+     */
+    @Test
+    fun theReceiverLeavingItsScreenBringsTheCardDownLetsTheLinkGoAndLooksAgain() {
+        val (air, r) = listening(rssi = -45)
+        r.linkRssi = -45
+        air.hear(4.0)
+        assertTrue("TAP TO PAY up", TapStage.NEARBY in air.stages)
+        assertTrue(air.c.isConnected("AA:01"))
+        // the iPhone receiver backs out: off the air, its service gone, the link still answering
+        r.receiver.stop()
+        air.c.servicesGone("AA:01")
+        air.settle()
+        assertEquals("the card comes down", TapStage.FAR, air.stages.last())
+        assertFalse("the link is let go", air.c.isConnected("AA:01"))
+        assertTrue(air.diary.any { it.contains("the receiver went off the air") })
+        assertTrue("and the listen goes on", air.c.scanning)
+        val said = air.stages.size
+        air.hear(25.0)
+        assertTrue("no TAP TO PAY for a phone that is no longer asking", air.stages.drop(said).none { it == TapStage.NEARBY })
+        // looking again: the next receiver held to it is found
+        val next = air.receiver("AA:02")
+        next.rssi = -30
+        next.onAir()
+        air.hear(4.0)
+        assertNotNull(air.offer)
+        assertEquals(listOf("AA:01", "AA:02"), air.c.connects.distinct())
+    }
+
+    @Test
+    fun aDiscoveryThatFailsIsLookedForAgainNotTakenForNotAFoxy() {
+        // the quiet link's discovery fails once (GATT 133): looked for again, and the tap goes through
+        val (air, _) = listening()
+        air.c.discoveryFails["AA:01"] = 1
+        air.hear(4.0)
+        assertNotNull(air.offer)
+        air.payer.stop()
+        assertTrue("never counted as not a Foxy", air.diary.none { it.contains("that were not Foxy") })
+
+        // and held together, decided on advertisements (warming off): a failure while touching does not
+        // leave the receiver alone for NOT_FOXY_SKIP, as a phone that is not a Foxy is
+        val (held, r) = listening(rssi = -45)
+        r.linkRssi = null
+        held.hear(4.0)
+        assertTrue(held.diary.any { it.contains("the open link will not say how strong it is") })
+        held.c.discoveryFails["AA:01"] = 1
+        r.rssi = -30
+        held.hear(TapPayer.NOT_FOXY_SKIP - 4.0)
+        assertTrue("the failed one was connected to while touching", held.stages.contains(TapStage.CONNECTING))
+        assertNotNull("taken again well inside ${TapPayer.NOT_FOXY_SKIP} s", held.offer)
+    }
+
     // MARK: the radio and Foxy away
+
+    @Test
+    fun aScanAndroidFailsToStartIsStartedAgainAndTheReceiverIsFound() {
+        val (air, _) = listening()
+        // SCAN_FAILED_APPLICATION_REGISTRATION_FAILED, as after a Bluetooth stack restart
+        air.c.failScan(2)
+        air.settle()
+        assertFalse(air.c.scanning)
+        air.hear(0.5)
+        assertFalse("not at once", air.c.scanning)
+        air.hear(0.6)
+        assertTrue("started again after a second", air.c.scanning)
+        assertEquals(2, air.c.scanStarts)
+        air.hear(3.0)
+        assertNotNull("and the receiver is found", air.offer)
+        assertTrue(TapStage.UNSUPPORTED !in air.stages)
+    }
+
+    @Test
+    fun aScanThatKeepsFailingWaitsOneTwoThenFourSeconds() {
+        val air = PayerAir()
+        air.payer.start()
+        air.settle()
+        for ((wait, code) in listOf(1.0 to 2, 2.0 to 3, 4.0 to 5, 4.0 to 6)) {
+            air.c.failScan(code)
+            air.hear(wait - 0.5)
+            assertFalse("still waiting ($wait s, error $code)", air.c.scanning)
+            air.hear(0.6)
+            assertTrue("started again after $wait s (error $code)", air.c.scanning)
+        }
+        assertEquals(5, air.c.scanStarts)
+        assertTrue("nothing said on screen for a scan started again", air.stages.isEmpty())
+    }
+
+    @Test
+    fun aPhoneAndroidSaysCannotScanIsUnsupported() {
+        val (air, _) = listening()
+        air.c.failScan(TapPayer.SCAN_FAILED_FEATURE_UNSUPPORTED)
+        air.hear(6.0)
+        assertEquals(TapStage.UNSUPPORTED, air.stages.last())
+        assertEquals("not started again", 1, air.c.scanStarts)
+    }
+
+    @Test
+    fun belowApi31ThePayerIsUnsupportedAndNothingIsAsked() {
+        val air = PayerAir()
+        air.bluetooth.pays = false
+        air.bluetooth.scanGranted = false
+        air.payer.start()
+        air.settle()
+        assertEquals(listOf(TapStage.UNSUPPORTED), air.stages)
+        assertEquals(0, air.bluetooth.scanAsks)
+        assertNull(air.central)
+        for (sdk in 28..30) {
+            assertFalse(BluetoothAnswer.pays(sdk))
+            assertTrue("nothing asked for the payer on $sdk", BluetoothAnswer.scanPermissions(sdk).isEmpty())
+            assertTrue("never a location on $sdk", BluetoothAnswer.askedAtApprove(sdk).none { it.contains("LOCATION") })
+        }
+        for (sdk in 31..37) assertTrue(BluetoothAnswer.pays(sdk))
+    }
+
+    @Test
+    fun permissionsGrantedInSettingsWhileAwayAreNoticedOnTheWayBack() {
+        // refused before: denied with no dialog
+        val air = PayerAir()
+        val r = air.receiver("AA:01")
+        r.onAir()
+        air.bluetooth.scanGranted = false
+        air.bluetooth.keptScan.value = true
+        air.payer.start()
+        air.settle()
+        assertEquals(listOf(TapStage.DENIED), air.stages)
+        assertNull(air.central)
+        // away and back with nothing granted: nothing changes
+        air.payer.foreground(false)
+        air.payer.foreground(true)
+        air.settle()
+        assertNull(air.central)
+        // Settings, Nearby devices allowed, back to Foxy
+        air.payer.foreground(false)
+        air.bluetooth.scanGranted = true
+        air.payer.foreground(true)
+        air.settle()
+        assertTrue("the scan starts", air.c.scanning)
+        air.hear(3.0)
+        assertNotNull("and the receiver is found", air.offer)
+        assertEquals(0, air.bluetooth.scanAsks)
+
+        // taken away while listening (the radio's next word reads it), then granted again while away
+        val (again, r2) = listening(rssi = -58)
+        again.hear(1.0)
+        again.bluetooth.scanGranted = false
+        again.bluetooth.setPower(TapBluetooth.Power.ON)
+        again.settle()
+        assertEquals(TapStage.DENIED, again.stages.last())
+        assertTrue(again.c.closed)
+        again.payer.foreground(false)
+        again.bluetooth.scanGranted = true
+        again.payer.foreground(true)
+        again.settle()
+        assertEquals("watched once, not twice", 1, again.bluetooth.watching)
+        assertTrue("a new scanner, scanning", again.c.scanning && !again.c.closed)
+        r2.rssi = -30
+        again.hear(4.0)
+        assertNotNull(again.offer)
+    }
 
     @Test
     fun noAdapterNoScannerOrNoCentralIsUnsupportedAndNothingIsAsked() {

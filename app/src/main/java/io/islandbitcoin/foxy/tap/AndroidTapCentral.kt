@@ -125,8 +125,13 @@ class AndroidTapCentral(
 
         override fun onScanFailed(errorCode: Int) {
             main.post {
+                if (closed) return@post
+                // the same callback is already scanning: nothing failed
+                if (errorCode == ScanCallback.SCAN_FAILED_ALREADY_STARTED) return@post say("the scan was already running")
                 scanning = false
                 say("the scan failed (error $errorCode)")
+                // a scan stopped since is not the payer's news; one it still wants is started again by it
+                if (scanWanted) payer.scanFailed(errorCode)
             }
         }
     }
@@ -219,10 +224,11 @@ class AndroidTapCentral(
 
             override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
                 // read here, on the binder thread, the moment Android has them
+                // null: discovery failed (often 129 or 133, and passing), not a phone without the service
                 val found = if (status == BluetoothGatt.GATT_SUCCESS) {
                     g.services.associate { s -> s.uuid to s.characteristics.map { it.uuid }.toSet() }
                 } else {
-                    emptyMap()
+                    null
                 }
                 main.post {
                     if (!live()) return@post
@@ -231,6 +237,7 @@ class AndroidTapCentral(
                 }
             }
 
+            // API 31+, and so is the payer (BluetoothAnswer.pays): no API on which this never comes
             override fun onServiceChanged(g: BluetoothGatt) {
                 main.post { if (live()) payer.servicesChanged(address) }
             }
@@ -358,7 +365,7 @@ class AndroidTapCentral(
     override fun discover(device: String) {
         // the MTU first; a phone that will not take the question is not waited for
         queued(device, "an MTU of $MTU", start = { _, g -> g.requestMtu(MTU) }, failed = {}, stall = MTU_WAIT)
-        queued(device, "service discovery", start = { _, g -> g.discoverServices() }, failed = { payer.servicesFound(device, emptyMap()) })
+        queued(device, "service discovery", start = { _, g -> g.discoverServices() }, failed = { payer.servicesFound(device, null) })
     }
 
     override fun setNotify(device: String, service: UUID, door: UUID, on: Boolean) {

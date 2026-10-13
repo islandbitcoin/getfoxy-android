@@ -80,6 +80,26 @@ class FakeTapCentral(private val air: PayerAir, val payer: TapPayer, val me: Str
     /** Notifications from these are not delivered (a receiver that never answers M1). */
     val deaf = HashSet<String>()
 
+    /** Service discovery to these fails this many more times (Android's GATT status 129 or 133). */
+    val discoveryFails = HashMap<String, Int>()
+
+    /** Android could not start the scan (`onScanFailed`): it stops, and the payer is told. */
+    fun failScan(code: Int) {
+        scanning = false
+        later { payer.scanFailed(code) }
+    }
+
+    /**
+     * The receiver left its screen: its service goes from the GATT server while the link stays
+     * up and goes on answering how strong it is (TapLink.swift 1547-1558), and the payer hears
+     * Android's `onServiceChanged`.
+     */
+    fun servicesGone(device: String) {
+        val c = links[device] ?: return
+        c.r.peripheral.layout = null
+        later { if (c.up) payer.servicesChanged(device) }
+    }
+
     inner class Conn(val r: AirReceiver) : AttCentral {
         var up = false
         private var nextRequest = 1
@@ -135,9 +155,14 @@ class FakeTapCentral(private val air: PayerAir, val payer: TapPayer, val me: Str
     }
 
     override fun discover(device: String) {
-        val c = links[device] ?: return later { payer.servicesFound(device, emptyMap()) }
+        val c = links[device] ?: return later { payer.servicesFound(device, null) }
         later {
             if (!c.up) return@later
+            val fails = discoveryFails[device] ?: 0
+            if (fails > 0) {
+                discoveryFails[device] = fails - 1
+                return@later payer.servicesFound(device, null)
+            }
             c.r.receiver.server.mtuChanged(me, air.mtu)
             val found = HashMap<UUID, Set<UUID>>()
             val layout = c.r.peripheral.layout

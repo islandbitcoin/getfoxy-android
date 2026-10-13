@@ -68,7 +68,7 @@ class ManifestTest {
                 "POST_NOTIFICATIONS (payments), USE_BIOMETRIC (the PIN lock, the seed's device protection) and " +
                 "DETECT_SCREEN_CAPTURE (_screenshot), NFC (a card session, ENG-667), ENG-670's BLUETOOTH_ADVERTISE and " +
                 "BLUETOOTH_CONNECT (tap to pay's receiver; BLUETOOTH and BLUETOOTH_ADMIN before API 31), ENG-671's " +
-                "BLUETOOTH_SCAN (the payer; ACCESS_FINE_LOCATION before API 31), and nothing else: $permissions",
+                "BLUETOOTH_SCAN (the payer, API 31+ only), and nothing else: $permissions",
             setOf(
                 "android.permission.INTERNET",
                 "android.permission.ACCESS_NETWORK_STATE",
@@ -81,7 +81,6 @@ class ManifestTest {
                 "android.permission.BLUETOOTH",
                 "android.permission.BLUETOOTH_ADMIN",
                 "android.permission.BLUETOOTH_SCAN",
-                "android.permission.ACCESS_FINE_LOCATION",
                 "android.permission.NFC",
                 "io.islandbitcoin.foxy.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
             ),
@@ -192,10 +191,9 @@ class ManifestTest {
      * required (a phone without it answers "unsupported").
      *
      * ENG-671: the payer scans. BLUETOOTH_SCAN from API 31, flagged
-     * `neverForLocation` (no place is ever derived from what Foxy hears), and
-     * ACCESS_FINE_LOCATION only up to API 30, where Android returns no scan
-     * results without it; never coarse or background location, and never
-     * location from API 31.
+     * `neverForLocation` (no place is ever derived from what Foxy hears). The
+     * payer runs from API 31 only (BluetoothAnswer.pays), because before it a
+     * scan needs location: no location permission of any kind, on any API.
      */
     @Test
     fun bluetoothIsTheReceiversTwoThePayersScanAndTheLegacyOnesOnlyBefore31() {
@@ -205,11 +203,12 @@ class ManifestTest {
         }
         assertEquals("the scan never stands for a location", "neverForLocation",
             uses.getValue("android.permission.BLUETOOTH_SCAN").getAttributeNS(android, "usesPermissionFlags"))
-        for (name in listOf("android.permission.BLUETOOTH", "android.permission.BLUETOOTH_ADMIN", "android.permission.ACCESS_FINE_LOCATION")) {
+        for (name in listOf("android.permission.BLUETOOTH", "android.permission.BLUETOOTH_ADMIN")) {
             assertEquals("$name only where it is the permission (API 28-30)", "30", uses.getValue(name).getAttributeNS(android, "maxSdkVersion"))
         }
         val never = listOf(
-            "android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_BACKGROUND_LOCATION", "android.permission.BLUETOOTH_PRIVILEGED",
+            "android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_BACKGROUND_LOCATION",
+            "android.permission.BLUETOOTH_PRIVILEGED",
         )
         for (name in never) assertFalse("$name is never asked", name in uses)
         assertEquals("nothing is declared for a Bluetooth permission's sake but these", 0,
@@ -222,10 +221,13 @@ class ManifestTest {
         assertFalse("nor location", elements(merged, "uses-feature").any {
             it.getAttributeNS(android, "name").startsWith("android.hardware.location") && it.getAttributeNS(android, "required") != "false"
         })
-        // and what the code asks for is what is declared: the payer's from 31, location only on 28-30
+        // and what the code asks for is what is declared: the payer's from 31, nothing for it before (it does not run)
         assertEquals(listOf("android.permission.BLUETOOTH_SCAN", "android.permission.BLUETOOTH_CONNECT"), BluetoothAnswer.scanPermissions(31))
-        for (sdk in 28..30) assertEquals(listOf("android.permission.ACCESS_FINE_LOCATION"), BluetoothAnswer.scanPermissions(sdk))
-        for (sdk in 31..37) assertTrue("no location asked from 31", BluetoothAnswer.askedAtApprove(sdk).none { it.contains("LOCATION") })
+        for (sdk in 28..30) {
+            assertFalse("the payer does not run on $sdk", BluetoothAnswer.pays(sdk))
+            assertEquals(emptyList<String>(), BluetoothAnswer.scanPermissions(sdk))
+        }
+        for (sdk in 28..37) assertTrue("no location asked on $sdk", BluetoothAnswer.askedAtApprove(sdk).none { it.contains("LOCATION") })
         for (sdk in 28..37) for (p in BluetoothAnswer.askedAtApprove(sdk)) assertTrue("$p is declared", p in uses)
     }
 

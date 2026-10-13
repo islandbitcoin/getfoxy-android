@@ -55,6 +55,13 @@ interface TapBluetooth {
      */
     val scans: Boolean
 
+    /**
+     * The payer can run on this phone at all ([BluetoothAnswer.pays]): API 31+. Below it a scan needs
+     * a location permission and location services on, which the payer does not ask for, so tap to
+     * pay's paying side answers `unsupported` there and nothing is asked for it.
+     */
+    val pays: Boolean
+
     /** The payer's permissions are granted ([BluetoothAnswer.scanPermissions]). */
     fun scanPermitted(): Boolean
 
@@ -78,6 +85,7 @@ interface TapBluetooth {
         override fun watch(onChange: (Power) -> Unit): () -> Unit = {}
         override fun open(server: TapGattServer): TapPeripheral? = null
         override val scans = false
+        override val pays = false
         override fun scanPermitted() = false
         override fun askScan(done: (Boolean) -> Unit) = done(false)
         override fun scanRefused() = false
@@ -136,23 +144,29 @@ object BluetoothAnswer {
     fun permissions(sdk: Int): List<String> =
         if (sdk >= 31) listOf("android.permission.BLUETOOTH_ADVERTISE", "android.permission.BLUETOOTH_CONNECT") else emptyList()
 
+    /** The first API level the payer runs on (ENG-671): [pays]. */
+    const val PAYER_SDK = 31
+
     /**
-     * What the payer's scan needs at this API level (ENG-671). From 31,
-     * BLUETOOTH_SCAN (declared `neverForLocation`: Foxy never derives a place from
-     * what it hears) and BLUETOOTH_CONNECT, the same "Nearby devices" group as the
-     * receiver's two, so one dialog answers all three. Before 31 there is no scan
-     * permission of its own: Android 9 returns no scan results without a location
-     * permission, and Android 10 and 11 none without ACCESS_FINE_LOCATION
-     * (developer.android.com, "Bluetooth permissions", and `ScanFilter`'s
-     * location requirement), so on API 28-30 the payer needs ACCESS_FINE_LOCATION
-     * at run time, declared with `maxSdkVersion` 30 and never asked from 31.
+     * Whether the payer runs at this API level. From 31 the scan has a permission of its own,
+     * BLUETOOTH_SCAN, declared `neverForLocation`. Before 31 Android returns no scan results
+     * without a location permission (Android 9) or ACCESS_FINE_LOCATION (Android 10 and 11), and
+     * none at all while location services are off (developer.android.com, "Bluetooth
+     * permissions"): a location dialog the page and iOS's flow never explain, and a listen that
+     * hears nothing, and says nothing, whenever location is off (ENG-658's failure). So the payer
+     * is `unsupported` on API 28-30, as foxy-parity-gap.md §2.1 suggested, and Foxy never asks
+     * for or declares a location permission. The receiver still runs there.
+     */
+    fun pays(sdk: Int): Boolean = sdk >= PAYER_SDK
+
+    /**
+     * What the payer's scan needs at this API level (ENG-671): from 31, BLUETOOTH_SCAN (declared
+     * `neverForLocation`: Foxy never derives a place from what it hears) and BLUETOOTH_CONNECT,
+     * the same "Nearby devices" group as the receiver's two, so one dialog answers all three.
+     * Nothing before 31, where the payer does not run ([pays]).
      */
     fun scanPermissions(sdk: Int): List<String> =
-        if (sdk >= 31) {
-            listOf("android.permission.BLUETOOTH_SCAN", "android.permission.BLUETOOTH_CONNECT")
-        } else {
-            listOf("android.permission.ACCESS_FINE_LOCATION")
-        }
+        if (pays(sdk)) listOf("android.permission.BLUETOOTH_SCAN", "android.permission.BLUETOOTH_CONNECT") else emptyList()
 
     /**
      * What the first-install screen's APPROVE asks: the receiver's and the

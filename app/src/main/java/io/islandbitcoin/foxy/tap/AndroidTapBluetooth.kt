@@ -87,8 +87,10 @@ class AndroidTapBluetooth(
 
     // MARK: the payer (ENG-671)
 
+    override val pays: Boolean = BluetoothAnswer.pays(Build.VERSION.SDK_INT)
+
     override val scans: Boolean
-        get() = bt?.bluetoothLeScanner != null
+        get() = pays && bt?.bluetoothLeScanner != null
 
     private val scanNeeded = BluetoothAnswer.scanPermissions(Build.VERSION.SDK_INT)
 
@@ -116,6 +118,8 @@ class AndroidTapBluetooth(
     override fun scanRefused(): Boolean = scanRefusal.refused()
 
     override fun central(payer: TapPayer): TapCentral? {
+        // the payer runs from API 31 only (BluetoothAnswer.pays): onServiceChanged, which brings the card down, is 31+ too
+        if (Build.VERSION.SDK_INT < BluetoothAnswer.PAYER_SDK) return null
         val m = manager ?: return null
         val a = bt ?: return null
         if (!scanPermitted()) return null
