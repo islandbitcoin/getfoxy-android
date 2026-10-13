@@ -15,9 +15,19 @@
      Tap to pay's receiver (ENG-670): BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT
      on API 31+ (runtime, asked by the first-install Bluetooth screen's APPROVE
      or the first TAP), BLUETOOTH and BLUETOOTH_ADMIN on API 28-30 only
-     (install-time). Never BLUETOOTH_SCAN or a location permission: the receiver
-     advertises and serves, it never scans (the payer's scan is ENG-671).
-     Bluetooth LE is not required: a phone without it answers "unsupported".
+     (install-time). Bluetooth LE is not required: a phone without it answers
+     "unsupported".
+
+     Tap to pay's payer (ENG-671): BLUETOOTH_SCAN on API 31+, flagged
+     neverForLocation (Foxy never derives a place from what it hears; it looks
+     for one per-invoice service UUID and nothing else), with BLUETOOTH_CONNECT,
+     asked in the same question as the receiver's two (one "Nearby devices"
+     group). The payer runs from API 31 only (BluetoothAnswer.pays): before it,
+     Android 9 returns no BLE scan results without a location permission, and
+     Android 10 and 11 none without ACCESS_FINE_LOCATION and location services
+     on, so on API 28-30 tap to pay's paying side answers "unsupported" and no
+     location permission is declared or asked on any API. Nothing scans while
+     Foxy is put away.
 
      ENG-667: NFC for a card session (cardBegin): reader mode on the activity in
      front, only while the page has a session open (flashcard/ReaderModeRadio.kt).
@@ -52,6 +62,7 @@
     <uses-permission android:name="android.permission.DETECT_SCREEN_CAPTURE" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="31" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.NFC" />

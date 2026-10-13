@@ -196,8 +196,9 @@ class TapReceiveTest {
         val errors = (entries.single { it["name"] == "tapReceiveStart" }["reply"] as Map<String, Any?>)["errors"] as List<String>
         assertTrue(TapRules.NOT_PAYABLE in errors)
         assertTrue("tapReceiveStart" in FoxyBridge.P3_ACTIONS && "tapReceiveStop" in FoxyBridge.P3_ACTIONS)
-        // the payer's search is untouched: still LATER, still its stub
-        assertEquals("LATER", entries.single { it["name"] == "tapPayStart" }["phase"])
+        // the payer's search is P3 since ENG-671 (TapPayBridgeTest), and keeps its stub for P1 and P2 hosts
+        assertEquals("P3", entries.single { it["name"] == "tapPayStart" }["phase"])
         assertTrue("tapPayStart" in ContractStubs.p1.keys)
+        assertTrue("tapPayStart" in FoxyBridge.P3_ACTIONS)
     }
 }

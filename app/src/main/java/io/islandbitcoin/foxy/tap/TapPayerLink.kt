@@ -225,6 +225,12 @@ class TapPayerLink(
         }
     }
 
+    /**
+     * The GATT client found something wrong underneath (not a Foxy, the doors went,
+     * the link would not open): give up on this link as [retry] does, before an offer.
+     */
+    fun fail(why: String) = retry(why)
+
     /** The link to give up on, before an offer: quiet when nothing had been said on screen. */
     private fun retry(why: String) {
         if (finished || linked || spent) return

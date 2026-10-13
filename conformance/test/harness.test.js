@@ -307,7 +307,7 @@ test('host.pushAs and o.unknown: a push after its reply, refused from too early 
     p2.close();
   }
   // o.unknown may not hide an action the host serves, or one with a stub
-  for (const [phase, name] of [['P3', 'tapReceiveStart'], ['P3', 'tapPayStart'], ['P3', 'nope']]) {
+  for (const [phase, name] of [['P3', 'tapReceiveStart'], ['P3', 'tapPayStart'], ['P3', 'tapPayStop'], ['P3', 'nostrSend'], ['P3', 'nope']]) {
     const h = await boot({ seed: true, tor: 'up', phase, unknown: new Set([name]) });
     try {
       assert.ok(h.host.violations.some((v) => v.kind === 'unknown' && v.detail.includes(name)), name + ' refused as unknown on ' + phase);
@@ -315,15 +315,23 @@ test('host.pushAs and o.unknown: a push after its reply, refused from too early 
       h.close();
     }
   }
-  // and on a P3 host, an unknown action is answered as the Kotlin bridge answers it, with no violation
-  // (shakeStart was the example until ENG-670 made it P3; tapPayStop is the payer's, LATER and unstubbed)
-  const p3 = await boot({ seed: true, tor: 'up', phase: 'P3', unknown: new Set(['tapPayStop']) });
+  // and on a P3 host, no LATER action is left without a stub (shakeStart was the example until ENG-670 made
+  // it P3, tapPayStop until ENG-671 did, inboxClose until ENG-672 did, nostrSend until ENG-677 did), so
+  // o.unknown has nothing to name there, and an action outside the contract altogether, posted raw, is
+  // answered as the Kotlin bridge answers it, "Unknown action: …", and is itself the one violation
+  const unstubbed = CONTRACT.filter((e) => e.kind === 'action' && e.phase === 'LATER' && !e.p1).map((e) => e.name);
+  assert.deepEqual(unstubbed, [], 'every LATER action has a stub');
+  const outside = 'nostrRelayList';
+  assert.ok(!CONTRACT.some((e) => e.name === outside), outside + ' is not in contract.json');
+  const p3 = await boot({ seed: true, tor: 'up', phase: 'P3' });
   try {
     await p3.settle(300);
     p3.host.violations.length = 0;
-    await assert.doesNotReject(p3.W.tapPayStop());
-    assert.deepEqual(p3.host.answered.filter((a) => a[0] === 'tapPayStop').slice(-1), [['tapPayStop', null, 'Unknown action: tapPayStop']]);
-    assert.deepEqual(p3.host.violations, []);
+    p3.window.webkit.messageHandlers.foxy.postMessage({ action: outside, id: 'n-p3', target: 'nprofile1x', body: 'cashuBx' });
+    await wait(50);
+    assert.deepEqual(p3.host.answered.filter((a) => a[0] === outside).slice(-1), [[outside, null, 'Unknown action: ' + outside]]);
+    assert.deepEqual(kinds(p3.host.violations), ['unknown']);
+    assert.ok(p3.host.violations[0].detail.includes(outside));
   } finally {
     p3.close();
   }
