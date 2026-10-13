@@ -86,6 +86,7 @@ adb shell am instrument -w -r io.islandbitcoin.foxy.test/androidx.test.runner.An
 | `OwnPromptTest` | API 28-29 only, with `-e foxyPin <pin>` (skipped otherwise; it types the PIN with `input`): Settings' screen-lock confirmation stops MainActivity, and that stop is not a put-away. The vault's epoch does not move, the seed read under it is kept, the door stays open, and PutAway logs that it put nothing away; taking the guard off within 10 s of that yes still asks (`fresh`); Back on the confirmation after 2.5 s is not a yes, so the skipped put-away runs (the epoch moves) and PutAway logs a return. With a WebView that loads the page, a `seedShow` of a `device` seed opens SHOW WORDS once the PIN is given (skipped on an image whose WebView cannot load the page) | S3, S20, S21 |
 | `BluetoothApproveTest` | what the first-install Bluetooth screen's APPROVE posts (`bluetoothAsk`) comes back through the real shim twice, in iOS's order: `window.__foxyBluetoothAnswer(state)`, which closes the screen, then the reply `state` on its id; and the gate's own screen, launched with `FOXY_SHOW_WARNING` (debug builds) and raised through the banner's `leaveOffline` on a phone with a wallet, closes after PROCEED then APPROVE with `foxy.bt.asked` = `approved, iOS said <state>` (the two keys are put back). Since ENG-670 the state is the phone's: BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT are granted to the app first (API 31+, so no dialog comes up), and the answer must be what `BluetoothAnswer` reads from this phone's adapter: `allowed` with Bluetooth on, `off` with it off, `unsupported` on a phone that cannot advertise. Run it once with Bluetooth on and once off. The ENG-656 form (`unsupported` on every phone) passed on a Pixel 8 Pro (Android 17) 2026-10-12; the ENG-670 form is compiled, not yet run on a phone | ENG-656, ENG-670 |
 | `TapGattOnDeviceTest` | the receiver's GATT service as Android's own objects (`AndroidTapPeripheral.service`): one primary service, the four doors in iOS's order with iOS's properties and permissions, a CCCD (read, write, no encryption) on each notify door and none on the in door; and Android's `BluetoothGattCharacteristic`/`BluetoothGatt`/`BluetoothGattDescriptor` constants equal to the ones `TapGatt` spells out for the JVM tests; and the advertisement (`AndroidTapPeripheral.advertiseData`, `advertiseSettings`) as the iPhone payer accepts it (TapLink.swift 1154-1157): exactly one service UUID, the service's, no device name, no TX power level, no manufacturer or service data, connectable, no timeout. Opens no GATT server and needs no permission. ENG-670; compiled, not yet run on a phone | ENG-670 |
+| `TapCentralOnDeviceTest` | the payer's scan as Android's own objects (`AndroidTapCentral.scanFilters`, `scanSettings`): one filter, on the service field with an all-zero mask (an advertisement with any service UUID; the per-invoice UUID cannot be named before it is heard) and nothing else; low latency, every advertisement reported, no batching; and Bluetooth's Device Information UUIDs and the MTU asked for. Opens no scanner and needs no permission. ENG-671; compiled, not yet run on a phone | ENG-671 |
 | `TapCryptoOnDeviceTest` | tap to pay's crypto through the phone's own providers: Tink's X25519 in the APK and Conscrypt's ChaCha20-Poly1305 (which the desk JVM does not have) give iOS's bytes from `fixtures/tap-vectors.json` (the keys, the code, every seal, and the first conversation's handshake and offer); the JVM's `TapVectorsTest` checks the whole file. ENG-669; passed on the Pixel 8 Pro (Android 17) 2026-10-12 at main `d856d3b`, `OK (3 tests)`, recorded under "Runs": the gate below is met for ENG-670 | ENG-669 |
 | `TextZoomTest` | with the system font scale set to 1.3 through the shell (the phone's value put back afterwards), a WebView the activity makes and leaves alone starts at `textZoom` 130 (the control), and Foxy's is `WebHost.PAGE_TEXT_ZOOM`, 100: the page is laid out as WKWebView lays it out on iOS, whatever the font size. Skipped, saying why, when the scale cannot be set or a plain WebView does not follow it. ENG-661; compiled, not yet run on a phone | ENG-661 |
 | `NotifyChannelTest` | the payments channel `payments_heads_up` is `IMPORTANCE_HIGH` (heads-up, as iOS's foreground banner), and a phone holding the default-importance `payments` an earlier build made loses it when the channel is made (ENG-665). A channel the person turned off or down in Settings fails the first test: turn it back on | — |
@@ -334,6 +335,111 @@ record the method with the numbers:
   table upstream (`TapEdges`, `TapProximity` thresholds per receiver model):
   the iPhone has to learn the Pixel as a receiver, which is an upstream
   change, not this one.
+
+## Tap to pay: the Pixel pays (ENG-671)
+
+**Pending: the person's, with two phones (three for Pixel to Pixel). No phone
+was used for this change, and nothing here moves money unless the person
+chooses to (the payment steps, under "Real money": at most 100 sats, the
+person's own mint).** The JVM tests run Android's payer (`TapPayer` over a fake
+GATT client, `TapPayerTest`, `TapPayBridgeTest`) against Android's own
+receiver at the ATT level: the scan rules, the RSSI gates, the quiet link, the
+near doors, every message (M1 to M12, a payment in many parts as long writes,
+change and M8), and every way a link ends. Only phones prove that Android's
+GATT client and CoreBluetooth's peripheral agree, and that the thresholds mean
+touching on a Pixel. **The hard gate above holds** (`TapCryptoOnDeviceTest`,
+met 2026-10-12). Also pending, the person's: `TapCentralOnDeviceTest` (the scan
+filter and settings as Android builds them; compiled, not yet run).
+
+The phones: the **Pixel 8 Pro** with the debug build of this branch, the
+iPhone **Max** with Foxy (getfoxy/iOS at `core/PIN`'s commit or later, a debug
+build so its diary prints `[tap] receive:` lines), and, for Pixel to Pixel, a
+second Android phone (API 31+, or 28-30 to check the location path) with the
+same build. Both unlocked, Bluetooth on, Foxy in front on each, each funded
+with a few sats at the mint the other uses. Follow the Pixel's diary with
+`adb logcat --pid=$(adb shell pidof io.islandbitcoin.foxy) | grep '\[tap\]'`.
+
+1. **The question, once (API 31+).** On a fresh install, PROCEED, then APPROVE
+   on the Bluetooth screen: one Android dialog, "Nearby devices". Allow. Then in
+   Settings › Apps › Foxy › Permissions, "Nearby devices" is allowed and
+   **Location is not listed at all** (BLUETOOTH_SCAN is `neverForLocation`).
+   Fund the wallet and go home: no second dialog. On a phone at API 28-30 (if
+   one is at hand) APPROVE asks for location as well, which is what Android 9
+   to 11 need for any BLE scan result; refuse it there and the home screen's
+   tap card says Bluetooth is not allowed (`_tap` `denied` on the pay side)
+   and asks nothing more.
+2. **ENG-658: one listen, not a re-ask loop.** Home screen of a funded wallet,
+   Bluetooth **off**: the diary says `[tap] pay:` nothing, the page shows
+   Bluetooth off, and over two minutes `adb logcat | grep -c tapPayStart` (with
+   the bridge's debug log) or the field log shows **one** `tapPayStart`, not
+   one every few seconds. Turn Bluetooth on: the same listen starts scanning
+   (`dumpsys bluetooth_manager | grep -A3 -i "le scan"` lists Foxy's scan),
+   still with no second `tapPayStart`.
+3. **Nothing scans while Foxy is away.** Home screen, listening. HOME: within a
+   second the diary says `Foxy was put away; not listening` and
+   `dumpsys bluetooth_manager` no longer lists Foxy's scan. Back to Foxy:
+   `Foxy is back; listening again`, and the scan is listed again.
+4. **The Pixel pays the iPhone Max.** The Max on RECEIVE → an amount → NEXT
+   (on the air). Bring the Pixel, Foxy on its home screen, towards it: the
+   Pixel's diary says `something at <n> dBm, not close enough (…)` as it nears;
+   a hand apart, TAP TO PAY on the Pixel and CONNECT TO PAY on the Max, the
+   Max's mark on the edge the Pixel chose (the Pixel reads the Max's model,
+   `that phone is a iPhone…; this one's <edge> edge to its <edge>`). A line
+   `the filter passed by …` at the end of a listen that counts nothing as Foxy
+   while the Max was on the air is a failure (its advertisement was refused).
+   Touch the phones: `a receiver at <n> dBm (needs -33, advertised), already
+   linked`, then both screens show the same four digits and the Pixel's
+   confirmation opens with the Max's amount. Pay only with the person's go: a
+   small amount with change due, PAYMENT RECEIVED on the Max, the change kept on
+   the Pixel (`change written down; telling the receiver`, and the Max's
+   `tapChange` answered `ok`), balances agree. Then TAP TO PAY pressed from a
+   hand apart (not touching) takes the Max within five seconds.
+5. **The iPhone Max pays the Pixel.** As *Tap to pay: the Pixel receives*
+   steps 3 to 5 above, which this change leaves as they were: the Pixel on
+   the air, the Max listening from its home screen.
+6. **Pixel to Pixel** (a second Android at hand). One receives, the other
+   pays, then swap: the four digits match, a payment with change crosses, and
+   each diary shows the other's service UUID. With no Device Information
+   service on an Android receiver the edges are the default (payer left,
+   receiver right) until A12 gives Pixels their own.
+7. **A link that goes.** Mid-tap, before the four digits, pull the phones
+   apart and put the receiver away: the payer's screen goes back (`gone`, then
+   `searching`) and the next touch links afresh. With a payment handed over,
+   put the payer away for ten seconds and bring it back: `back in front with a
+   payment handed over; asking the receiver to say it again` and the answer
+   comes (M12).
+
+**The payer's near threshold and the Pixel's edges (for the upstream table,
+A12).** The thresholds Android uses are iOS's as they are
+(`tap/TapProximity.kt`: touching at a median of **−33 dBm** advertised,
+TAP TO PAY from **−54**, a quiet link from **−64**, the open link's **−60**),
+and the edge table is iOS's (`tap/TapProtocol.kt` `TapEdges`: only iPhone 17
+Pro and later receivers are held on their left edge). Both were measured
+iPhone to iPhone; **the Pixel's values are to be measured**, with the Pixel as
+the payer this time:
+
+- Payer: the Pixel 8 Pro, Foxy on its home screen, its diary followed: the
+  `something at <n> dBm` lines (the advertised median the verdict decides on)
+  and, once a quiet link is open, `the open link answers at <n> dBm (its
+  advertisement said <m>)`, which is the two scales side by side.
+- Receivers, one at a time: the iPhone Max on its invoice screen, and a second
+  Pixel on its invoice screen (`ADVERTISE_TX_POWER_HIGH`), each face up on a
+  wooden table, nothing metal within 30 cm.
+- Positions, each held still for 10 s, three times, phones swapped round
+  between runs: back to back touching; touching tops together; touching with
+  the Pixel's camera bar over the receiver's top edge, then over its bottom
+  edge, then over its left and its right edges; 1, 2, 5, 10 and 20 cm apart;
+  the Pixel in its case and without.
+- Record per position the median and the spread, the closest position that
+  reaches −33 dBm (and whether any 20 cm reading does, which would be a
+  stranger's phone across a counter), the open link's reading beside the
+  advertised one, and which edge pairing reads strongest (that is where the
+  Pixel's antenna is, for `TapEdges`).
+- Write the table under "Runs" with the date, both phones' OS versions, the
+  commit, and, per position, whether the Pixel connected without TAP TO PAY.
+  Thresholds per payer model, and Pixel models in `TapEdges`, are an upstream
+  change (getfoxy/iOS `TapProtocol.swift`) that Android then follows; nothing
+  here changes the numbers.
 
 ## The card (ENG-667)
 
