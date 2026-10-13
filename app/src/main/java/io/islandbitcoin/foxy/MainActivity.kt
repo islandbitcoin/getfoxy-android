@@ -67,6 +67,14 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         /** Debug builds only: do not start Tor in this process (the page stays on SECURING YOUR CONNECTION). */
         const val NO_TOR = "FoxyNoTor"
 
+        /**
+         * Debug builds only: leave FLAG_SECURE off this activity's window for this run, so the
+         * store screenshots can be taken (docs/DEVICE-TESTS.md "Store screenshots"). The seed
+         * screens, the scanner and the native dialogs keep it. A release never reads it
+         * (ReleaseBuildTest.aReleaseCannotLiftFlagSecure).
+         */
+        const val ALLOW_CAPTURE = "FoxyAllowCapture"
+
         /** The page's activity alive in this process, for CardTapActivity's routing (CardTapRoute). Main thread. */
         private var alive: java.lang.ref.WeakReference<MainActivity>? = null
 
@@ -140,7 +148,10 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
-        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        // in a release BuildConfig.DEBUG is the constant false, and this is an unconditional setFlags
+        if (!(BuildConfig.DEBUG && intent?.getBooleanExtra(ALLOW_CAPTURE, false) == true)) {
+            window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        }
         // Android's own splash goes with the first frame, fading onto the cover below (SplashCover)
         splash.setOnExitAnimationListener { provider ->
             provider.view.animate().alpha(0f).setDuration(SplashCover.SYSTEM_FADE_MS).withEndAction { provider.remove() }

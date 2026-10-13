@@ -19,7 +19,8 @@ import javax.xml.parsers.DocumentBuilderFactory
  * - BuildConfig.DEBUG gates in main: WebView debugging (`setWebContentsDebuggingEnabled`),
  *   the foxy:// link (MainActivity.receiveDeepLink, WebHost.deepLink), FOXY_DEBUG and the
  *   FOXY_SHOW_WARNING extra (WebHost.create), the FoxyNoTor and FoxyForceTransport extras
- *   (MainActivity.onCreate), the FoxyCardSim extra (WebHost, through CardSim.ENABLED),
+ *   (MainActivity.onCreate), the FoxyAllowCapture extra that leaves FLAG_SECURE off for the
+ *   store screenshots (MainActivity.onCreate), the FoxyCardSim extra (WebHost, through CardSim.ENABLED),
  *   the seed thread's self-check (FoxyServices), the bridge's `isDebug` answer;
  * - the tests' hooks in main (`internal var x: ((…) -> Unit)? = null`): set by tests only.
  *
@@ -189,7 +190,7 @@ class ReleaseBuildTest {
         // the extras' names and the page's debug flags anywhere in a string (the foxy: link's two doors are
         // theDeepLinkDoorsAreEmptyInARelease: "foxy:" itself is also the clipboard filter's, in every build)
         val debugStrings = listOf(
-            Regex("""// String (FoxyNoTor|FoxyForceTransport|FoxyCardSim|FOXY_SHOW_WARNING)$"""),
+            Regex("""// String (FoxyNoTor|FoxyForceTransport|FoxyCardSim|FoxyAllowCapture|FOXY_SHOW_WARNING)$"""),
             Regex("""// String .*window\.(FOXY_DEBUG|FOXY_SHOW_WARNING)"""),
         )
         for (c in foxy()) for ((member, code) in c.members) for (line in code) {
@@ -239,5 +240,51 @@ class ReleaseBuildTest {
                 }
             }
         }
+    }
+
+    /** The int a javap line pushes (iconst_N, bipush N, sipush N, ldc of an int), or null for any other instruction. */
+    private fun pushed(line: String): Int? {
+        val op = line.substringAfter(": ").trim()
+        Regex("""^iconst_(m1|\d)$""").find(op)?.let { return if (it.groupValues[1] == "m1") -1 else it.groupValues[1].toInt() }
+        Regex("""^[bs]ipush\s+(-?\d+)$""").find(op)?.let { return it.groupValues[1].toInt() }
+        Regex("""^ldc(_w)?\s+.*// int (-?\d+)$""").find(op)?.let { return it.groupValues[2].toInt() }
+        return null
+    }
+
+    @Test
+    fun aReleaseCannotLiftFlagSecure() {
+        val secure = 0x2000 // WindowManager.LayoutParams.FLAG_SECURE
+        var secured = 0
+        for (c in foxy()) for ((member, code) in c.members) code.forEachIndexed { i, line ->
+            val where = "${c.className}.$member: $line"
+            // no window's attributes are written whole, and no flags field is written by hand
+            assertFalse(where, "android/view/Window.setAttributes" in line)
+            assertFalse(where, Regex("""putfield .*WindowManager\${'$'}LayoutParams\.flags""").containsMatchIn(line))
+            if ("android/view/Window.clearFlags" in line) {
+                val flags = pushed(code[i - 1])
+                assertTrue("$where: clearFlags of a constant", flags != null)
+                assertEquals("$where clears FLAG_SECURE", 0, flags!! and secure)
+            }
+            if ("android/view/Window.setFlags" in line) {
+                val flags = pushed(code[i - 2])
+                val mask = pushed(code[i - 1])
+                assertTrue("$where: setFlags of constants", flags != null && mask != null)
+                if (mask!! and secure != 0) assertEquals("$where sets FLAG_SECURE off", secure, flags!! and secure)
+                if (flags!! and secure != 0) secured++
+            }
+        }
+        // the page's window, the seed screens', the scanner's and the native dialogs'
+        assertEquals("FLAG_SECURE is set on four windows", 4, secured)
+
+        // the page's window: set before any branch, so no extra or setting can skip it (FoxyAllowCapture is debug only)
+        val main = foxy().single { it.className == "io.islandbitcoin.foxy.MainActivity" }
+        val onCreate = main.members.entries.single { it.key.contains(" onCreate(android.os.Bundle)") }.value
+        val at = onCreate.indexOfFirst { "android/view/Window.setFlags" in it }
+        assertTrue("MainActivity.onCreate sets FLAG_SECURE", at > 0)
+        assertEquals("FLAG_SECURE", secure, pushed(onCreate[at - 2]))
+        val branch = Regex("""^\d+: (if\w*|goto\w*|tableswitch|lookupswitch)\b""")
+        for (line in onCreate.subList(0, at)) assertFalse("MainActivity.onCreate branches before FLAG_SECURE: $line", branch.containsMatchIn(line))
+        assertFalse("MainActivity.onCreate reads no extra before FLAG_SECURE",
+            onCreate.subList(0, at).any { "android/content/Intent.get" in it || "getIntent" in it })
     }
 }
