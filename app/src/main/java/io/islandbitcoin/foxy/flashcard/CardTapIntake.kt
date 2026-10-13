@@ -71,16 +71,6 @@ class CardTapIntake(
         get() = cardSession() || readerOffAt?.let { now() - it < QUIET_AFTER_READ_MS } == true
 
     /**
-     * An intent MainActivity was started with or handed: its action, its data as the
-     * string it was handed over as (`Intent.getDataString`), and whether it is
-     * replayed (launched from history, or the activity restored).
-     */
-    fun intent(action: String?, data: String?, replayed: Boolean) {
-        if (!isCardIntent(action, data)) return
-        tap(replayed)
-    }
-
-    /**
      * A card's address, already held to [CardAddress.isCard] (by CardTapActivity), handed
      * to MainActivity as [CardTapRoute.EXTRA]: a tap, unless replayed or a card being read.
      */

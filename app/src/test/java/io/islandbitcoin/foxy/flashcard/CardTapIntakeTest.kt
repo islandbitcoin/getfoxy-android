@@ -8,8 +8,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Where a card's address comes in on Android (CardTapIntake.kt, ENG-668): the two
- * actions MainActivity's filters take, the exact address and nothing else, an intent
+ * Where a card's address comes in on Android (CardTapIntake.kt, ENG-668), through the
+ * functions production calls (isCardIntent in CardTapActivity, tap in MainActivity): the two
+ * actions CardTapActivity's filters take, the exact address and nothing else, an intent
  * replayed from Recents is no tap, and a card being read (or just read, still resting
  * on the phone as reader mode goes off) never re-opens the Flashcard screen.
  */
@@ -32,6 +33,17 @@ class CardTapIntakeTest {
     private val ndef = CardTapIntake.NDEF_DISCOVERED
     private val view = CardTapIntake.VIEW
 
+    /**
+     * The production path, and only it: CardTapActivity holds the intent to
+     * [CardTapIntake.isCardIntent] (its action and `Intent.getDataString`) and passes
+     * nothing else on; MainActivity is handed the one-shot extra and calls
+     * [CardTapIntake.tap] with whether the intent was replayed.
+     */
+    private fun arrive(to: CardTapIntake, action: String?, data: String?, replayed: Boolean) {
+        if (!CardTapIntake.isCardIntent(action, data)) return
+        to.tap(replayed)
+    }
+
     @Test
     fun theActionsAreAndroidsOwn() {
         assertEquals(android.nfc.NfcAdapter.ACTION_NDEF_DISCOVERED, ndef)
@@ -41,9 +53,9 @@ class CardTapIntakeTest {
     /** From the tag dispatch or as a link, the card's address is a tap, told to the page with nothing of it. */
     @Test
     fun theCardsAddressFromTheTagOrALinkIsATap() {
-        intake.intent(ndef, card, replayed = false)
+        arrive(intake, ndef, card, replayed = false)
         assertEquals(1, asked)
-        intake.intent(view, "https://getfoxy.io/card/?from=browser", replayed = false)
+        arrive(intake, view, "https://getfoxy.io/card/?from=browser", replayed = false)
         assertEquals(2, asked)
         assertFalse("the address is not logged", lines.any { "getfoxy" in it })
     }
@@ -52,11 +64,18 @@ class CardTapIntakeTest {
     @Test
     fun anythingElseIsNoTap() {
         for (action in listOf(null, "android.intent.action.MAIN", "android.nfc.action.TECH_DISCOVERED", "android.nfc.action.TAG_DISCOVERED", "android.intent.action.SEND")) {
-            intake.intent(action, card, replayed = false)
+            arrive(intake, action, card, replayed = false)
         }
         for (data in listOf(null, "", "https://www.getfoxy.io/card", "foxy://card", "https://getfoxy.io/cards", "http://getfoxy.io/card")) {
-            intake.intent(ndef, data, replayed = false)
-            intake.intent(view, data, replayed = false)
+            arrive(intake, ndef, data, replayed = false)
+            arrive(intake, view, data, replayed = false)
+        }
+        for (action in listOf(null, "android.intent.action.MAIN", "android.nfc.action.TECH_DISCOVERED", "android.nfc.action.TAG_DISCOVERED", "android.intent.action.SEND")) {
+            assertFalse("CardTapActivity turns away $action", CardTapIntake.isCardIntent(action, card))
+        }
+        for (data in listOf(null, "", "https://www.getfoxy.io/card", "foxy://card", "https://getfoxy.io/cards", "http://getfoxy.io/card")) {
+            assertFalse("CardTapActivity turns away $data", CardTapIntake.isCardIntent(ndef, data))
+            assertFalse("CardTapActivity turns away $data", CardTapIntake.isCardIntent(view, data))
         }
         assertEquals(0, asked)
         assertNull(delivery.since)
@@ -66,8 +85,8 @@ class CardTapIntakeTest {
     /** Foxy opened again from Recents hands back the intent that first started it: that is no new tap. */
     @Test
     fun aReplayedIntentIsNoTap() {
-        intake.intent(ndef, card, replayed = true)
-        intake.intent(view, card, replayed = true)
+        arrive(intake, ndef, card, replayed = true)
+        arrive(intake, view, card, replayed = true)
         assertEquals(0, asked)
         assertNull(delivery.since)
     }
@@ -77,13 +96,13 @@ class CardTapIntakeTest {
     fun noTapWhileACardSessionIsOpen() {
         session = true
         assertTrue(intake.suppressed)
-        intake.intent(ndef, card, replayed = false)
+        arrive(intake, ndef, card, replayed = false)
         assertEquals(0, asked)
         assertNull("not even kept for later", delivery.since)
         assertEquals(listOf(CardTapIntake.SUPPRESSED), lines)
         session = false
         assertFalse(intake.suppressed)
-        intake.intent(ndef, card, replayed = false)
+        arrive(intake, ndef, card, replayed = false)
         assertEquals("a tap again once the session is over (and reader mode never went off here)", 1, asked)
     }
 
@@ -91,14 +110,14 @@ class CardTapIntakeTest {
     @Test
     fun noTapForTheCardJustReadAsReaderModeGoesOff() {
         intake.readerOff()
-        intake.intent(ndef, card, replayed = false)
+        arrive(intake, ndef, card, replayed = false)
         clock += CardTapIntake.QUIET_AFTER_READ_MS - 1
-        intake.intent(ndef, card, replayed = false)
+        arrive(intake, ndef, card, replayed = false)
         assertEquals(0, asked)
         assertEquals(listOf(CardTapIntake.SUPPRESSED, CardTapIntake.SUPPRESSED), lines)
         clock += 1
         assertFalse(intake.suppressed)
-        intake.intent(ndef, card, replayed = false)
+        arrive(intake, ndef, card, replayed = false)
         assertEquals("lifted and held again later: a tap", 1, asked)
         assertEquals(3_000L, CardTapIntake.QUIET_AFTER_READ_MS)
     }
@@ -108,10 +127,10 @@ class CardTapIntakeTest {
     fun aTapAlreadyWaitingIsLeftToTheDelivery() {
         val waiting = CardTapDelivery(now = { clock }, wait = { _, _ -> }, say = {})
         val gate = CardTapIntake(waiting, now = { clock }, cardSession = { session }, say = {})
-        gate.intent(ndef, card, replayed = false)
+        arrive(gate, ndef, card, replayed = false)
         assertNotNull("kept, the page is not up", waiting.since)
         session = true
-        gate.intent(ndef, card, replayed = false)
+        arrive(gate, ndef, card, replayed = false)
         assertNotNull(waiting.since)
     }
 
@@ -119,7 +138,7 @@ class CardTapIntakeTest {
     @Test
     fun theDebugCardLinkIsNotTheIntakes() {
         session = true
-        intake.intent(view, "foxy://card", replayed = false)
+        arrive(intake, view, "foxy://card", replayed = false)
         assertEquals(0, asked)
         delivery.cardTapped()
         assertEquals(1, asked)

@@ -413,8 +413,13 @@ page's `cardTapRule`) in the field log too.
    no Flashcard screen; the log has `[foxy] card tap: dropped`. Close the
    screen (Back): Foxy's page is under it, as it was, and Recents shows one
    Foxy. Then on HOME hold the card: a tap as in step 3 (`delivered`).
-   Repeat a) with the card left resting on the phone, turn the screen off and
-   on and unlock: still `dropped` on each wake, and the words stay up.
+   `dropped` holds only while the words are live on screen (the hold in a).
+   Then repeat a) with the card left resting on the phone, turn the screen
+   off and on and unlock. **Pass:** the seed screen closed when the screen
+   went off (S20, the log has `[foxy] a seed screen was left; closed`), so on
+   unlock the words are gone, the tap is `delivered` and handled as in step
+   3, and Recents still shows one Foxy. A seed screen still up after unlock
+   is a fail (S20), and so is a second Foxy.
 12. **A card resting on the phone while another app is in front.** Put the card
    in the phone's case (or tape it to the back) so it rests on the reader. Open
    Foxy on HOME, then open another app (Settings or Chrome) so Foxy is in the
