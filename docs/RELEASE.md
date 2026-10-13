@@ -1,7 +1,13 @@
 # RELEASE.md — Foxy for Android on Google Play internal testing
 
 Foxy Android 0.1.0 goes to **Google Play internal testing** under the Island
-Bitcoin developer account (ENG-680). The package is `io.islandbitcoin.foxy`.
+Bitcoin developer account (ENG-680). The package (`applicationId`) is
+`io.islandbitcoin.getfoxy`: the Play Console app is bound to that name, so a
+bundle with any other package is refused. The Kotlin `namespace` and the source
+packages stay `io.islandbitcoin.foxy` (so `BuildConfig`, `R` and every class
+name, such as `io.islandbitcoin.foxy.MainActivity`, keep that name), and iOS
+keeps its bundle id `io.islandbitcoin.foxy`. `ReleaseBuildTest` pins the
+applicationId.
 The GitHub release is the tag `v0.1.0` and its notes only: no APK or AAB is
 attached anywhere public.
 
@@ -17,6 +23,16 @@ attached anywhere public.
 `ReleaseBuildTest` (JVM, runs with `testDebugUnitTest`) reads the release
 build's own merged manifest and compiled classes and fails if any of the rows
 above is not so.
+
+## The package on a phone
+
+Debug and release builds both install as `io.islandbitcoin.getfoxy` (the test
+APK as `io.islandbitcoin.getfoxy.test`). Builds from before ENG-680 installed
+as `io.islandbitcoin.foxy`; Android treats that as a different app, so a phone
+that has one keeps it alongside the new one, each with its own wallet. Restore
+the wallet from its words in the new app, check the balance, then uninstall
+the old one (`adb uninstall io.islandbitcoin.foxy`). Uninstalling first loses
+nothing only if the words are written down.
 
 ## 1. The upload key (once, by a person)
 
@@ -122,7 +138,7 @@ classes with `javap` and checks each row.
 1. **Create the app.** Play Console (Island Bitcoin account) → *Create app*:
    name *Foxy*, default language English (United States), *App*, *Free*,
    accept the declarations. The package name is fixed by the first upload:
-   `io.islandbitcoin.foxy`.
+   `io.islandbitcoin.getfoxy` (the app already exists under that name, ENG-680).
 2. **Play App Signing.** *Test and release → Setup → App signing*: let Google
    generate and hold the app signing key (the default). The first AAB uploaded
    registers its signer as the **upload key**: upload only a bundle signed by

@@ -27,6 +27,9 @@ class ManifestTest {
 
     private val merged: Element by lazy { manifest("foxy.mergedManifest") }
     private val release: Element by lazy { manifest("foxy.releaseManifest") }
+    // the installed package (app/build.gradle.kts applicationId), which AGP prefixes to the
+    // dynamic-receiver permission; activity names stay in the io.islandbitcoin.foxy namespace
+    private val applicationId by lazy { System.getProperty("foxy.applicationId")?.takeIf { it != "null" } ?: error("foxy.applicationId is not set") }
 
     private fun manifest(property: String): Element {
         val file = File(System.getProperty(property) ?: error("the $property path is not set"))
@@ -82,13 +85,13 @@ class ManifestTest {
                 "android.permission.BLUETOOTH_ADMIN",
                 "android.permission.BLUETOOTH_SCAN",
                 "android.permission.NFC",
-                "io.islandbitcoin.foxy.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+                "$applicationId.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
             ),
             permissions,
         )
         assertFalse("never a foreground service", permissions.any { it.contains("FOREGROUND_SERVICE") })
         assertTrue("no permission of its own is declared beyond the receiver one", elements(merged, "permission").all {
-            it.getAttributeNS(android, "name") == "io.islandbitcoin.foxy.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+            it.getAttributeNS(android, "name") == "$applicationId.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
         })
         val camera = elements(merged, "uses-feature").filter { it.getAttributeNS(android, "name").startsWith("android.hardware.camera") }
         assertTrue("a camera is used where there is one, never required", camera.isNotEmpty() && camera.all { it.getAttributeNS(android, "required") == "false" })

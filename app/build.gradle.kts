@@ -158,7 +158,9 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.islandbitcoin.foxy"
+        // The Play app is bound to io.islandbitcoin.getfoxy (ENG-680, docs/RELEASE.md); the
+        // Kotlin namespace and source packages stay io.islandbitcoin.foxy, as iOS's bundle id does.
+        applicationId = "io.islandbitcoin.getfoxy"
         minSdk = 28
         targetSdk = 36
         versionCode = 2
@@ -249,6 +251,7 @@ android {
             // ReleaseBuildTest: the version the builds must carry, from defaultConfig above, so a bump needs no test edit
             it.systemProperty("foxy.versionCode", defaultConfig.versionCode.toString())
             it.systemProperty("foxy.versionName", defaultConfig.versionName.toString())
+            it.systemProperty("foxy.applicationId", defaultConfig.applicationId.toString())
             // ReleaseBuildTest: the release build's own classes, and the source sets that say what is debug only
             it.systemProperty("foxy.releaseClasses", layout.buildDirectory.dir("tmp/kotlin-classes/release").get().asFile.absolutePath)
             it.systemProperty("foxy.releaseJavaClasses",

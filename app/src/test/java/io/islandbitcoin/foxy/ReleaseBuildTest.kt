@@ -38,6 +38,8 @@ class ReleaseBuildTest {
     // the version app/build.gradle.kts sets (defaultConfig), handed over by the test task
     private val versionCode by lazy { System.getProperty("foxy.versionCode")?.takeIf { it != "null" } ?: error("foxy.versionCode is not set") }
     private val versionName by lazy { System.getProperty("foxy.versionName")?.takeIf { it != "null" } ?: error("foxy.versionName is not set") }
+    // the applicationId app/build.gradle.kts sets: the installed package, not the Kotlin namespace
+    private val applicationId by lazy { System.getProperty("foxy.applicationId")?.takeIf { it != "null" } ?: error("foxy.applicationId is not set") }
 
     private val kotlinClasses by lazy { dir("foxy.releaseClasses") }
     private val javaClasses by lazy { dir("foxy.releaseJavaClasses") }
@@ -97,13 +99,23 @@ class ReleaseBuildTest {
     private fun foxy(): List<Disassembly> = release.filter { it.className.startsWith("io.islandbitcoin.foxy.") }
 
     @Test
+    fun theApplicationIdIsThePlayAppsPackageAndTheNamespaceStays() {
+        // Google Play binds the app to io.islandbitcoin.getfoxy (ENG-680): a bundle with any
+        // other package is refused. The Kotlin namespace (BuildConfig, R, the source
+        // packages) stays io.islandbitcoin.foxy.
+        assertEquals("io.islandbitcoin.getfoxy", applicationId)
+        val text = javap("-constants", "-cp", javaClasses.path, "io.islandbitcoin.foxy.BuildConfig")
+        assertTrue(text, text.contains("public static final java.lang.String APPLICATION_ID = \"io.islandbitcoin.getfoxy\";"))
+    }
+
+    @Test
     fun theReleaseCarriesTheBuildFilesVersionWithNoDebugFlag() {
         val text = javap("-constants", "-cp", javaClasses.path, "io.islandbitcoin.foxy.BuildConfig")
         assertTrue(text, text.contains("public static final boolean DEBUG = false;"))
         assertTrue(text, text.contains("public static final java.lang.String BUILD_TYPE = \"release\";"))
         assertTrue(text, text.contains("public static final int VERSION_CODE = $versionCode;"))
         assertTrue(text, text.contains("public static final java.lang.String VERSION_NAME = \"$versionName\";"))
-        assertTrue(text, text.contains("public static final java.lang.String APPLICATION_ID = \"io.islandbitcoin.foxy\";"))
+        assertTrue(text, text.contains("public static final java.lang.String APPLICATION_ID = \"$applicationId\";"))
     }
 
     @Test
@@ -116,7 +128,7 @@ class ReleaseBuildTest {
             assertEquals("36", usesSdk(m).getAttributeNS(android, "targetSdkVersion"))
             assertEquals(versionCode, m.getAttributeNS(android, "versionCode"))
             assertEquals(versionName, m.getAttributeNS(android, "versionName"))
-            assertEquals("io.islandbitcoin.foxy", m.getAttribute("package"))
+            assertEquals(applicationId, m.getAttribute("package"))
         }
     }
 
