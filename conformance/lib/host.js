@@ -26,6 +26,7 @@ const crypto = require('crypto');
 const { check } = require('./schema');
 const TapRules = require('./tap-rules');
 const CardOwner = require('./card-owner');
+const CardHost = require('./card-host');
 const CONTRACT = require('../contract.json');
 
 const BY_NAME = new Map(CONTRACT.map((e) => [e.name, e]));
@@ -102,6 +103,10 @@ function replyProblems(entry, text, error) {
  *               seed is saved (default: abandon … about, the first case of the
  *               iOS card-owner vectors); o.nowMs the phone's clock for cardTime
  *               (default: Date.now)
+ *   o.card      the card a card session finds (ENG-667): a model of lib/flashcard-card.js
+ *               (`makeCard`), or 'away' for a sheet nobody holds a card to; unset, a phone
+ *               that cannot read one. Also `host.state.card`, set by a flow once the page
+ *               has loaded (the model needs the page's CashuTS).
  *   o.bluetooth the phone's Bluetooth, as Android's TapBridge reads it (ENG-670):
  *               'unsupported' (default: no Bluetooth LE peripheral, the ENG-656
  *               answers), or a phone with one whose state is 'allowed', 'off' or
@@ -122,6 +127,7 @@ function makeHost(o) {
     protection: 'none', imported: false, notifiedAt: 0, receiverHeld: false,
     bluetooth: opts.bluetooth || 'unsupported', linked: false, offered: '', early: false,
     shakeArmed: false, answers: new Map(), m6: [],
+    card: opts.card || null, cardPull: null,
   };
   if (!['unsupported', 'allowed', 'off', 'denied'].includes(state.bluetooth)) throw new Error('unknown o.bluetooth: ' + state.bluetooth);
   const SEED = crypto.createHash('sha256').update('conformance seed').digest();
@@ -303,11 +309,10 @@ function makeHost(o) {
     bluetoothAsk: () => { host.global('__foxyBluetoothAnswer', state.bluetooth); return [state.bluetooth, null]; },
     shakeStart: () => { state.shakeArmed = true; return ['ok', null]; },
     shakeStop: () => { state.shakeArmed = false; return ['ok', null]; },
-    cardBegin: () => NO('This phone cannot read cards.'),
-    cardSend: () => NO('The card was taken away.'),
-    cardSay: () => ['ok', null],
-    cardAgain: () => NO('The card was taken away.'),
-    cardEnd: () => ['ok', null],
+    /* The card session as Android answers it since ENG-667 (lib/card-host.js: CardBridge.kt,
+     * CardGate.kt): a card behind it when a flow puts one there (`o.card`, `state.card`), and
+     * otherwise a phone that cannot read one ("NFC is not available on this phone"). */
+    ...CardHost.cardAnswers(host),
     /* As Android answers them since ENG-666 (lib/card-owner.js, CardOwner.kt, CardTime.kt):
      * the owner key and signatures from the seed's words, "bad request" for anything but
      * the six labels and their shapes, and the clock signed by the interim time key. */
@@ -461,6 +466,15 @@ function makeHost(o) {
     const over = opts.answers && opts.answers[m.action];
     afterReplies = [];
     const got = (over && over(m, host)) || answer[m.action](m, host);
+    // an answer that takes a while (a card's, ENG-667): replied when it comes, as native's
+    if (got && typeof got.then === 'function') {
+      const after = afterReplies.splice(0);
+      got.then((g) => {
+        reply(entry, m.id, g[0], g[1]);
+        for (const fn of after) setTimeout(fn, 0);
+      });
+      return;
+    }
     reply(entry, m.id, got[0], got[1]);
     // scheduled after the reply's own turn, so the page hears the answer first
     for (const fn of afterReplies.splice(0)) setTimeout(fn, 0);

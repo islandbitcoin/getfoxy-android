@@ -13,6 +13,7 @@
  * session posts, and the contract is checked on those.
  *
  *   const mint = fakeMint(window)        // after cashu-ts.js has loaded in it
+ *   fakeMint(window, { p2pk: true })     // one whose info says NUT-10 and NUT-11 (a card's pieces are locked)
  *   mint.handle({ url, method, body })   // -> "status\nbody", as native answers
  */
 function fakeMint(w, opts) {
@@ -73,7 +74,9 @@ function fakeMint(w, opts) {
       return ok({ name: 'conformance mint', pubkey: pubs['1'], version: 'fake/1',
         nuts: { 4: { methods: [{ method: 'bolt11', unit: 'sat', description: true }], disabled: false },
                 5: { methods: [{ method: 'bolt11', unit: 'sat' }], disabled: false },
-                7: { supported: true }, 8: { supported: true }, 9: { supported: true }, 12: { supported: true } } });
+                7: { supported: true }, 8: { supported: true }, 9: { supported: true }, 12: { supported: true },
+                // `p2pk`: a mint that says it takes locked ecash (NUT-10, NUT-11), as a card's pieces are (ENG-667); it still checks no lock
+                ...(o.p2pk ? { 10: { supported: true }, 11: { supported: true } } : {}) } });
     }
     if (p === '/v1/keysets') return ok({ keysets: [{ id, unit: 'sat', active: true, input_fee_ppk: 0 }] });
     if (p === '/v1/keys' || p === '/v1/keys/' + id) return ok({ keysets: [{ id, unit: 'sat', active: true, keys: pubs }] });

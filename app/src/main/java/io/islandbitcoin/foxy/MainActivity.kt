@@ -221,6 +221,8 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
     }
 
     override fun onStop() {
+        // a card session is the foreground's only: it ends as Foxy leaves, as iOS's NFC session does (ENG-667)
+        host?.cardPutAway()
         // the camera light never stays on behind anything else, Foxy's own screen-lock confirmation included:
         // stopping it touches no seed, screen or door, so it is not skipped for that confirmation (PutAway's away is)
         host?.stopCamera()

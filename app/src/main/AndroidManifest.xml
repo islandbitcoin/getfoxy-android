@@ -17,7 +17,13 @@
      or the first TAP), BLUETOOTH and BLUETOOTH_ADMIN on API 28-30 only
      (install-time). Never BLUETOOTH_SCAN or a location permission: the receiver
      advertises and serves, it never scans (the payer's scan is ENG-671).
-     Bluetooth LE is not required: a phone without it answers "unsupported". -->
+     Bluetooth LE is not required: a phone without it answers "unsupported".
+
+     ENG-667: NFC for a card session (cardBegin): reader mode on the activity in
+     front, only while the page has a session open (flashcard/ReaderModeRadio.kt).
+     NFC is not required: a phone without it installs Foxy and the page is told
+     "NFC is not available on this phone". No activity filters for the system's
+     tag dispatch (ManifestTest). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
@@ -31,10 +37,12 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.NFC" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
 
     <application
         android:name=".FoxyApplication"

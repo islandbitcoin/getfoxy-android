@@ -5,7 +5,8 @@
 # tools/check-no-network.sh to fail on it; then a clean tree, and the allowed
 # exceptions (OkHttp in network/, the SOCKS factory's socket and placeholder
 # address, the network/ JVM tests' loopback servers, the net-block test's
-# listener, a page script's `new WebSocket(`), must pass.
+# listener, a page script's `new WebSocket(`, the debug card simulator link on
+# loopback and the flashcard/ JVM tests' card servers), must pass.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -108,6 +109,45 @@ plant 'test/java/io/islandbitcoin/foxy/bridge/X.kt' 'val server = ServerSocket(0
 expect fail "a server in a JVM test outside network/"
 plant 'test/java/io/islandbitcoin/foxy/network/X.kt' 'val a = InetAddress.getByName("example.com")'
 expect fail "a lookup in a network/ JVM test"
+
+# ENG-667: the card simulator link, debug builds only, loopback only
+sim='debug/java/io/islandbitcoin/foxy/flashcard/SimCardLink.kt'
+simOk='import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
+        val s = Socket()
+            s.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), port), CONNECT_MS)'
+plant "$sim" "$simOk"
+expect pass "the debug card simulator link, to the loopback address"
+plant "$sim" "$simOk
+            s.connect(InetSocketAddress(\"10.0.2.2\", port), CONNECT_MS)"
+expect fail "the card simulator link to the emulator's host address"
+plant "$sim" "$simOk
+            s.connect(InetSocketAddress(\"localhost\", port), CONNECT_MS)"
+expect fail "the card simulator link to a name that is looked up"
+plant "$sim" "$simOk
+        val t = Socket(host, port)"
+expect fail "the card simulator link opening a socket to anything it is handed"
+plant "$sim" "$simOk
+            s.connect(InetSocketAddress(InetAddress.getByAddress(addr), port), CONNECT_MS)"
+expect fail "the card simulator link to another address"
+plant "$sim" "$simOk
+        val server = ServerSocket(port)"
+expect fail "the card simulator link listening"
+plant "$sim" 'val a = InetAddress.getByName("cardsim.example")'
+expect fail "a lookup in the card simulator link"
+plant 'main/java/io/islandbitcoin/foxy/flashcard/SimCardLink.kt' "$simOk"
+expect fail "the card simulator link in main/: it would ship in a release build"
+plant 'release/java/io/islandbitcoin/foxy/flashcard/SimCardLink.kt' "$simOk"
+expect fail "the card simulator link in release/"
+plant 'debug/java/io/islandbitcoin/foxy/flashcard/CardSim.kt' 'val s = Socket()'
+expect fail "a socket elsewhere in the debug flashcard/ folder"
+plant 'testDebug/java/io/islandbitcoin/foxy/flashcard/FakeCardServer.kt' 'val server = ServerSocket(0, 8, InetAddress.getLoopbackAddress())'
+expect pass "a flashcard/ JVM test's loopback card server"
+plant 'testDebug/java/io/islandbitcoin/foxy/flashcard/X.kt' 'val a = InetAddress.getByName("example.com")'
+expect fail "a lookup in a flashcard/ JVM test"
+plant 'test/java/io/islandbitcoin/foxy/flashcard/X.kt' 'val server = ServerSocket(0, 8, InetAddress.getLoopbackAddress())'
+expect fail "a server in the shared JVM tests' flashcard/ (only the debug tests may reach the card simulator)"
 
 if [ "$failures" -ne 0 ]; then
   echo "check-no-network.test: $failures case(s) wrong" >&2

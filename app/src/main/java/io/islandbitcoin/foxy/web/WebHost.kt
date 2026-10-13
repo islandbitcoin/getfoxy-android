@@ -38,6 +38,12 @@ import io.islandbitcoin.foxy.bridge.PageHost
 import io.islandbitcoin.foxy.bridge.PlatformRules
 import io.islandbitcoin.foxy.bridge.Prompt
 import io.islandbitcoin.foxy.debug.Log
+import io.islandbitcoin.foxy.flashcard.CardLink
+import io.islandbitcoin.foxy.flashcard.CardMain
+import io.islandbitcoin.foxy.flashcard.CardSheetView
+import io.islandbitcoin.foxy.flashcard.CardSim
+import io.islandbitcoin.foxy.flashcard.NfcCardLink
+import io.islandbitcoin.foxy.flashcard.ReaderModeRadio
 import io.islandbitcoin.foxy.notify.Notifier
 import io.islandbitcoin.foxy.scanner.LivePreview
 import io.islandbitcoin.foxy.scanner.ScannerActivity
@@ -102,6 +108,9 @@ class WebHost(
         const val PAGE_URL = "https://$DOMAIN/assets/web/index.html"
         private const val SERVED_PREFIX = "/assets/web/"
         val ALLOWED_ORIGINS = setOf(FoxyBridge.ORIGIN)
+
+        /** Debug builds only: card sessions go to the card simulator (SimCardLink) even on a phone with NFC. */
+        const val CARD_SIM = "FoxyCardSim"
 
         /** What a reply or push for a page that is gone leaves in the field log, instead of reaching a WebView. */
         const val DROPPED_LINE = "[foxy] webview: a script for a page that is gone was dropped"
@@ -315,6 +324,7 @@ class WebHost(
     /** Foxy is in front again: whatever the share sheet did, it is gone. */
     fun resumed() {
         sharing = false
+        cardResumed()
     }
 
     override fun notify(title: String, text: String) {
@@ -417,6 +427,54 @@ class WebHost(
             turning?.disable()
             bridge?.tapAway()
         }
+    }
+
+    // MARK: The card (ENG-667)
+
+    private val cardMain = object : CardMain {
+        override fun post(action: Runnable) {
+            main.post(action)
+        }
+
+        override fun later(ms: Long, action: Runnable): () -> Unit {
+            main.postDelayed(action, ms)
+            return { main.removeCallbacks(action) }
+        }
+    }
+
+    /** The radio's blocking work (connect, each command), one at a time; made with the first card session. */
+    private var cardIo: java.util.concurrent.ExecutorService? = null
+    private var radio: ReaderModeRadio? = null
+    private var cardSheet: CardSheetView? = null
+
+    /**
+     * A link for one card session: the radio in reader mode and Foxy's card
+     * sheet over the page; in a debug build, the card simulator instead on a
+     * device with no NFC (the emulator), or when started with [CARD_SIM].
+     */
+    override fun cardLink(): CardLink? {
+        if (!usable()) return null
+        val hasNfc = android.nfc.NfcAdapter.getDefaultAdapter(activity) != null
+        val simulated = CardSim.ENABLED && (!hasNfc || activity.intent?.getBooleanExtra(CARD_SIM, false) == true)
+        if (simulated) {
+            Log.line("[card] this session goes to the card simulator on loopback")
+            return CardSim.link(cardMain)
+        }
+        val r = ReaderModeRadio(activity)
+        radio = r
+        val sheet = cardSheet ?: CardSheetView(activity, container, activity.onBackPressedDispatcher).also { cardSheet = it }
+        val io = cardIo ?: java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "foxy-card") }.also { cardIo = it }
+        return NfcCardLink(r, sheet, cardMain, io)
+    }
+
+    /** Foxy is in front again: a sheet still looking for a card looks again (Android turned reader mode off on the pause). */
+    private fun cardResumed() {
+        radio?.resumed()
+    }
+
+    /** The activity stopped: a card session ends now, as iOS's ends when Foxy goes to the background. */
+    fun cardPutAway() {
+        bridge?.cardPutAway()
     }
 
     /** PutAway: no camera, paste button or seed screen is left for a page put away (FoxyWebView.swift:999-1132). */
@@ -565,12 +623,18 @@ class WebHost(
      * inside its 700 ms hold never does).
      */
     fun destroy() {
-        // no camera pane, paste button, seed screen or tap receiver of the page's is left over what comes next (I7)
+        // no camera pane, paste button, seed screen, tap receiver or card session of the page's is left over what comes next (I7)
         bridge?.pageGone()
         turning?.disable()
         turning = null
         shakeOn = null
         listenForShakes()
+        cardSheet?.dismiss()
+        cardSheet = null
+        radio?.stop()
+        radio = null
+        cardIo?.shutdown()
+        cardIo = null
         live?.destroy()
         live = null
         paste?.remove()
