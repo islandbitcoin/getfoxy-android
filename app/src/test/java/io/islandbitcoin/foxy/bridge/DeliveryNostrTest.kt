@@ -48,14 +48,17 @@ class DeliveryNostrTest {
         }
     }
 
-    /** A Nostr key that listens when told. */
+    /**
+     * A Nostr key that listens when told, behaving as [NostrInbox] does: open
+     * while its open waits on the relays, and a closed key's open never answered.
+     */
     inner class StubNostr(val onPayment: (String) -> Unit) : NostrAddress {
         val pubkey: ByteArray = NostrCrypto.publicKey(NostrCrypto.newKey())
         var opened: ((Boolean) -> Unit)? = null
         var listening = false
         var closed = false
         override val nprofile: String? get() = if (closed) null else Bech32.nprofile(pubkey, NostrInbox.RELAYS.take(4))
-        override val isOpen: Boolean get() = !closed && listening
+        override val isOpen: Boolean get() = !closed && (listening || opened != null)
 
         override fun open(done: (Boolean) -> Unit) {
             opened = done
@@ -63,6 +66,8 @@ class DeliveryNostrTest {
         }
 
         fun listen(ok: Boolean) {
+            // the real inbox never answers a closed key (NostrInbox.open's report; NostrInbox.swift too)
+            if (closed) return
             val done = opened ?: error("never opened")
             opened = null
             listening = ok
@@ -168,17 +173,17 @@ class DeliveryNostrTest {
     }
 
     @Test
-    fun aKeyReplacedBeforeItListenedIsClosedAndNotNamed() {
+    fun aSecondAskWhileTheKeyWaitsOnItsRelaysNamesThatKeyAtOnce() {
         autoListen = false
         send("""{"action":"inboxOpen","id":"o1"}""")
-        // the screen asks again before the first key's relays answered: a second key is made
+        // the page's 25 s ran out before the relays answered, and it asks again: the waiting key is named at once, as on iOS
         send("""{"action":"inboxOpen","id":"o2"}""")
-        assertEquals(2, keys.size)
-        assertTrue(keys[0].closed)
+        assertEquals("no second key", 1, keys.size)
+        assertFalse(keys[0].closed)
+        assertEquals(keys[0].nprofile, opened("o2")["nostr"])
+        assertTrue("the first still waits", replies().none { it.first == "o1" })
         keys[0].listen(true)
-        assertEquals("the first request goes with its onion alone", mapOf("onion" to inboxes[0].url), opened("o1"))
-        keys[1].listen(true)
-        assertEquals(keys[1].nprofile, opened("o2")["nostr"])
+        assertEquals("and the first is answered with the same key", keys[0].nprofile, opened("o1")["nostr"])
     }
 
     @Test
@@ -241,6 +246,38 @@ class DeliveryNostrTest {
         assertNull(inbox!!.nprofile)
     }
 
+    /**
+     * A slow link, through the real inbox: the page asks again (and again)
+     * before any relay is up. Every ask is answered, all with the one key, and
+     * only the first key's four sockets are ever opened.
+     */
+    @Test
+    fun retriesBeforeAnyRelayListensAreAllAnsweredWithTheOneRealKey() {
+        val relays = FakeRelays()
+        val made = mutableListOf<NostrInbox>()
+        val real = DeliveryEnvironment(
+            torRunning = { true },
+            newInbox = { note, _ -> OpenInbox(note, 0) },
+            post = { _, _, _, _, _ -> },
+            after = { _, _ -> },
+            newNostrInbox = { onPayment -> NostrInbox(onPayment, relays.connect, relays.main).also { made.add(it) } },
+        )
+        val b = FoxyBridge(host, { seeds }, Executor { it.run() }, isDebug = false, deliveryEnvironment = real)
+        b.onMessage("""{"action":"inboxOpen","id":"r1"}""", true, FoxyBridge.ORIGIN)
+        assertTrue("waiting on the relays", replies().none { it.first == "r1" })
+        b.onMessage("""{"action":"inboxOpen","id":"r2"}""", true, FoxyBridge.ORIGIN)
+        b.onMessage("""{"action":"inboxOpen","id":"r3"}""", true, FoxyBridge.ORIGIN)
+        assertEquals("one key", 1, made.size)
+        assertEquals("four sockets, never torn down and remade", 4, relays.sockets.size)
+        assertTrue(relays.sockets.none { it.closed })
+        val nprofile = made[0].nprofile!!
+        assertEquals(nprofile, opened("r2")["nostr"])
+        assertEquals(nprofile, opened("r3")["nostr"])
+        relays.sockets[1].listener.opened()
+        assertEquals("the first ask answered too, with the same key", nprofile, opened("r1")["nostr"])
+        assertEquals(4, relays.sockets.size)
+    }
+
     // MARK: the key's end
 
     @Test
@@ -266,14 +303,16 @@ class DeliveryNostrTest {
     }
 
     @Test
-    fun aKeyThatListensOnlyAfterFoxyWasPutAwayIsClosedAndNotNamed() {
+    fun aKeyClosedByFoxyBeingPutAwayIsNeverNamed() {
         autoListen = false
         send("""{"action":"inboxOpen","id":"o1"}""")
         bridge.letGo()
         assertTrue(keys[0].closed)
+        // its relays answering now reach nothing: a closed key's open is never answered, here or on iOS
         keys[0].listen(true)
         assertTrue(keys[0].closed)
-        assertEquals(setOf("onion"), opened("o1").keys)
+        assertTrue("o1 is left to the page's own timeout", replies().none { it.first == "o1" })
+        assertTrue("no Nostr key named anywhere", host.evaluated.none { it.contains("nprofile1") })
     }
 
     @Test

@@ -258,9 +258,10 @@ class NostrInboxTest {
         assertEquals(4, relays.sockets.map { it.circuit }.toSet().size)
         assertTrue(relays.sockets.all { it.sent == listOf(i.ask()) })
         assertNull("not until a relay is up", opened)
-        assertFalse(i.isOpen)
+        assertTrue("waiting on its relays still counts as open, as iOS's !sockets.isEmpty", i.isOpen)
         relays.sockets[2].listener.ended("the relay answered 503")
         assertNull(opened)
+        assertTrue(i.isOpen)
         relays.sockets[1].listener.opened()
         assertEquals(true, opened)
         assertTrue(i.isOpen)
@@ -294,6 +295,7 @@ class NostrInboxTest {
         i.open { opened = it }
         assertEquals(false, opened)
         assertTrue(relays.sockets.isEmpty())
+        assertFalse("no socket at all is not open, as on iOS", i.isOpen)
         i.close()
     }
 
@@ -302,7 +304,9 @@ class NostrInboxTest {
         val i = inbox()
         var opened: Boolean? = null
         i.open { opened = it }
+        assertTrue(i.isOpen)
         i.close()
+        assertFalse("a closed key is not open, even with its open unanswered", i.isOpen)
         relays.sockets[0].listener.opened()
         assertNull("closed before a relay answered: no answer at all", opened)
         val again = mutableListOf<Boolean>()

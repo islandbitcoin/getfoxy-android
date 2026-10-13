@@ -12,7 +12,10 @@ interface NostrAddress {
     /** What the request names: the key and the relays it is listened on; null once closed. */
     val nprofile: String?
 
-    /** Listening on at least one relay. */
+    /**
+     * Worth naming again: listening on at least one relay, or still waiting to
+     * hear whether one will (as iOS's `!sockets.isEmpty`).
+     */
     val isOpen: Boolean
 
     /** Ask the relays; `done(true)` once at least one listens, `done(false)` when none will. Main thread. */
@@ -79,10 +82,25 @@ class NostrInbox(
     private val seen = HashSet<String>()
     private var closed = false
 
+    /**
+     * An open whose relays have not answered yet. It counts as open, as on iOS
+     * (NostrInbox.swift `isOpen`, `!sockets.isEmpty`): a second `inboxOpen`
+     * arriving while the first waits names this key at once rather than closing
+     * it and starting four more Tor sockets, which would leave the first never
+     * answered (a closed key's open is never answered).
+     */
+    private var pending = false
+
     override val nprofile: String?
         get() = if (closed) null else Bech32.nprofile(pubkey, RELAYS.take(MOST_RELAYS))
 
-    override val isOpen: Boolean get() = !closed && live > 0
+    /**
+     * Live sockets, or an open still waiting on its relays. Once the open is
+     * answered only live sockets count, so a key whose relays all dropped after
+     * listening is replaced rather than named again (a deliberate deviation:
+     * iOS keeps counting sockets that were opened).
+     */
+    override val isOpen: Boolean get() = !closed && (live > 0 || (pending && sockets.isNotEmpty()))
 
     /** The subscription: gift wraps addressed to this key, as far back as NIP-59's backdating reaches. */
     internal fun ask(): String {
@@ -106,16 +124,19 @@ class NostrInbox(
         val ask = ask()
         var answered = false
         var left = urls.size
+        pending = true
         fun report(ok: Boolean) {
             if (closed) return
             if (ok && !answered) {
                 answered = true
+                pending = false
                 return done(true)
             }
             if (ok) return
             left--
             if (left == 0 && !answered) {
                 answered = true
+                pending = false
                 done(false)
             }
         }
@@ -201,6 +222,7 @@ class NostrInbox(
         sockets.forEach { it.close() }
         sockets.clear()
         live = 0
+        pending = false
         seen.clear()
         secret.fill(0)
         Log.line("[foxy] nostr inbox closed")
