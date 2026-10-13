@@ -26,6 +26,7 @@ import io.islandbitcoin.foxy.debug.Log
 import io.islandbitcoin.foxy.flashcard.CardAddress
 import io.islandbitcoin.foxy.flashcard.CardTapDelivery
 import io.islandbitcoin.foxy.flashcard.CardTapIntake
+import io.islandbitcoin.foxy.flashcard.CardTapRoute
 import io.islandbitcoin.foxy.web.DeepLink
 import io.islandbitcoin.foxy.web.PutAway
 import io.islandbitcoin.foxy.web.WebHost
@@ -44,11 +45,15 @@ import io.islandbitcoin.foxy.web.WebHost
  * debug builds only, the `foxy://` deep link.
  *
  * ENG-668: a Flashcard held to the phone opens Foxy. Its address,
- * `https://getfoxy.io/card`, comes in onCreate (a launch from the card) or
- * onNewIntent (Foxy already up: singleTop), from Android's tag dispatch or as a
- * link (CardTapIntake), and the page is told only that a card was tapped, once,
- * when it can take it (CardTapDelivery): the splash cover down, the page loaded,
- * and after a return only once `_resumed` has been told.
+ * `https://getfoxy.io/card`, from Android's tag dispatch or as a link, goes to
+ * CardTapActivity, never here: that door starts this activity, hands the page
+ * that is on top of its task the tap, or drops it while a seed screen or the
+ * scanner is over the page (CardTapRoute), so a card never makes a second
+ * page. What comes here is the one-shot [CardTapRoute.EXTRA], in onCreate (a
+ * launch from the card) or onNewIntent (singleTop), and the page is told only
+ * that a card was tapped, once, when it can take it (CardTapDelivery): the
+ * splash cover down, the page loaded, and after a return only once `_resumed`
+ * has been told.
  */
 class MainActivity : ComponentActivity(), WebHost.Permissions {
     companion object {
@@ -60,8 +65,12 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         /** Debug builds only: do not start Tor in this process (the page stays on SECURING YOUR CONNECTION). */
         const val NO_TOR = "FoxyNoTor"
 
-        /** A question to the page about a card tap not answered by then is a no, and asked again (CardTapDelivery). */
-        const val CARD_TAP_ANSWER_MS = 1_000L
+        /** The page's activity alive in this process, for CardTapActivity's routing (CardTapRoute). Main thread. */
+        private var alive: java.lang.ref.WeakReference<MainActivity>? = null
+
+        /** The live page's activity, or null when there is none or it is going. */
+        internal val live: MainActivity?
+            get() = alive?.get()?.takeUnless { it.isFinishing || it.isDestroyed }
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -127,6 +136,7 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
             provider.view.animate().alpha(0f).setDuration(SplashCover.SYSTEM_FADE_MS).withEndAction { provider.remove() }
         }
 
+        alive = java.lang.ref.WeakReference(this)
         val container = FrameLayout(this)
         container.setBackgroundColor(getColor(R.color.page))
         setContentView(container)
@@ -135,9 +145,9 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         val services = (application as FoxyApplication).services
         val webHost = WebHost(this, services, container, { main.post { cover?.down() } }, this)
         host = webHost
-        webHost.onPageLoaded = { cardTaps.pageLoaded() }
-        webHost.onPageGone = { cardTaps.pageGone() }
-        webHost.onReaderOff = { cardIntake.readerOff() }
+        webHost.hooks.loaded = { cardTaps.pageLoaded() }
+        webHost.hooks.gone = { cardTaps.pageGone() }
+        webHost.hooks.readerOff = { cardIntake.readerOff() }
         cardTaps.tell = ::askPageAboutCardTap
         webHost.create()
         cover = addCover(container)
@@ -194,9 +204,8 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         }
         container.addView(image, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         coverView = image
-        return SplashCover { fadeMs ->
-            // the page is uncovered from now: a card's address that was waiting for it goes (CardTapDelivery)
-            cardTaps.coverChanged(up = false)
+        // the page is uncovered from now: a card's address that was waiting for it goes (CardTapDelivery)
+        return SplashCover(uncovered = { cardTaps.coverChanged(up = false) }) { fadeMs ->
             image.animate().alpha(0f).setDuration(fadeMs).withEndAction {
                 container.removeView(image)
                 coverView = null
@@ -263,34 +272,30 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
     }
 
     /**
-     * A card's address, in every build: from Android's tag dispatch
-     * (NDEF_DISCOVERED) or as a link (VIEW), held to CardAddress.isCard and
-     * passed on as a tap with nothing of it (CardTapIntake). An intent handed
-     * back from Recents, or to a restored activity, is not a tap.
+     * A card tap, in every build, as CardTapActivity hands it: the one-shot
+     * [CardTapRoute.EXTRA], already held to CardAddress.isCard there, with nothing
+     * of the address (CardTapIntake.tap). The extra is taken off the intent once
+     * read; an intent handed back from Recents, or to a restored activity, is not
+     * a tap (CardTapIntake.replayed).
      */
     private fun receiveCard(intent: Intent?, restored: Boolean) {
         val i = intent ?: return
-        val replayed = restored || (i.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
-        cardIntake.intent(i.action, i.dataString, replayed)
+        if (!i.getBooleanExtra(CardTapRoute.EXTRA, false)) return
+        i.removeExtra(CardTapRoute.EXTRA)
+        cardIntake.tap(CardTapIntake.replayed(restored, i.flags))
     }
 
     /**
-     * The question CardTapDelivery asks the page (CardAddress.PAGE_CALL), answered
-     * once: true only for the page's own `true`; no page, a page without the call
-     * yet, or no answer within [CARD_TAP_ANSWER_MS] (a WebView whose page process
-     * died may never call back) is a no, and it is asked again.
+     * The question CardTapDelivery asks the page (CardAddress.PAGE_CALL): true only
+     * for the page's own `true`; no page, or a page without the call yet, is a no,
+     * and it is asked again. No timer on the answer, as on iOS: a page slow to
+     * answer is still thinking, and asking it again would queue a second
+     * `_cardTapped()` behind the first. A page whose process died never answers;
+     * CardTapDelivery.pageGone forgets the question and the reloaded page is asked.
      */
     private fun askPageAboutCardTap(done: (Boolean) -> Unit) {
         val page = host ?: return done(false)
-        var answered = false
-        val answer = { taken: Boolean ->
-            if (!answered) {
-                answered = true
-                done(taken)
-            }
-        }
-        main.postDelayed({ answer(false) }, CARD_TAP_ANSWER_MS)
-        page.read(CardAddress.PAGE_CALL) { answer(it == "true") }
+        page.read(CardAddress.PAGE_CALL) { done(it == "true") }
     }
 
     /**
@@ -336,6 +341,7 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         putAway = null
         main.removeCallbacksAndMessages(null)
         cardTaps.tell = null
+        if (alive?.get() === this) alive = null
         host?.destroy()
         host = null
         // Back finishing the activity (API 28-30): ProcessLifecycleOwner's stop comes 700 ms later, after

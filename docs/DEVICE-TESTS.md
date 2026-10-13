@@ -333,10 +333,15 @@ card's software (`01 14` is 1.20) and the build's commit.
 **Pending: the person's on-device check; no phone and no card were used for
 this change, and nothing here moves money.** What runs without them:
 `CardAddressTest` and `CardTapDeliveryTest` (iOS's `CardAddressTests` and
-`CardTapDeliveryTests`, case for case), `CardTapIntakeTest` (the two intent
+`CardTapDeliveryTests`, case for case, plus a question out across a dead page
+and a slow answer never asked twice), `CardTapIntakeTest` (the two intent
 actions, a replayed intent, no tap while a card is being read),
+`CardTapRouteTest` (a new page, the page on top of its task, or dropped with a
+seed screen or the scanner over it), `ReaderModeRadioTest` (reader mode off is
+said once per look ended), `PageHooksTest` (the reload order and the wiring),
 `PutAwayCardTapTest` (`_resumed` before the delivery hears of the return),
-`ManifestTest` (the two filters, exactly `https://getfoxy.io/card`), and the
+`ManifestTest` (the two filters on `CardTapActivity` only, exactly
+`https://getfoxy.io/card`; MainActivity takes neither), and the
 conformance flows *the card tap (`_cardTapped`, P3) …* (the page's answer and
 `cardTapRule`). What only a phone, a card and a hand can show is below.
 
@@ -400,6 +405,32 @@ page's `cardTapRule`) in the field log too.
 10. **foxy://card (debug only).** `adb shell am start -a
    android.intent.action.VIEW -d foxy://card` with Foxy on HOME. **Pass:** as
    step 3, and the log has `[deeplink] a card tap`.
+11. **A card held while the seed words or the scanner is up (dropped, never a
+   second page).** a) MENU → the seed words (SHOW WORDS, past the screen
+   lock), and with the twelve words on screen hold the card. b) Start a scan
+   (SEND → SCAN), and with the camera up hold the card. **Pass:** in both, the
+   screen in front stays exactly as it is: no splash, no second Foxy over it,
+   no Flashcard screen; the log has `[foxy] card tap: dropped`. Close the
+   screen (Back): Foxy's page is under it, as it was, and Recents shows one
+   Foxy. Then on HOME hold the card: a tap as in step 3 (`delivered`).
+   Repeat a) with the card left resting on the phone, turn the screen off and
+   on and unlock: still `dropped` on each wake, and the words stay up.
+12. **A card resting on the phone while another app is in front.** Put the card
+   in the phone's case (or tape it to the back) so it rests on the reader. Open
+   Foxy on HOME, then open another app (Settings or Chrome) so Foxy is in the
+   background. Lock the phone, wake it and unlock with that app in front; do it
+   three times. **Record what Android does**: whether Foxy jumps to the front
+   over the other app on each unlock (expected: Android's tag dispatch finds
+   the card on every wake and `CardTapActivity` brings the page back,
+   `delivered`), whether a chooser shows, and what the page then does
+   (Flashcard screen, or nothing). Repeat with Foxy force-stopped
+   (`launched`). On iOS a background read only raises a banner the person must
+   tap, so Foxy never comes over another app by itself; the spec
+   (sandbox/plans/foxy-card-android.md) says nothing about a resting card. If
+   Foxy does jump to the front, raise it with the iOS team (Mike Greff) as a
+   parity decision, with this step's notes: keep it, or ask before opening
+   (a notification the person taps, as iOS's banner). Do not leave it
+   undecided.
 
 Report each step's pass or fail, the phone, the Android version, the card's
 software and the build's commit.

@@ -24,6 +24,11 @@ package io.islandbitcoin.foxy.flashcard
  *    [RETRY_AFTER_MS] until the answer is yes. It is given up [LAPSE_MS] after the
  *    latest address arrived, so a phone opened by hand much later is never sent to a card.
  *  - Once. Addresses that arrive while one waits are the same tap, and a yes ends it.
+ *    A question is never given up on while its page lives: as on iOS there is no
+ *    timer on the answer, so a page slow to answer (blocked at boot) is not asked a
+ *    second time and cannot act twice. A page whose process ended never answers;
+ *    [pageGone] forgets that question (its answer, if one ever comes, is ignored) and
+ *    the reloaded page is asked afresh.
  *
  * The page is told a fixed message ([CardAddress.PAGE_CALL]). Nothing of the address is
  * here, and nothing of it is logged. One per MainActivity (its page); main thread only.
@@ -54,6 +59,9 @@ class CardTapDelivery(
     var since: Long? = null
         private set
     private var asking = false
+
+    /** Which page a question went to: bumped by [pageGone], so a dead page's answer is not heard. */
+    private var generation = 0
     private var loaded = false
     private var covered = true
     private var returning = false
@@ -77,9 +85,15 @@ class CardTapDelivery(
         attempt()
     }
 
-    /** The page is gone (its process ended) and is being loaded again. */
+    /**
+     * The page is gone (its process ended) and is being loaded again. A question still
+     * out to it will never be answered, or answered by a page that is no more: it is
+     * forgotten, and the reloaded page is asked when it has loaded.
+     */
     fun pageGone() {
         loaded = false
+        asking = false
+        generation++
     }
 
     /** The splash cover went up or came down. */
@@ -112,7 +126,10 @@ class CardTapDelivery(
         val ask = tell
         if (!ready || asking || ask == null) return
         asking = true
+        val asked = generation
         ask { taken ->
+            // an answer from a page that has since gone is not this page's
+            if (asked != generation) return@ask
             asking = false
             if (since == null) return@ask
             if (taken) {

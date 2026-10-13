@@ -315,6 +315,77 @@ class CardTapDeliveryTest {
         assertTrue(rig.timers.isEmpty())
     }
 
+    /**
+     * A question out to a page whose process then ended (review of PR #15): that page never
+     * answers, so the question is forgotten, and the reloaded page is asked exactly once more.
+     * The dead page's answer, if it ever comes, is not heard.
+     */
+    @Test
+    fun aQuestionOutAcrossAPageGoneIsAskedOnceMoreOfTheNewPage() {
+        val rig = Rig()
+        rig.holdAnswers = true
+        rig.open()
+        rig.delivery.received(card)
+        assertEquals(1, rig.asked)
+        rig.delivery.pageGone()
+        rig.delivery.cameBack()
+        rig.delivery.coverChanged(up = false)
+        assertEquals("not asked while the page is reloading", 1, rig.asked)
+        rig.delivery.pageLoaded()
+        assertEquals("the new page is asked, once", 2, rig.asked)
+        rig.delivery.cameBack()
+        assertEquals("and not again while that question is out", 2, rig.asked)
+        // the dead page's answer comes after all: not heard, whatever it says
+        rig.held.removeAt(0)(false)
+        assertTrue("no retry from a dead page's no", rig.timers.isEmpty())
+        assertNotNull(rig.delivery.since)
+        rig.held.removeAt(0)(true)
+        assertNull("the new page's yes ends it", rig.delivery.since)
+        assertEquals(2, rig.asked)
+        assertEquals(1, rig.lines.count { it == CardTapDelivery.TOLD })
+    }
+
+    /** A dead page's yes is not the new page's: the new page is still asked, and its own yes ends it. */
+    @Test
+    fun aDeadPagesLateYesIsNotHeard() {
+        val rig = Rig()
+        rig.holdAnswers = true
+        rig.open()
+        rig.delivery.received(card)
+        rig.delivery.pageGone()
+        rig.held.removeAt(0)(true)
+        assertNotNull("the page that answered is gone", rig.delivery.since)
+        rig.delivery.pageLoaded()
+        assertEquals(2, rig.asked)
+        rig.held.removeAt(0)(true)
+        assertNull(rig.delivery.since)
+    }
+
+    /**
+     * A page slow to answer (its JS blocked at boot for seconds) is never taken to have said
+     * no: there is no timer on the answer, as on iOS, so `_cardTapped()` is never queued a
+     * second time behind the first, and a slow yes ends it with one question asked.
+     */
+    @Test
+    fun aSlowYesNeverLeadsToASecondCall() {
+        val rig = Rig()
+        rig.holdAnswers = true
+        rig.open()
+        rig.delivery.received(card)
+        assertEquals(1, rig.asked)
+        assertTrue("no timer runs on the answer", rig.timers.isEmpty())
+        rig.advance(5.0)
+        rig.fireTimers()
+        rig.delivery.cameBack()
+        rig.delivery.coverChanged(up = false)
+        rig.delivery.pageLoaded()
+        assertEquals("still one question, however long it takes", 1, rig.asked)
+        rig.held.removeAt(0)(true)
+        assertNull(rig.delivery.since)
+        assertEquals(1, rig.asked)
+        assertTrue(rig.timers.isEmpty())
+    }
+
     /** An answer that arrives after the tap was given up on starts nothing. */
     @Test
     fun aLateNoAfterTheGiveUpStartsNothing() {

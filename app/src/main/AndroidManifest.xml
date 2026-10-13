@@ -19,14 +19,21 @@
 
      ENG-668: a Flashcard held to the phone opens Foxy. The card's tag carries one
      NDEF URI record, https://getfoxy.io/card (getfoxy/card FOXY-CARD-SPEC.md, the
-     NDEF file), and MainActivity filters Android's tag dispatch for exactly that
+     NDEF file), and CardTapActivity filters Android's tag dispatch for exactly that
      address (NDEF_DISCOVERED; never TECH_ or TAG_DISCOVERED, ManifestTest), and
      the same address as a link (VIEW, BROWSABLE). The link filter is not verified
      (autoVerify false): an App Link needs getfoxy.io/.well-known/assetlinks.json
      with the release key's fingerprint, and there is no release key yet
      (docs/DEVICE-TESTS.md). Either way only CardAddress.isCard's exact address is
-     acted on, and the page hears only that a card was tapped. singleTop: a card
-     while Foxy is up reaches the page that is there (onNewIntent), not a second one. -->
+     acted on, and the page hears only that a card was tapped.
+
+     The filters are not on MainActivity: singleTop reuses it only while it is the
+     top of its task, and the scanner and the seed screens are started in that task
+     over it, so a card held then would make a second MainActivity (a second page,
+     PutAway and Tor install, its splash over the seed words). CardTapActivity draws
+     nothing, keeps no history or Recents entry, has a task of its own, and decides
+     (CardTapRoute): a new page, the page on top of its task handed the tap
+     (singleTop, onNewIntent), or nothing while anything is over the page. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
@@ -72,6 +79,16 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <!-- ENG-668: the door a Flashcard's address comes in by; draws nothing, finishes in onCreate (CardTapActivity) -->
+        <activity
+            android:name=".CardTapActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:noHistory="true">
             <!-- a Flashcard held to the phone: its tag's one address, and nothing else (CardAddress) -->
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />

@@ -124,4 +124,47 @@ class CardTapIntakeTest {
         delivery.cardTapped()
         assertEquals(1, asked)
     }
+
+    /**
+     * The replay decision MainActivity makes (review of PR #15): a restored activity, or an
+     * intent handed back from Recents (FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY), is no tap.
+     */
+    @Test
+    fun replayedIsARestoreOrALaunchFromHistory() {
+        val history = android.content.Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY
+        assertEquals(history, CardTapIntake.LAUNCHED_FROM_HISTORY)
+        assertFalse(CardTapIntake.replayed(restored = false, flags = 0))
+        assertFalse("other flags are not a replay", CardTapIntake.replayed(restored = false,
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP))
+        assertTrue(CardTapIntake.replayed(restored = true, flags = 0))
+        assertTrue(CardTapIntake.replayed(restored = false, flags = history))
+        assertTrue(CardTapIntake.replayed(restored = false, flags = history or android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        assertTrue(CardTapIntake.replayed(restored = true, flags = history))
+    }
+
+    /** The tap MainActivity is handed (CardTapRoute.EXTRA): a tap unless replayed or a card being read. */
+    @Test
+    fun aHandedTapIsATapUnlessReplayedOrBeingRead() {
+        intake.tap(CardTapIntake.replayed(restored = true, flags = 0))
+        intake.tap(CardTapIntake.replayed(restored = false, flags = CardTapIntake.LAUNCHED_FROM_HISTORY))
+        assertEquals(0, asked)
+        session = true
+        intake.tap(replayed = false)
+        assertEquals(0, asked)
+        assertEquals(listOf(CardTapIntake.SUPPRESSED), lines)
+        session = false
+        intake.tap(replayed = false)
+        assertEquals(1, asked)
+    }
+
+    /** CardTapActivity's check: the two actions and the card's exact address, nothing else. */
+    @Test
+    fun aCardIntentIsTheTwoActionsAndTheExactAddress() {
+        assertTrue(CardTapIntake.isCardIntent(ndef, card))
+        assertTrue(CardTapIntake.isCardIntent(view, card))
+        assertFalse(CardTapIntake.isCardIntent("android.intent.action.MAIN", card))
+        assertFalse(CardTapIntake.isCardIntent(null, card))
+        assertFalse(CardTapIntake.isCardIntent(ndef, "https://getfoxy.io/cards"))
+        assertFalse(CardTapIntake.isCardIntent(view, null))
+    }
 }
