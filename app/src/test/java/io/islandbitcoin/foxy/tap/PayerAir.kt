@@ -80,6 +80,14 @@ class FakeTapCentral(private val air: PayerAir, val payer: TapPayer, val me: Str
     /** Notifications from these are not delivered (a receiver that never answers M1). */
     val deaf = HashSet<String>()
 
+    /**
+     * Seconds a link's service discovery takes, and with it everything queued behind it: Android's
+     * GATT client does one thing at a time, so a signal reading asked for before the services are
+     * found is answered only after them. The Pixel 8 Pro (Android 17) runs its own discovery first
+     * on every connect and the app's MTU and discovery wait for it: about 2.4 s (ENG-679).
+     */
+    var discoveryTakes = 0.0
+
     /** Service discovery to these fails this many more times (Android's GATT status 129 or 133). */
     val discoveryFails = HashMap<String, Int>()
 
@@ -102,6 +110,8 @@ class FakeTapCentral(private val air: PayerAir, val payer: TapPayer, val me: Str
 
     inner class Conn(val r: AirReceiver) : AttCentral {
         var up = false
+        var discovered = false
+        var rssiWaiting = false
         private var nextRequest = 1
         private val waiting = HashMap<Int, (Int, Int, ByteArray?) -> Unit>()
 
@@ -123,10 +133,14 @@ class FakeTapCentral(private val air: PayerAir, val payer: TapPayer, val me: Str
 
     private fun later(what: () -> Unit) = air.pending.addLast(what)
 
+    /** The hardware filters the scan handed the controller, as AndroidTapCentral hands them ([TapScanRules.hardwareFilters]). */
+    var filters: List<TapScanFilter> = emptyList()
+
     override fun startScan(): Boolean {
         if (closed) return false
         if (!scanning) scanStarts++
         scanning = true
+        filters = TapScanRules.hardwareFilters
         return true
     }
 
@@ -156,20 +170,32 @@ class FakeTapCentral(private val air: PayerAir, val payer: TapPayer, val me: Str
 
     override fun discover(device: String) {
         val c = links[device] ?: return later { payer.servicesFound(device, null) }
-        later {
-            if (!c.up) return@later
-            val fails = discoveryFails[device] ?: 0
-            if (fails > 0) {
-                discoveryFails[device] = fails - 1
-                return@later payer.servicesFound(device, null)
-            }
-            c.r.receiver.server.mtuChanged(me, air.mtu)
-            val found = HashMap<UUID, Set<UUID>>()
-            val layout = c.r.peripheral.layout
-            if (layout != null && !c.r.peripheral.closed) found[layout.service] = layout.doors.map { it.uuid }.toSet()
-            if (c.r.model != null) found[TapPayer.DEVICE_INFORMATION] = setOf(TapPayer.MODEL_NUMBER)
-            payer.servicesFound(device, found)
+        if (discoveryTakes > 0) {
+            air.clock.after(discoveryTakes) { later { answerDiscovery(device, c) } }
+            return
         }
+        later { answerDiscovery(device, c) }
+    }
+
+    private fun answerDiscovery(device: String, c: Conn) {
+        if (!c.up) return
+        c.discovered = true
+        // a signal reading asked for meanwhile is answered next, after the services
+        if (c.rssiWaiting) {
+            c.rssiWaiting = false
+            readRssi(device)
+        }
+        val fails = discoveryFails[device] ?: 0
+        if (fails > 0) {
+            discoveryFails[device] = fails - 1
+            return payer.servicesFound(device, null)
+        }
+        c.r.receiver.server.mtuChanged(me, air.mtu)
+        val found = HashMap<UUID, Set<UUID>>()
+        val layout = c.r.peripheral.layout
+        if (layout != null && !c.r.peripheral.closed) found[layout.service] = layout.doors.map { it.uuid }.toSet()
+        if (c.r.model != null) found[TapPayer.DEVICE_INFORMATION] = setOf(TapPayer.MODEL_NUMBER)
+        payer.servicesFound(device, found)
     }
 
     override fun setNotify(device: String, service: UUID, door: UUID, on: Boolean) {
@@ -225,6 +251,10 @@ class FakeTapCentral(private val air: PayerAir, val payer: TapPayer, val me: Str
 
     override fun readRssi(device: String) {
         val c = links[device]
+        if (c != null && c.up && !c.discovered && discoveryTakes > 0) {
+            c.rssiWaiting = true
+            return
+        }
         val dbm = c?.r?.linkRssi
         later {
             if (c == null || !c.up) return@later payer.rssi(device, 0, false)
@@ -263,10 +293,36 @@ class FakeTapCentral(private val air: PayerAir, val payer: TapPayer, val me: Str
 }
 
 /**
+ * The Bluetooth controller's hardware filtering as the Pixel 8 Pro does it
+ * (ENG-679): no filter at all lets every advertisement through; a service
+ * filter passes an advertisement one of whose service UUIDs equals the
+ * filter's under its mask, except that a filter whose mask is all zeros
+ * matches nothing (`dumpsys bluetooth_manager`, filter `[ ServiceUuid=00000000-…
+ * ServiceUuidMask=00000000-… ]`: "Number of results 0/0/0", not even unrelated
+ * devices).
+ */
+object FakeController {
+    private val NONE = UUID(0L, 0L)
+
+    fun passes(filters: List<TapScanFilter>, ad: TapAdvert): Boolean =
+        filters.isEmpty() || filters.any { matches(it, ad) }
+
+    private fun matches(f: TapScanFilter, ad: TapAdvert): Boolean {
+        if (f.mask == NONE) return false
+        val m = f.mask
+        return ad.services.any {
+            (it.mostSignificantBits and m.mostSignificantBits) == (f.service.mostSignificantBits and m.mostSignificantBits) &&
+                (it.leastSignificantBits and m.leastSignificantBits) == (f.service.leastSignificantBits and m.leastSignificantBits)
+        }
+    }
+}
+
+/**
  * A paying phone ([TapPayer] over a [FakeTapCentral]) and any number of
  * receivers ([AirReceiver]) on one clock: [hear] advances time and hands the
  * payer each receiver's advertisement ten times a second while it is on the air
- * and the payer is scanning, plus whatever else is on the air ([noise]).
+ * and the payer is scanning, plus whatever else is on the air ([noise]); each
+ * only if the scan's hardware filters let it through ([FakeController]).
  */
 class PayerAir(val mtu: Int = 185, thisModel: String = "") {
     val clock = FakeClock()
@@ -335,9 +391,10 @@ class PayerAir(val mtu: Int = 185, thisModel: String = "") {
                     val p = r.bluetooth.opened.lastOrNull() ?: continue
                     val svc = p.advertisingWith ?: continue
                     if (!p.onAir) continue
-                    c.payer.discovered(TapAdvert(r.address, connectable = true, manufacturerData = false, services = listOf(svc), full = listOf(true), rssi = r.rssi))
+                    val ad = TapAdvert(r.address, connectable = true, manufacturerData = false, services = listOf(svc), full = listOf(true), rssi = r.rssi)
+                    if (FakeController.passes(c.filters, ad)) c.payer.discovered(ad)
                 }
-                for (n in noise) c.payer.discovered(n)
+                for (n in noise) if (FakeController.passes(c.filters, n)) c.payer.discovered(n)
             }
             clock.advance(0.1) { settle() }
         }

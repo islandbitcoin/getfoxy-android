@@ -191,6 +191,55 @@ class TapPayerTest {
         assertNull(TapScanRules.service(TapAdvert("B", true, o.manufacturerData, o.services, o.full, -30)))
     }
 
+    // MARK: ENG-679, the controller's filter
+
+    @Test
+    fun theScanHandsTheControllerNoFilterSoTheReceiverIsHeardAndTaken() {
+        // the Pixel 8 Pro's controller matched nothing with the old "any service UUID" filter (an
+        // all-zero mask): the payer heard no receiver at all. FakeController does as that controller did.
+        val (air, r) = listening()
+        assertTrue("the scan is on", air.c.scanning)
+        air.hear(3.0)
+        assertNotNull("the receiver was heard and its offer came in: ${air.diary.joinToString("\n")}", air.offer)
+        assertEquals(TapAir.OFFER, air.offer?.first)
+        assertEquals(listOf("AA:01"), air.c.connects)
+        assertTrue(r.stages.contains(TapStage.CODE))
+        assertEquals("no hardware filter: every advertisement reaches the software rules", emptyList<TapScanFilter>(), air.c.filters)
+    }
+
+    @Test
+    fun anAdvertisementWithNoServiceAtAllReachesThePayerAndIsDroppedBySoftware() {
+        val air = PayerAir()
+        air.payer.start()
+        air.settle()
+        // a phone or a TV: no service UUID; the controller lets it through, iOS's rules drop it
+        air.noise.add(TapAdvert("TV", true, false, emptyList(), emptyList(), -40))
+        air.hear(1.0)
+        assertTrue(air.c.connects.isEmpty())
+        air.payer.stop()
+        assertTrue(air.diary.joinToString("\n"), air.diary.any { it.contains("passed by 10 advertisement(s)") })
+    }
+
+    @Test
+    fun theFakeControllerMatchesNothingWithAnAllZeroMaskAndEverythingWithNoFilter() {
+        val zero = UUID(0L, 0L)
+        val svc = UUID.randomUUID()
+        val foxy = TapAdvert("AA:01", true, false, listOf(svc), listOf(true), -30)
+        val bare = TapAdvert("TV", true, false, emptyList(), emptyList(), -40)
+        // the ENG-671 filter, as the Pixel 8 Pro's controller treated it
+        val anyService = listOf(TapScanFilter(zero, zero))
+        assertFalse("an all-zero mask matches nothing", FakeController.passes(anyService, foxy))
+        assertFalse(FakeController.passes(anyService, bare))
+        // no filter: everything
+        assertTrue(FakeController.passes(emptyList(), foxy))
+        assertTrue(FakeController.passes(emptyList(), bare))
+        // a full mask on the one service: that service only
+        val full = UUID(-1L, -1L)
+        assertTrue(FakeController.passes(listOf(TapScanFilter(svc, full)), foxy))
+        assertFalse(FakeController.passes(listOf(TapScanFilter(UUID.randomUUID(), full)), foxy))
+        assertFalse(FakeController.passes(listOf(TapScanFilter(svc, full)), bare))
+    }
+
     @Test
     fun aWatchAnHeadsetAndAStandardServiceNearbyAreNeverConnectedTo() {
         val air = PayerAir()
@@ -269,6 +318,50 @@ class TapPayerTest {
         r.receiver.early = false
         air.hear(3.0)
         assertNotNull(air.offer)
+    }
+
+    @Test
+    fun aSlowDiscoveryStillHearsTheReceiverIsOnItsAmountScreenAndSaysNothingUntilNext() {
+        // ENG-679 on the Pixel 8 Pro: every connect's discovery took about 2.4 s, the link's strength
+        // came only after it, the quiet link was taken for silent and warming went off; the payer
+        // then never heard the near door, spoke to an iPhone still on its amount screen, and every
+        // first word was refused (ATT error 8)
+        val (air, r) = listening()
+        air.c.discoveryTakes = 2.4
+        r.receiver.early = true
+        air.hear(6.0)
+        assertFalse(air.diary.joinToString("\n"), air.diary.any { it.contains("will not say how strong it is") })
+        assertTrue("the near door said so: ${air.diary.joinToString("\n")}", air.diary.any { it.contains("is still on its amount screen") })
+        assertFalse("no word to a receiver on its amount screen", air.diary.any { it.contains("ATT error") })
+        assertTrue("nothing written while it was on its amount screen", air.c.requests.none { it.startsWith("write") || it.startsWith("prepare") })
+        assertNull(air.offer)
+        r.receiver.early = false
+        air.hear(6.0)
+        assertNotNull("NEXT, and the tap goes through: ${air.diary.joinToString("\n")}", air.offer)
+        assertFalse(air.diary.any { it.contains("ATT error") })
+    }
+
+    @Test
+    fun aPayerThatHasNotSubscribedIsRefusedItsFirstWordWithInsufficientAuthorization() {
+        // iOS's rule (TapLink.swift 667-684, TapPlace): the place is taken by a first word from a
+        // phone already subscribed to the out door; any other write is refused, ATT error 8. The
+        // Android receiver applies it too, so a payer that wrote before its subscribe landed fails here.
+        val air = PayerAir()
+        val r = air.receiver("AA:01")
+        r.onAir()
+        val service = r.receiver.link.service
+        val layout = TapGatt.Layout(service)
+        val statuses = ArrayList<Int>()
+        val stranger = object : AttCentral {
+            override fun answered(requestId: Int, status: Int, offset: Int, value: ByteArray?) { statuses.add(status) }
+            override fun notified(door: UUID, value: ByteArray) {}
+        }
+        r.peripheral.centrals["eager"] = stranger
+        r.receiver.server.connected("eager")
+        r.receiver.server.characteristicWrite("eager", 1, layout.into.uuid, false, true, 0, byteArrayOf(1, 2, 3))
+        air.settle()
+        assertEquals(listOf(TapGatt.INSUFFICIENT_AUTHORIZATION), statuses)
+        assertEquals(8, TapGatt.INSUFFICIENT_AUTHORIZATION)
     }
 
     @Test
