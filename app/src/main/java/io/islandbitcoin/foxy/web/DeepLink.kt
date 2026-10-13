@@ -8,7 +8,8 @@ import java.net.URLDecoder
  * `deepLink`). The scheme is registered only in the debug manifest
  * (`app/src/debug/AndroidManifest.xml`), MainActivity reads a link only in a
  * debug build, and the page reads the parameters only where `FOXY_DEBUG` is
- * set: a release Foxy has no scheme to be reached through (ManifestTest).
+ * set: a release Foxy has no deep-link scheme to be reached through (ManifestTest;
+ * its one https address is the card's, CardTapIntake, which only tells the page a card was tapped).
  *
  * Nothing from the URL is put into the page. The screen is matched against a
  * list and each parameter against what it may be; the hash is rebuilt from
@@ -18,8 +19,8 @@ import java.net.URLDecoder
  * `foxy://card` is not a screen: it is a card held to the phone, said by hand
  * (FoxyWebView.swift:497-508). It sets no hash and takes no parameters; iOS
  * tells the page `FoxyWallet._cardTapped()` through CardTapDelivery. [read]
- * names it [Link.CardTap]; until Android delivers card taps (ENG-668) the
- * caller only logs it, and nothing reaches the page.
+ * names it [Link.CardTap], and MainActivity hands it to its CardTapDelivery,
+ * as for a real card's address (ENG-668); nothing of the link reaches the page.
  */
 object DeepLink {
     /** The screens whose link becomes a hash. */

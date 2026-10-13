@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -22,6 +23,10 @@ import io.islandbitcoin.foxy.network.Route
 import io.islandbitcoin.foxy.tor.Tor
 import io.islandbitcoin.foxy.tor.TorTransport
 import io.islandbitcoin.foxy.debug.Log
+import io.islandbitcoin.foxy.flashcard.CardAddress
+import io.islandbitcoin.foxy.flashcard.CardTapDelivery
+import io.islandbitcoin.foxy.flashcard.CardTapIntake
+import io.islandbitcoin.foxy.flashcard.CardTapRoute
 import io.islandbitcoin.foxy.web.DeepLink
 import io.islandbitcoin.foxy.web.PutAway
 import io.islandbitcoin.foxy.web.WebHost
@@ -40,6 +45,17 @@ import io.islandbitcoin.foxy.web.WebHost
  * pay's receiver off the air and the shake and turn sensors let go on every
  * stop, and back on every start (ENG-670); and in debug builds only, the
  * `foxy://` deep link.
+ *
+ * ENG-668: a Flashcard held to the phone opens Foxy. Its address,
+ * `https://getfoxy.io/card`, from Android's tag dispatch or as a link, goes to
+ * CardTapActivity, never here: that door starts this activity, hands the page
+ * that is on top of its task the tap, or drops it while a seed screen or the
+ * scanner is over the page (CardTapRoute), so a card never makes a second
+ * page. What comes here is the one-shot [CardTapRoute.EXTRA], in onCreate (a
+ * launch from the card) or onNewIntent (singleTop), and the page is told only
+ * that a card was tapped, once, when it can take it (CardTapDelivery): the
+ * splash cover down, the page loaded, and after a return only once `_resumed`
+ * has been told.
  */
 class MainActivity : ComponentActivity(), WebHost.Permissions {
     companion object {
@@ -50,10 +66,30 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
 
         /** Debug builds only: do not start Tor in this process (the page stays on SECURING YOUR CONNECTION). */
         const val NO_TOR = "FoxyNoTor"
+
+        /** The page's activity alive in this process, for CardTapActivity's routing (CardTapRoute). Main thread. */
+        private var alive: java.lang.ref.WeakReference<MainActivity>? = null
+
+        /** The live page's activity, or null when there is none or it is going. */
+        internal val live: MainActivity?
+            get() = alive?.get()?.takeUnless { it.isFinishing || it.isDestroyed }
     }
 
     private val main = Handler(Looper.getMainLooper())
     private var cover: SplashCover? = null
+
+    /** A card held to the phone, on its way to this activity's page (ENG-668). */
+    private val cardTaps = CardTapDelivery(
+        now = { SystemClock.elapsedRealtime() },
+        wait = { ms, run -> main.postDelayed(run, ms) },
+        say = { Log.line("[foxy] card tap: $it") },
+    )
+    private val cardIntake = CardTapIntake(
+        cardTaps,
+        now = { SystemClock.elapsedRealtime() },
+        cardSession = { host?.cardSessionOpen == true },
+        say = { Log.line("[foxy] card tap: $it") },
+    )
 
     /** The cover's view while it is up, and whether it is (SplashCoverViewTest). */
     internal var coverView: ImageView? = null
@@ -110,6 +146,7 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
             provider.view.animate().alpha(0f).setDuration(SplashCover.SYSTEM_FADE_MS).withEndAction { provider.remove() }
         }
 
+        alive = java.lang.ref.WeakReference(this)
         val container = FrameLayout(this)
         container.setBackgroundColor(getColor(R.color.page))
         setContentView(container)
@@ -118,12 +155,19 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         val services = (application as FoxyApplication).services
         val webHost = WebHost(this, services, container, { main.post { cover?.down() } }, this)
         host = webHost
+        webHost.hooks.loaded = { cardTaps.pageLoaded() }
+        webHost.hooks.gone = { cardTaps.pageGone() }
+        webHost.hooks.readerOff = { cardIntake.readerOff() }
+        cardTaps.tell = ::askPageAboutCardTap
         webHost.create()
         cover = addCover(container)
         main.postDelayed({ cover?.down() }, SPLASH_BACKSTOP_MS)
 
         // Settings' screen-lock confirmation (API 28-29) stops this activity: Foxy's own question, not a put-away
-        val away = PutAway({ host }, services.vault, ownPrompt = { services.auth.confirming })
+        val away = PutAway(
+            { host }, services.vault, ownPrompt = { services.auth.confirming },
+            wentAway = { cardTaps.wentToBackground() }, resumedTold = { cardTaps.cameBack() },
+        )
         putAway = away
         // only a yes proves the stop was Foxy's own question; a no or a cancel is a return, and the PIN lock comes back
         val answered: (Boolean) -> Unit = { away.promptAnswered(it) }
@@ -143,6 +187,7 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
             }
         }
         receiveDeepLink(intent)
+        receiveCard(intent, restored = savedInstanceState != null)
         val forced = if (BuildConfig.DEBUG) TorTransport.named(intent?.getStringExtra(FORCE_TRANSPORT)) else null
         Tor.install(this, release = !BuildConfig.DEBUG, forced = forced)
         // debug builds can be told not to start Tor, for the leak test's CONTINUE WITHOUT TOR run
@@ -169,7 +214,8 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         }
         container.addView(image, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         coverView = image
-        return SplashCover { fadeMs ->
+        // the page is uncovered from now: a card's address that was waiting for it goes (CardTapDelivery)
+        return SplashCover(uncovered = { cardTaps.coverChanged(up = false) }) { fadeMs ->
             image.animate().alpha(0f).setDuration(fadeMs).withEndAction {
                 container.removeView(image)
                 coverView = null
@@ -244,24 +290,57 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         receiveDeepLink(intent)
+        receiveCard(intent, restored = false)
+    }
+
+    /**
+     * A card tap, in every build, as CardTapActivity hands it: the one-shot
+     * [CardTapRoute.EXTRA], already held to CardAddress.isCard there, with nothing
+     * of the address (CardTapIntake.tap). The extra is taken off the intent once
+     * read; an intent handed back from Recents, or to a restored activity, is not
+     * a tap (CardTapIntake.replayed).
+     */
+    private fun receiveCard(intent: Intent?, restored: Boolean) {
+        val i = intent ?: return
+        if (!i.getBooleanExtra(CardTapRoute.EXTRA, false)) return
+        i.removeExtra(CardTapRoute.EXTRA)
+        cardIntake.tap(CardTapIntake.replayed(restored, i.flags))
+    }
+
+    /**
+     * The question CardTapDelivery asks the page (CardAddress.PAGE_CALL): true only
+     * for the page's own `true`; no page, or a page without the call yet, is a no,
+     * and it is asked again. No timer on the answer, as on iOS: a page slow to
+     * answer is still thinking, and asking it again would queue a second
+     * `_cardTapped()` behind the first. A page whose process died never answers;
+     * CardTapDelivery.pageGone forgets the question and the reloaded page is asked.
+     */
+    private fun askPageAboutCardTap(done: (Boolean) -> Unit) {
+        val page = host ?: return done(false)
+        page.read(CardAddress.PAGE_CALL) { done(it == "true") }
     }
 
     /**
      * DEBUG BUILDS ONLY (FoxyWebView.swift:492-531): `foxy://receive?amt=50&unit=sat`,
      * rebuilt from a whitelist into the page's hash. A release build registers
-     * no scheme (ManifestTest) and reads no link here.
+     * no foxy scheme (ManifestTest: its only links are the card's address,
+     * receiveCard) and reads no deep link here.
      *
-     * `foxy://card` is a card tap said by hand (FoxyWebView.swift:497-508). iOS
-     * tells the page `_cardTapped`; Android does not deliver card taps yet
-     * (ENG-668), so it is logged and nothing reaches the page.
+     * `foxy://card` is a card tap said by hand (FoxyWebView.swift:497-508): the
+     * page is told `_cardTapped` through CardTapDelivery, as for a real card.
+     * Any other scheme (the card's https address) is not a deep link.
      */
     private fun receiveDeepLink(intent: Intent?) {
         if (!BuildConfig.DEBUG) return
         if (intent?.action != Intent.ACTION_VIEW) return
         val link = intent.dataString ?: return
+        if (!link.startsWith("foxy:", ignoreCase = true)) return
         when (val read = DeepLink.read(link) { Log.line("[deeplink] ignored parameter: ${it.take(32)}") }) {
             null -> Log.line("[deeplink] no such screen")
-            DeepLink.Link.CardTap -> Log.line("[deeplink] a card tap: not passed to the page, card taps are not delivered yet (ENG-668)")
+            DeepLink.Link.CardTap -> {
+                Log.line("[deeplink] a card tap")
+                cardTaps.cardTapped()
+            }
             is DeepLink.Link.Screen -> host?.deepLink(read.hash)
         }
     }
@@ -283,6 +362,8 @@ class MainActivity : ComponentActivity(), WebHost.Permissions {
         }
         putAway = null
         main.removeCallbacksAndMessages(null)
+        cardTaps.tell = null
+        if (alive?.get() === this) alive = null
         host?.destroy()
         host = null
         // Back finishing the activity (API 28-30): ProcessLifecycleOwner's stop comes 700 ms later, after

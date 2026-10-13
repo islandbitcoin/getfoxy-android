@@ -16,6 +16,7 @@ import okio.Buffer
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.Proxy
+import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -29,6 +30,12 @@ class RouteRequest(
     val body: ByteArray? = null,
     /** The whole exchange, every redirect included. */
     val timeoutMs: Long = 60_000,
+    /**
+     * System.nanoTime by which every send of this request is over, however
+     * many: a retry of the same request gets the time the first try left, not
+     * [timeoutMs] again (ENG-655). Unbounded unless given.
+     */
+    val endsBy: Long = Long.MAX_VALUE,
 ) {
     init {
         require(method == "GET" || method == "POST") { "GET or POST only" }
@@ -71,7 +78,7 @@ class RouteCall internal constructor(private val client: OkHttpClient, private v
     }
 
     internal fun start(done: (RouteAnswer) -> Unit) {
-        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(request.timeoutMs)
+        val deadline = minOf(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(request.timeoutMs), request.endsBy)
         hop(request.url, request.method, request.body, 0, deadline, done)
     }
 
@@ -86,7 +93,13 @@ class RouteCall internal constructor(private val client: OkHttpClient, private v
         if (cancelled) return done(RouteAnswer.Failed(IOException("Canceled"), beforeRequest = false, dialled = 0))
         val left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
         if (left <= 0) return done(RouteAnswer.Failed(InterruptedIOException("timeout"), beforeRequest = false, dialled = 0))
-        val call = client.newBuilder().callTimeout(left, TimeUnit.MILLISECONDS).build().newCall(build(url, method, body))
+        // the SOCKS handshake waits for Tor as long as the request may, and no longer (ENG-655):
+        // OkHttp hands the connect timeout to Socks5Socket.connect, which waits for the CONNECT reply within it
+        val call = client.newBuilder()
+            .callTimeout(left, TimeUnit.MILLISECONDS)
+            .connectTimeout(left, TimeUnit.MILLISECONDS)
+            .build()
+            .newCall(build(url, method, body))
         current = call
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
@@ -270,6 +283,17 @@ object RouteHttp {
         return if (socks.code == 0) null else Socks5SocketFactory.replyWords(socks.code)
     }
 
+    /** URLSession's words for a request that ran out of time (NSURLErrorTimedOut). */
+    const val TIMED_OUT = "The request timed out."
+
+    /**
+     * The request ran out of time: OkHttp's call timeout (an InterruptedIOException,
+     * with the closed socket's Socks5Failure under it when it struck mid-handshake),
+     * or the socket's own read timeout under a Socks5Failure.
+     */
+    fun timedOut(e: Throwable): Boolean =
+        e is InterruptedIOException || generateSequence(e) { it.cause }.any { it is SocketTimeoutException }
+
     /** A handshake that failed on one SOCKS port and again on another: Tor's listener moved under the request. */
     const val REBUILT = "Foxy's private connection was rebuilt mid-request. Try again."
 
@@ -284,11 +308,16 @@ object RouteHttp {
      * `portMoved`: the retry dialled another port than the first try
      * (ENG-648 plan, "If the port changed mid-request"). Twice on the same port
      * (Tor down, port 9 while it is unknown, or a listener that refuses) is
-     * Foxy not being connected to Tor.
+     * Foxy not being connected to Tor. A handshake that waited out the
+     * request's time for Tor's answer (a circuit still being built, ENG-655) is
+     * the timeout iOS's URLSession reported (FoxyBridge.swift `mintFailureWords`,
+     * `localizedDescription`), not a refusal: it may be the only try, its retry
+     * skipped for lack of time.
      */
     fun failureWords(e: IOException, beforeRequest: Boolean, portMoved: Boolean = false): String = when {
+        beforeRequest && timedOut(e) -> TIMED_OUT
         beforeRequest -> if (portMoved) REBUILT else Route.REFUSAL
-        e is InterruptedIOException -> "The request timed out."
+        e is InterruptedIOException -> TIMED_OUT
         e is UnknownHostException -> "A server with the specified hostname could not be found."
         e is SSLException -> "An SSL error has occurred and a secure connection to the server cannot be made."
         e.message == "Canceled" -> "cancelled"
