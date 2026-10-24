@@ -211,9 +211,9 @@ license footer names only @noble/@scure modules.
 cashu-ts's own unit tests, run against the shipped bytes by
 `tools/vendor/test-cashu-ts-bundle.sh` (measured for 4.11.0):
 **2,524 tests, 2,444 pass against the bundle.** The 23 test files that import
-only public API pass **631/631 with no cashu-ts source file loaded at all**. That is the group that means
-something: nothing in it can be passing because of a source module standing in
-for the bundle.
+only public API pass **631/631 with no cashu-ts source file loaded at all** —
+that is the group that means something, because nothing in it can be passing
+because of a source module standing in for the bundle.
 
 Of the 80 failures, 78 are in the 29 files that mix bundle objects with
 cashu-ts internals imported from `src/`, and 2 are in one file that mixes the
@@ -223,8 +223,8 @@ a class meeting, not a behaviour difference. The README has the breakdown.
 The 4.10.2 figures this replaced were 2,458 total and 704/704 in group A. Group
 A got *smaller* while the suite grew: upstream added test files that reach into
 `src/` for names that used to be read off the public API, which moves them from
-A to C. The invariant is unchanged (group A fails nothing with zero source
-modules loaded), and the failure count fell from 119 to 80.
+A to C. The invariant is unchanged — group A fails nothing with zero source
+modules loaded — and the failure count fell from 119 to 80.
 
 Still not established: that upstream code is correct, and anything about the
 esbuild binary beyond npm's integrity check.
@@ -240,7 +240,7 @@ Four that matter here, none of which needed a change in Foxy:
 
 - **Outputs are unblinded with the keyset the mint actually signed under**, not
   the one that was asked for (upstream #1083, #1096). That is melt change,
-  restore, swap and mint: a fund-recovery bug on exactly the paths
+  restore, swap and mint — a fund-recovery bug on exactly the paths
   `recoverMeltChange` and `restoreLocked` exist for.
 - **`OutputData.toProof()` writes the real blinding factor into the DLEQ `r`**
   instead of padding a zero (#1136). Foxy's `dleqAudit` reads that field.
@@ -258,7 +258,7 @@ Checked for the upgrade, all green: `tools/check-all.sh`; `p2pk-round-trip`,
 `locked-send-lost`, `nut-vectors`, `nut13-vectors`, `onion-fallback`,
 `tap-settle`, `inbox-payment`; and the live suites `flows`, `faults`, `p2pk`
 and `onchain` against CDK 0.18.1 and Nutshell 0.21.0 with fake money.
-`tools/live/units.js` was **not** run: it needs a Nutshell with a usd keyset on
+`tools/live/units.js` was **not** run — it needs a Nutshell with a usd keyset on
 ports of its own, and non-sat sending is unimplemented anyway (`TODO-LATER.md`).
 
 SHA-256 of what ships today:
@@ -271,7 +271,7 @@ SHA-256 of what ships today:
 
 `foxy-send-progress.js` (22,251,
 `d74026502f92b62e66c7dfeb006af29f9946228704ba517ab2d9dd3abe0e4b66`) is not
-third-party. It is this project's send-progress overlay.
+third-party — it is this project's send-progress overlay.
 
 ---
 
@@ -280,7 +280,7 @@ third-party. It is this project's send-progress overlay.
 Before the byte-for-byte rebuilds above, the bundles were identified by
 content. What still stands from that:
 
-**bip39 (`@scure/bip39@2.4.0`, tree-shaken).** Our bundle exports four of the
+**bip39 — `@scure/bip39@2.4.0`, tree-shaken.** Our bundle exports four of the
 seven upstream functions: `generateMnemonic`, `mnemonicToSeed`,
 `mnemonicToSeedSync`, `validateMnemonic`. The three absent ones
 (`entropyToMnemonic`, `mnemonicToEntropy`, `mnemonicToSeedWebcrypto`) are
@@ -306,23 +306,23 @@ template and runs the app class, so every screen of the wallet goes through it.
 
 | asset | what | decoded | sha256 of decoded bytes |
 |---|---|---|---|
-| `64b433ba…` | **Foxy's renderer** (`build/foxy-render.js`) compiles the template and runs the app class (replaced the design-tool runtime) | 21,698 | checked against `build/foxy-render.js`, not pinned |
+| `64b433ba…` | **Foxy's renderer**, `build/foxy-render.js` — compiles the template and runs the app class (replaced the design-tool runtime) | 21,698 | checked against `build/foxy-render.js`, not pinned |
 | `8d4aa6b2…` | react 18.3.1, production | 10,751 | `d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd` |
 | `93c76fbd…` | react-dom 18.3.1, production | 131,835 | `35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d` |
 
 **The renderer is Foxy's own code.** The page is rendered by
 `build/foxy-render.js`, 526 lines written for Foxy in this repo, which
-implements only what Foxy's template and app use: `<sc-if>`, `<sc-for>`,
+implements only what Foxy's template and app use — `<sc-if>`, `<sc-for>`,
 `{{ name }}` and `{{ a.b }}` bindings, event and camel-case attributes, style
-strings, `style-active`/`style-hover`, and `<helmet>` styles. It refuses anything
+strings, `style-active`/`style-hover`, `<helmet>` styles — and refuses anything
 else when the page starts. It renders through React and ReactDOM, loaded only
 from the manifest blobs below. Streaming, component imports, iframe page
 bundles, slide decks, atomics and the editor bridge are not in it.
 `tools/pack-index.py` packs it into the old runtime's manifest slot (so the
 page loader is unchanged) with a fixed gzip header, and `tools/verify-vendor.py`
 checks the packed copy is exactly that file. `tests/render-parity.js` renders
-every screen and popup with it and with the old runtime (kept, unshipped, in
-`tests/reference/dc-runtime.js` for that purpose), and compares the DOM: 33
+every screen and popup with it and with the old runtime — kept, unshipped, in
+`tests/reference/dc-runtime.js` for that purpose — and compares the DOM: 33
 views, identical. One deliberate difference: the app's `componentDidUpdate` now
 receives the previous state, which the old runtime never passed.
 
@@ -333,8 +333,8 @@ a factory; nothing compiles that text with `new Function`. The page's
 `tools/pack-index.py` recomputes on every pack. Injected inline scripts, `on…=`
 handlers, `javascript:` links and `eval` are refused, and smoke check 16 fails
 the build if `'unsafe-inline'` or `'unsafe-eval'` comes back or the hash does
-not match the loader. The loader's last trace of a JSX compiler (a call to
-`Babel.transformScriptTags()` whenever a `window.Babel` existed) was removed;
+not match the loader. The loader's last trace of a JSX compiler — a call to
+`Babel.transformScriptTags()` whenever a `window.Babel` existed — was removed;
 nothing on the page loads Babel.
 
 React and react-dom are the stock production builds: `tools/vendor/verify-react.sh`
@@ -390,8 +390,8 @@ whether to ship the OFL's text (and where; `pack-index.py` refuses any file in
 
 | file | what it is | upstream | version | licence | SHA-256 |
 |---|---|---|---|---|---|
-| `build/shell/assets/icon-bolt.svg` (manifest `21177c5f`, 1,647 B) | SVG, `<title>Flash bolt</title>`, `aria-label` "Flash bolt on dark": a lightning bolt in white, viewBox 236.5×366; named only in `build/shell/head.html` (the `bolt` entry of its `__bundler/ext_resources`) | **origin not recorded.** The title names Flash, the prototype Foxy's screens came from (smoke check 9 keeps its vocabulary out); no author or licence in the file. If the drawing is that product's mark, whether Foxy may ship it is not settled | none | **not recorded** | `9c84c033a7279c6688c675d114c600873d8c59936674b0e3813e77b87fdd9fde` |
-| `build/shell/assets/icon-0e7a9336.svg` (1,639 B) | the same drawing in near-black (`#050505`), also titled "Flash bolt"; in the QR screens' and the send spinner's centres (`build/markup.html`) | **origin not recorded**, as above | none | **not recorded** | `6c38e984fed9b05103a0319727fbdb39584d78d7f92456ee9fc2af07c84b4d98` |
+| `build/shell/assets/icon-bolt.svg` (manifest `21177c5f`, 1,647 B) | SVG, `<title>Flash bolt</title>`, `aria-label` "Flash bolt on dark": a lightning bolt in white, viewBox 236.5×366; named only in `build/shell/head.html` (the `bolt` entry of its `__bundler/ext_resources`) | **origin not recorded.** The title names Flash, the prototype Foxy's screens came from (smoke check 9 keeps its vocabulary out); no author or licence in the file. If the drawing is that product's mark, whether Foxy may ship it is not settled | — | **not recorded** | `9c84c033a7279c6688c675d114c600873d8c59936674b0e3813e77b87fdd9fde` |
+| `build/shell/assets/icon-0e7a9336.svg` (1,639 B) | the same drawing in near-black (`#050505`), also titled "Flash bolt"; in the QR screens' and the send spinner's centres (`build/markup.html`) | **origin not recorded**, as above | — | **not recorded** | `6c38e984fed9b05103a0319727fbdb39584d78d7f92456ee9fc2af07c84b4d98` |
 
 **Images and video in `Web/`.** Artwork the project ships. Sizes are the files'
 own, dimensions are as `sips` reports them, and the video's are as AVFoundation
@@ -399,7 +399,7 @@ reports them.
 
 | file | what it is | upstream | licence | SHA-256 |
 |---|---|---|---|---|
-| `Web/snow-fur.jpg` (67,431 B) | JPEG, 640×358: a photograph of white fur, blended twice into the RECEIVE and SEND buttons, once for the hair, once for the depth | **origin not recorded**; scaled and re-encoded with `sips` from a larger picture | **not recorded** | `cebafa00a3787400f265c5b427f4219a24dd8edbcfff7ab40c11fd81a4e7b22d` |
+| `Web/snow-fur.jpg` (67,431 B) | JPEG, 640×358: a photograph of white fur, blended twice into the RECEIVE and SEND buttons — once for the hair, once for the depth | **origin not recorded**; scaled and re-encoded with `sips` from a larger picture | **not recorded** | `cebafa00a3787400f265c5b427f4219a24dd8edbcfff7ab40c11fd81a4e7b22d` |
 | `Web/risk-grain.jpg` (131,515 B) | JPEG, 960×538: a fur texture, by eye the same picture as `snow-fur.jpg` at a larger size, blended (soft light) over the first-launch risk warning (`Web/foxy-tor-gate.js`) | **origin not recorded**; re-encoded with `sips` | **not recorded** | `3798d85f020e99b2d5b8306324d7636d0fcf51548fcada742ccb0b92bc96eab5` |
 | `Web/foxy-intro.mp4` (976,087 B) | H.264, 600×1304, 231 frames at 24fps (9.6 s): a white fox on black, asleep, stretching, then standing. The launch intro, played once on the first launch of a day (`Web/foxy-tor-gate.js`) | **origin not recorded**; `tools/make-intro.swift` scales and re-encodes a source video, and touches no colour | **not recorded** | `2c3ef790193cc6dd179f2fed3c4707fe140d2d863208ec1bc353eb3439e6025c` |
 | `Web/foxy-intro-last.png` (71,955 B) | PNG, 600×1304: the intro's last frame, the white fox standing on black. The page freezes on it while FOXY fades in, and shows it instead of the video where motion is turned down | made by `tools/make-intro.swift` from the same drawing | **not recorded** | `137a597ceaad06f1e22817d037b390973e38e03b5869b08f625d8949cedcd725` |
@@ -410,12 +410,12 @@ Each of the following has a version column, which is empty where nothing says.
 
 | file | what it is | upstream | version | licence | SHA-256 |
 |---|---|---|---|---|---|
-| `Web/foxy-sheet.webp` (1,751,366 B) | lossy WebP, 3360×3120: the send animation's sprite sheet (`Web/foxy-send-progress.js`): 174 frames of a cartoon red fox running on grass, fourteen across and thirteen down, each frame 240×240 | **origin not recorded** (C2PA below) | none | **not recorded** | `fb38cb859810c60efda24f7f1e4ce3c49b321fcd85dc13fcd3cafd2d1b4c10a9` |
-| `Web/foxy-fur.webp` (65,776 B) | lossy WebP, 800×532: an orange fox-fur texture behind the orange buttons (`build/markup.html`) | **origin not recorded** (C2PA below) | none | **not recorded** | `b9a1c1e11785c5a45a58e6098418e16ee01afaefadc1b3e109ecf3a6e26d4684` |
-| `Web/gd-cashapp.jpg` (7,489 B) | JPEG, 256×256: the Cash App app icon on the GET DOLLARS screen (`build/app/26e-loaders.js`) | Apple's App Store image server (`is1-ssl.mzstatic.com`), the icon of `com.squareup.cash` | none | **the trademark and artwork of Block, Inc.**; used to name their app, with no licence from them | `5a5a80358e280999bdb2bf3337c806669a9c04198756024efa819cac38a56b56` |
-| `Web/gd-strike.jpg` (7,889 B) | JPEG, 256×256: the Strike app icon on the GET DOLLARS screen (`build/app/26e-loaders.js`) | Apple's App Store image server (`is1-ssl.mzstatic.com`), the icon of `com.jackmallers.Strike` | none | **the trademark and artwork of Zap Solutions, Inc**; used to name their app, with no licence from them | `b74180a13af2ab7c9d010a7390c25f90ad7579bb8945353582b402f012a668b0` |
-| `Web/gd-river.jpg` (11,207 B) | JPEG, 256×256: the River app icon on the GET DOLLARS screen (`build/app/26e-loaders.js`) | Apple's App Store image server (`is1-ssl.mzstatic.com`), the icon of `com.river.riverapp` | none | **the trademark and artwork of River Financial Inc.**; used to name their app, with no licence from them | `abb80efc41313717d7136e66cbbda99255d09f71bf8f01dbc88c7401937bedee` |
-| `Web/gd-flash.jpg` (8,530 B) | JPEG, 256×256: the Flash app icon on the GET DOLLARS screen (`build/app/26e-loaders.js`) | Apple's App Store image server (`is1-ssl.mzstatic.com`), the icon of `com.lnflash` | none | **the trademark and artwork of Island Bitcoin LLC**; used to name their app, with no licence from them | `e07ffc030a1dc9cebbadc668c9ad3e89bf6c88d358deb563f9ed9e0b67db7cfb` |
+| `Web/foxy-sheet.webp` (1,751,366 B) | lossy WebP, 3360×3120: the send animation's sprite sheet (`Web/foxy-send-progress.js`): 174 frames of a cartoon red fox running on grass, fourteen across and thirteen down, each frame 240×240 | **origin not recorded** (C2PA below) | — | **not recorded** | `fb38cb859810c60efda24f7f1e4ce3c49b321fcd85dc13fcd3cafd2d1b4c10a9` |
+| `Web/foxy-fur.webp` (65,776 B) | lossy WebP, 800×532: an orange fox-fur texture behind the orange buttons (`build/markup.html`) | **origin not recorded** (C2PA below) | — | **not recorded** | `b9a1c1e11785c5a45a58e6098418e16ee01afaefadc1b3e109ecf3a6e26d4684` |
+| `Web/gd-cashapp.jpg` (7,489 B) | JPEG, 256×256: the Cash App app icon on the GET DOLLARS screen (`build/app/26e-loaders.js`) | Apple's App Store image server (`is1-ssl.mzstatic.com`), the icon of `com.squareup.cash` | — | **the trademark and artwork of Block, Inc.**; used to name their app, with no licence from them | `5a5a80358e280999bdb2bf3337c806669a9c04198756024efa819cac38a56b56` |
+| `Web/gd-strike.jpg` (7,889 B) | JPEG, 256×256: the Strike app icon on the GET DOLLARS screen (`build/app/26e-loaders.js`) | Apple's App Store image server (`is1-ssl.mzstatic.com`), the icon of `com.jackmallers.Strike` | — | **the trademark and artwork of Zap Solutions, Inc**; used to name their app, with no licence from them | `b74180a13af2ab7c9d010a7390c25f90ad7579bb8945353582b402f012a668b0` |
+| `Web/gd-river.jpg` (11,207 B) | JPEG, 256×256: the River app icon on the GET DOLLARS screen (`build/app/26e-loaders.js`) | Apple's App Store image server (`is1-ssl.mzstatic.com`), the icon of `com.river.riverapp` | — | **the trademark and artwork of River Financial Inc.**; used to name their app, with no licence from them | `abb80efc41313717d7136e66cbbda99255d09f71bf8f01dbc88c7401937bedee` |
+| `Web/gd-flash.jpg` (8,530 B) | JPEG, 256×256: the Flash app icon on the GET DOLLARS screen (`build/app/26e-loaders.js`) | Apple's App Store image server (`is1-ssl.mzstatic.com`), the icon of `com.lnflash` | — | **the trademark and artwork of Island Bitcoin LLC**; used to name their app, with no licence from them | `e07ffc030a1dc9cebbadc668c9ad3e89bf6c88d358deb563f9ed9e0b67db7cfb` |
 
 **Metadata inside the images.** Only `foxy-fur.webp` and `foxy-sheet.webp`
 carry a C2PA manifest, a WebP `C2PA` chunk of 5,759 bytes with the same content
@@ -453,7 +453,7 @@ tense is the tense they were written in.)*
 disabled in the embedded copy: `ensureBabel()`, which fetched a JavaScript
 compiler from unpkg.com, and the `x-import` loader's `fetch(url)` fallback,
 whose result was transpiled and passed to `new Function`. Both now reject.
-Nothing in this app reaches either, because the only JSX import was removed, but a
+Nothing in this app reaches either — the only JSX import was removed — but a
 dormant remote-code loader is not something a wallet should ship. The script that
 made those edits is not in the repository. A third edit changed `evalDcLogic`: it calls a factory the page loader builds from the app
 script instead of compiling that text with `new Function`. A fourth edit
