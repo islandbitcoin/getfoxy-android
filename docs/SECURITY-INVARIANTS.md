@@ -1,12 +1,12 @@
-# SECURITY-INVARIANTS.md — what the host must keep true, and how each is proved
+# SECURITY-INVARIANTS.md: what the host must keep true, and how each is proved
 
 The iOS app's security claims are written in its `docs/REVIEW.md` (claims and
 their proofs), `docs/THREAT-MODEL.md`, `docs/SEED-HANDLING.md` and
 `docs/STORAGE.md`, at getfoxy/iOS `5581c963dd29b28ebec547473ada532873d49a77`.
 Many of them are the page's, and hold on Android because the page ships byte for
 byte (`tools/verify-core.sh`). This file is the rest: every claim that depends
-on the **host** — the native side, the WebView's configuration, the platform's
-storage and lifecycle — restated for Android, with the test that will prove it.
+on the **host** (the native side, the WebView's configuration, the platform's
+storage and lifecycle), restated for Android, with the test that will prove it.
 
 Test kinds: **unit** (JVM, `app/src/test`, runs in CI), **instrumented**
 (`app/src/androidTest`, an emulator or a phone), **conformance**

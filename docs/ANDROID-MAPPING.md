@@ -1,4 +1,4 @@
-# ANDROID-MAPPING.md — each iOS component, and what it becomes
+# ANDROID-MAPPING.md: each iOS component, and what it becomes
 
 The iOS app (getfoxy/iOS `8df0bb19992cceda44d04e947bce211e1415975e`) is a
 WKWebView host around the page plus a Swift bridge. The Android app is the same

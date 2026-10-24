@@ -1,10 +1,9 @@
-# BRIDGE.md — the contract between the page and native
+# BRIDGE.md: the contract between the page and native
 
 The Android app runs the iOS app's page (`core/web/`, byte for byte, pinned in
-`core/PIN`) in an Android System WebView. Everything the page cannot do itself
-— the network, the seed, the camera, the clipboard, notifications, Bluetooth,
-NFC — it asks native for over one channel, and native answers or pushes back
-into the page. This document is that channel, exhaustively, as the iOS app
+`core/PIN`) in an Android System WebView. Everything the page cannot do itself (the network, the seed, the camera, the
+clipboard, notifications, Bluetooth, NFC) it asks native for over one channel,
+and native answers or pushes back into the page. This document is that channel, exhaustively, as the iOS app
 implements it at getfoxy/iOS `8df0bb19992cceda44d04e947bce211e1415975e`.
 Android implements the same contract; nothing in `core/web` changes.
 
@@ -39,16 +38,16 @@ The page posts plain objects to `window.webkit.messageHandlers.foxy.postMessage`
 calls). There are exactly three shapes, and native classifies them in this
 order (`Foxy/Bridge/FoxyBridge.swift:456-466`, `dispatch`):
 
-1. **`{ haptic: kind }`** — no action, no id. Buzz, answer nothing.
-2. **`{ action, id, ...fields }`** — an action. `action` names a handler in the
+1. **`{ haptic: kind }`**: no action, no id. Buzz, answer nothing.
+2. **`{ action, id, ...fields }`**: an action. `action` names a handler in the
    one table (`FoxyBridge.swift:357-444`, `handlers`); an action not in the
    table is answered `error: "Unknown action: <name>"`. `id` is a string the page
    made (`'b'|'s'|'p'|'c'|'q'|'n' + Date.now() + random`, or `'log-'`, `'copy-'`,
    `'covered-'`, `'bt-'` + time) and is echoed in the reply.
-3. **anything else** — ignored, with no answer. The page does post one such
+3. **anything else**: ignored, with no answer. The page does post one such
    message: `{ username }` from `pushToNative()` (`build/app/05-device-shell.js:153`),
-   a leftover of a widget that does not exist. Android must drop it silently, not
-   answer it as an unknown action.
+   a leftover of a widget that does not exist. Android must drop it silently and
+   must not answer it as an unknown action.
 
 Before dispatch, every message is refused unless it came from the **main frame**
 of the staged page (`FoxyBridge.swift:472-474`, `answers`: main frame and a
