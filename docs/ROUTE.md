@@ -1,4 +1,4 @@
-# ROUTE.md — every byte leaves through Tor, or not at all
+# ROUTE.md: every byte leaves through Tor, or not at all
 
 **The invariant.** Every network request Foxy makes goes through the app's own
 Tor, or it is refused before a socket opens. The one exception is a choice the

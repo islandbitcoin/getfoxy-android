@@ -1,4 +1,4 @@
-# DEVICE-TESTS.md — what is checked on a phone, by hand or by instrumentation
+# DEVICE-TESTS.md: what is checked on a phone, by hand or by instrumentation
 
 Some of the host's claims (`SECURITY-INVARIANTS.md`) can only be shown on a real
 phone. This is the list: the instrumented tests that run on one, the checks a
@@ -102,7 +102,7 @@ adb shell am instrument -w -r io.islandbitcoin.getfoxy.test/androidx.test.runner
 | `TapCentralOnDeviceTest` | the payer's scan as Android's own objects (`AndroidTapCentral.scanFilters`, `scanSettings`): no hardware filter at all (ENG-679: the per-invoice UUID cannot be named before it is heard, and the all-zero-mask "any service UUID" filter of ENG-671 matched nothing on the Pixel 8 Pro's controller); low latency, every advertisement reported, no batching; and Bluetooth's Device Information UUIDs and the MTU asked for. Opens no scanner and needs no permission. ENG-671, ENG-679; compiled, not yet run on a phone | ENG-671, ENG-679 |
 | `TapCryptoOnDeviceTest` | tap to pay's crypto through the phone's own providers: Tink's X25519 in the APK and Conscrypt's ChaCha20-Poly1305 (which the desk JVM does not have) give iOS's bytes from `fixtures/tap-vectors.json` (the keys, the code, every seal, and the first conversation's handshake and offer); the JVM's `TapVectorsTest` checks the whole file. ENG-669; passed on the Pixel 8 Pro (Android 17) 2026-10-12 at main `d856d3b`, `OK (3 tests)`, recorded under "Runs": the gate below is met for ENG-670 | ENG-669 |
 | `TextZoomTest` | with the system font scale set to 1.3 through the shell (the phone's value put back afterwards), a WebView the activity makes and leaves alone starts at `textZoom` 130 (the control), and Foxy's is `WebHost.PAGE_TEXT_ZOOM`, 100: the page is laid out as WKWebView lays it out on iOS, whatever the font size. Skipped, saying why, when the scale cannot be set or a plain WebView does not follow it. ENG-661; compiled, not yet run on a phone | ENG-661 |
-| `NotifyChannelTest` | the payments channel `payments_heads_up` is `IMPORTANCE_HIGH` (heads-up, as iOS's foreground banner), and a phone holding the default-importance `payments` an earlier build made loses it when the channel is made (ENG-665). A channel the person turned off or down in Settings fails the first test: turn it back on | — |
+| `NotifyChannelTest` | the payments channel `payments_heads_up` is `IMPORTANCE_HIGH` (heads-up, as iOS's foreground banner), and a phone holding the default-importance `payments` an earlier build made loses it when the channel is made (ENG-665). A channel the person turned off or down in Settings fails the first test: turn it back on | none |
 | `SplashCoverViewTest` | MainActivity's splash cover: the intro's still is an `ImageView` (`CENTER_CROP`, the still read from the APK) as the container's last child, drawn above every sibling (its `translationZ`), a view added after it included; the page's `covered` takes it down and it is out of the view tree within `SplashCover.FADE_MS` plus 1 s; a second `covered` is no news. Fails when MainActivity made no cover; skipped, saying why, only when the cover was made and the page said `covered` before the test could look. ENG-665; compiled, not yet run on a phone | ENG-665 |
 
 **A hard gate for tap to pay's radio (ENG-670, ENG-671).** `TapCryptoOnDeviceTest`
@@ -168,7 +168,7 @@ On the debug build, then (when there is one) the release build:
    seed (`seedCreate`), `adb shell am force-stop io.islandbitcoin.getfoxy`, launch
    again: `seedStatus` answers `{"exists":true}` and the page shows the same
    wallet. (S3, S4; the ENG-647 device exit.) Wiping the seed is not checkable
-   in P1: `seedWipe` is P3 (BRIDGE.md `seedWipe` — P3, S5).
+   in P1: `seedWipe` is P3 (BRIDGE.md, `seedWipe`, phase P3; S5).
 
 ## The P3 checks a person makes (ENG-649)
 

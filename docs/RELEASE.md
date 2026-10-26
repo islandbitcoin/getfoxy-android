@@ -1,4 +1,4 @@
-# RELEASE.md — Foxy for Android on Google Play internal testing
+# RELEASE.md: Foxy for Android on Google Play internal testing
 
 Foxy Android goes to **Google Play internal testing** under the Island
 Bitcoin developer account (ENG-680). The package (`applicationId`) is
